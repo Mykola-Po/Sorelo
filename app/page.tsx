@@ -1,6 +1,7 @@
 import { AuthPanel } from "@/features/auth/auth-panel";
 import { GraphSummary } from "@/features/graph/graph-summary";
 import { WorkspaceGraphPanel } from "@/features/graph/workspace-graph-panel";
+import { ScenarioAiPanel } from "@/features/scenario/scenario-ai-panel";
 import { ScenarioSummary } from "@/features/scenario/scenario-summary";
 
 export default function HomePage() {
@@ -13,6 +14,7 @@ export default function HomePage() {
       <AuthPanel />
       <WorkspaceGraphPanel />
       <GraphSummary />
+      <ScenarioAiPanel />
       <ScenarioSummary />
     </main>
   );

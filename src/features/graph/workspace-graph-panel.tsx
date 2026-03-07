@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { NODE_TYPES, RELATION_TYPES, type NodeType, type OperationLogEntry, type SorelaEdge, type SorelaNode } from "@/core/domain/entities";
 import { useCanonicalStore } from "@/core/store/canonical-store";
+import { EvidenceReviewPanel } from "@/features/evidence/evidence-review-panel";
 import { GraphEditorCanvas } from "@/features/graph/graph-editor-canvas";
 import { SyncPanel } from "@/features/sync/sync-panel";
 import { getSupabaseBrowserClient } from "@/services/supabase/client";
@@ -12,6 +13,12 @@ import { queueLocalOperation } from "@/services/sync/run-sync-cycle";
 type WorkspaceItem = {
   id: string;
   title: string;
+};
+
+type ClusterView = {
+  id: string;
+  title: string;
+  nodeIds: string[];
 };
 
 type DbNode = {
@@ -60,6 +67,17 @@ type DbOperationLog = {
   sync_status: "pending" | "synced" | "conflict" | "error";
   remote_timestamp: string | null;
   conflict_flag: boolean;
+};
+
+type DbCluster = {
+  id: string;
+  workspace_id: string;
+  title: string;
+};
+
+type DbClusterMember = {
+  cluster_id: string;
+  node_id: string;
 };
 
 function toDomainNode(row: DbNode): SorelaNode {
@@ -140,6 +158,13 @@ export function WorkspaceGraphPanel() {
 
   const [selectedEdgeId, setSelectedEdgeId] = useState("");
   const [editEdgeRelationType, setEditEdgeRelationType] = useState<(typeof RELATION_TYPES)[number]>("causes");
+  const [clusters, setClusters] = useState<ClusterView[]>([]);
+  const [clusterTitle, setClusterTitle] = useState("Core factors");
+  const [selectedClusterId, setSelectedClusterId] = useState("");
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusNodeId, setFocusNodeId] = useState("");
+  const [focusClusterId, setFocusClusterId] = useState("");
+  const [commandQuery, setCommandQuery] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -168,14 +193,29 @@ export function WorkspaceGraphPanel() {
   const loadWorkspaceSnapshot = useCallback(async (nextWorkspaceId: string) => {
     if (!supabase) return;
 
-    const [{ data: nodeRows, error: nodesError }, { data: edgeRows, error: edgesError }, { data: opRows, error: opsError }] = await Promise.all([
+    const [
+      { data: nodeRows, error: nodesError },
+      { data: edgeRows, error: edgesError },
+      { data: opRows, error: opsError },
+      { data: clusterRows, error: clustersError },
+      { data: clusterMemberRows, error: clusterMembersError }
+    ] = await Promise.all([
       supabase.from("nodes").select("*").eq("workspace_id", nextWorkspaceId).order("created_at", { ascending: true }),
       supabase.from("edges").select("*").eq("workspace_id", nextWorkspaceId).order("created_at", { ascending: true }),
-      supabase.from("operation_log").select("*").eq("workspace_id", nextWorkspaceId).order("local_timestamp", { ascending: true }).limit(200)
+      supabase.from("operation_log").select("*").eq("workspace_id", nextWorkspaceId).order("local_timestamp", { ascending: true }).limit(200),
+      supabase.from("clusters").select("id,workspace_id,title").eq("workspace_id", nextWorkspaceId).order("created_at", { ascending: true }),
+      supabase.from("cluster_members").select("cluster_id,node_id").eq("workspace_id", nextWorkspaceId)
     ]);
 
-    if (nodesError || edgesError || opsError) {
-      setError(nodesError?.message ?? edgesError?.message ?? opsError?.message ?? "Failed loading workspace snapshot.");
+    if (nodesError || edgesError || opsError || clustersError || clusterMembersError) {
+      setError(
+        nodesError?.message ??
+          edgesError?.message ??
+          opsError?.message ??
+          clustersError?.message ??
+          clusterMembersError?.message ??
+          "Failed loading workspace snapshot."
+      );
       return;
     }
 
@@ -193,6 +233,18 @@ export function WorkspaceGraphPanel() {
     setTargetNodeId("");
     setSelectedNodeId("");
     setSelectedEdgeId("");
+
+    const clustersMap = new Map<string, ClusterView>();
+    for (const row of (clusterRows ?? []) as DbCluster[]) {
+      clustersMap.set(row.id, { id: row.id, title: row.title, nodeIds: [] });
+    }
+    for (const row of (clusterMemberRows ?? []) as DbClusterMember[]) {
+      const cluster = clustersMap.get(row.cluster_id);
+      if (cluster) {
+        cluster.nodeIds.push(row.node_id);
+      }
+    }
+    setClusters(Array.from(clustersMap.values()));
     setError(null);
   }, [replaceSnapshot, setSyncStatus, supabase]);
 
@@ -218,7 +270,7 @@ export function WorkspaceGraphPanel() {
 
   const appendOperationRecord = async (payload: {
     workspaceId: string;
-    entityType: "workspace" | "node" | "edge";
+    entityType: "workspace" | "node" | "edge" | "cluster" | "evidence";
     entityId: string;
     opType: "insert" | "update" | "delete";
     opPayload: Record<string, unknown>;
@@ -560,6 +612,49 @@ export function WorkspaceGraphPanel() {
     setSelectedEdgeId("");
   };
 
+  const createCluster = async () => {
+    if (!supabase || !workspaceId || !clusterTitle.trim()) return;
+    setBusy(true);
+    setError(null);
+
+    const { error: clusterError } = await supabase.from("clusters").insert({
+      workspace_id: workspaceId,
+      title: clusterTitle.trim(),
+      description: "",
+      metadata: {}
+    });
+
+    setBusy(false);
+
+    if (clusterError) {
+      setError(clusterError.message);
+      return;
+    }
+
+    await loadWorkspaceSnapshot(workspaceId);
+  };
+
+  const addSelectedNodeToCluster = async () => {
+    if (!supabase || !workspaceId || !selectedNodeId || !selectedClusterId) return;
+    setBusy(true);
+    setError(null);
+
+    const { error: memberError } = await supabase.from("cluster_members").insert({
+      workspace_id: workspaceId,
+      cluster_id: selectedClusterId,
+      node_id: selectedNodeId
+    });
+
+    setBusy(false);
+
+    if (memberError) {
+      setError(memberError.message);
+      return;
+    }
+
+    await loadWorkspaceSnapshot(workspaceId);
+  };
+
   useEffect(() => {
     const selectedNode = nodes.find((node) => node.id === selectedNodeId);
     if (selectedNode) {
@@ -607,6 +702,44 @@ export function WorkspaceGraphPanel() {
   }, [loadWorkspaces, supabase]);
 
   const canCreateEdge = !!workspaceId && nodes.length >= 2;
+  const clusterNodeSet = useMemo(() => {
+    if (!focusClusterId) return null;
+    const cluster = clusters.find((item) => item.id === focusClusterId);
+    return cluster ? new Set(cluster.nodeIds) : null;
+  }, [clusters, focusClusterId]);
+
+  const focusNodeNeighborhood = useMemo(() => {
+    if (!focusNodeId) return null;
+    const neighborhood = new Set<string>([focusNodeId]);
+    edges.forEach((edge) => {
+      if (edge.sourceId === focusNodeId) neighborhood.add(edge.targetId);
+      if (edge.targetId === focusNodeId) neighborhood.add(edge.sourceId);
+    });
+    return neighborhood;
+  }, [edges, focusNodeId]);
+
+  const visibleNodeSet = useMemo(() => {
+    if (!focusMode) return null;
+    if (focusNodeNeighborhood) return focusNodeNeighborhood;
+    if (clusterNodeSet) return clusterNodeSet;
+    return null;
+  }, [clusterNodeSet, focusMode, focusNodeNeighborhood]);
+
+  const filteredNodes = useMemo(() => {
+    if (!visibleNodeSet) return nodes;
+    return nodes.filter((node) => visibleNodeSet.has(node.id));
+  }, [nodes, visibleNodeSet]);
+
+  const filteredEdges = useMemo(() => {
+    if (!visibleNodeSet) return edges;
+    return edges.filter((edge) => visibleNodeSet.has(edge.sourceId) && visibleNodeSet.has(edge.targetId));
+  }, [edges, visibleNodeSet]);
+
+  const commandResults = useMemo(() => {
+    const query = commandQuery.trim().toLowerCase();
+    if (!query) return [];
+    return nodes.filter((node) => node.title.toLowerCase().includes(query)).slice(0, 6);
+  }, [commandQuery, nodes]);
 
   return (
     <section>
@@ -628,8 +761,8 @@ export function WorkspaceGraphPanel() {
 
       {workspaceId && (
         <GraphEditorCanvas
-          nodes={nodes}
-          edges={edges}
+          nodes={filteredNodes}
+          edges={filteredEdges}
           relationTypeForConnect={relationType}
           busy={busy}
           onMoveNode={moveNode}
@@ -643,6 +776,78 @@ export function WorkspaceGraphPanel() {
         />
       )}
 
+      <div className="form-row">
+        <button type="button" onClick={() => setFocusMode((prev) => !prev)} disabled={!workspaceId || busy}>
+          {focusMode ? "Disable focus mode" : "Enable focus mode"}
+        </button>
+        <select value={focusNodeId} onChange={(event) => setFocusNodeId(event.target.value)} disabled={!workspaceId || busy || nodes.length === 0}>
+          <option value="">Focus by node (neighbors)</option>
+          {nodes.map((node) => (
+            <option key={node.id} value={node.id}>
+              {node.title}
+            </option>
+          ))}
+        </select>
+        <select value={focusClusterId} onChange={(event) => setFocusClusterId(event.target.value)} disabled={!workspaceId || busy || clusters.length === 0}>
+          <option value="">Focus by cluster</option>
+          {clusters.map((cluster) => (
+            <option key={cluster.id} value={cluster.id}>
+              {cluster.title}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="form-row">
+        <input
+          value={commandQuery}
+          onChange={(event) => setCommandQuery(event.target.value)}
+          placeholder="Command palette: find node by title"
+          disabled={!workspaceId || busy}
+        />
+        {commandResults.map((node) => (
+          <button
+            key={node.id}
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setSelectedNodeId(node.id);
+              setFocusNodeId(node.id);
+              setFocusMode(true);
+            }}
+          >
+            Go: {node.title}
+          </button>
+        ))}
+      </div>
+
+      <div className="form-row">
+        <input
+          value={clusterTitle}
+          onChange={(event) => setClusterTitle(event.target.value)}
+          placeholder="Cluster title"
+          disabled={!workspaceId || busy}
+        />
+        <button type="button" onClick={createCluster} disabled={!workspaceId || busy || !clusterTitle.trim()}>
+          Create cluster
+        </button>
+        <select
+          value={selectedClusterId}
+          onChange={(event) => setSelectedClusterId(event.target.value)}
+          disabled={!workspaceId || busy || clusters.length === 0}
+        >
+          <option value="">Select cluster</option>
+          {clusters.map((cluster) => (
+            <option key={cluster.id} value={cluster.id}>
+              {cluster.title} ({cluster.nodeIds.length})
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={addSelectedNodeToCluster} disabled={!selectedNodeId || !selectedClusterId || busy}>
+          Add selected node to cluster
+        </button>
+      </div>
+
       <SyncPanel
         workspaceId={workspaceId}
         actorId={user?.id ?? null}
@@ -651,6 +856,15 @@ export function WorkspaceGraphPanel() {
             await loadWorkspaceSnapshot(workspaceId);
           }
         }}
+      />
+
+      <EvidenceReviewPanel
+        workspaceId={workspaceId}
+        nodes={nodes}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={setSelectedNodeId}
+        onNodeUpdated={upsertNode}
+        onAppendOperation={appendOperationRecord}
       />
 
       {workspaces.length > 0 && (
