@@ -1,0 +1,98 @@
+﻿:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #15202a;
+  --muted: #4f5d6b;
+  --accent: #006e6d;
+  --border: #d8dde3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", "SF Pro Text", sans-serif;
+  background: linear-gradient(165deg, #f6f7f9 0%, #eef3f6 45%, #f6f7f9 100%);
+  color: var(--text);
+}
+
+main {
+  min-height: 100vh;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 2rem;
+}
+
+section {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 20px;
+}
+
+p,
+li {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+code {
+  color: var(--accent);
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--text);
+}
+
+button {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.graph-canvas-wrap {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  height: 420px;
+}
