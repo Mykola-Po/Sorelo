@@ -3,5 +3,11 @@ export type InspectorSelection =
   | { kind: "concept"; id: string }
   | { kind: "link"; id: string }
   | { kind: "map-settings" }
-  | { kind: "create-concept" }
-  | { kind: "create-link" };
+  | { kind: "create-concept"; x?: number; y?: number }
+  | {
+      kind: "create-link";
+      sourceConceptId?: string;
+      targetConceptId?: string;
+      relationType?: "causes" | "strengthens" | "weakens" | "explains" | "contradicts";
+      strength?: number;
+    };

@@ -1,10 +1,12 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  doublePrecision,
   foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
+  pgSchema,
   pgTable,
   primaryKey,
   text,
@@ -49,6 +51,82 @@ export const scenarioRunStatusEnum = pgEnum("scenario_run_status", [
   "completed",
   "failed",
 ]);
+export const entityOriginTypeEnum = pgEnum("entity_origin_type", [
+  "manual",
+  "ai_suggested",
+  "imported",
+]);
+
+export const learningSchema = pgSchema("learning");
+
+export const sourceFragmentTypeEnum = learningSchema.enum("source_fragment_type", [
+  "manual_note",
+  "import",
+  "chat",
+  "scenario_prompt",
+  "observation",
+]);
+export const suggestionBatchTypeEnum = learningSchema.enum(
+  "suggestion_batch_type",
+  ["extract", "link", "retype", "scenario_seed", "scenario_eval"]
+);
+export const suggestionBatchStatusEnum = learningSchema.enum(
+  "suggestion_batch_status",
+  ["pending", "completed", "failed", "cancelled"]
+);
+export const suggestionTypeEnum = learningSchema.enum("suggestion_type", [
+  "create_concept",
+  "update_concept",
+  "create_link",
+  "update_link",
+  "create_scenario_seed",
+  "scenario_hypothesis",
+]);
+export const suggestionTargetEntityTypeEnum = learningSchema.enum(
+  "suggestion_target_entity_type",
+  ["concept", "link", "scenario", "map", "none"]
+);
+export const suggestionResolutionTypeEnum = learningSchema.enum(
+  "suggestion_resolution_type",
+  [
+    "accepted",
+    "rejected",
+    "edited",
+    "split",
+    "merged",
+    "retyped",
+    "relinked",
+    "confidence_changed",
+    "context_limited",
+  ]
+);
+export const mapVersionTriggerTypeEnum = learningSchema.enum(
+  "map_version_trigger_type",
+  [
+    "manual_edit",
+    "suggestion_resolution",
+    "scenario_feedback",
+    "import",
+    "system_rebuild",
+  ]
+);
+export const lineageEntityTypeEnum = learningSchema.enum("lineage_entity_type", [
+  "concept",
+  "link",
+  "scenario",
+]);
+export const lineageTransitionTypeEnum = learningSchema.enum(
+  "lineage_transition_type",
+  ["split", "merge", "rename", "retype", "archive", "restore"]
+);
+export const scenarioRunFeedbackVerdictEnum = learningSchema.enum(
+  "scenario_run_feedback_verdict",
+  ["useful", "partly_useful", "wrong"]
+);
+export const scenarioStepFeedbackVerdictEnum = learningSchema.enum(
+  "scenario_step_feedback_verdict",
+  ["correct", "overstated", "wrong_link", "missing_context", "wrong_effect"]
+);
 
 export const users = pgTable(
   "users",
@@ -226,6 +304,13 @@ export const concepts = pgTable(
     conceptType: conceptTypeEnum("concept_type").notNull().default("custom"),
     summary: varchar("summary", { length: 280 }),
     description: text("description"),
+    originType: entityOriginTypeEnum("origin_type").notNull().default("manual"),
+    originSuggestionId: uuid("origin_suggestion_id").references(
+      () => learningSuggestions.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     x: integer("x").notNull().default(160),
     y: integer("y").notNull().default(120),
     createdByUserId: uuid("created_by_user_id")
@@ -271,6 +356,13 @@ export const links = pgTable(
     relationType: relationTypeEnum("relation_type").notNull(),
     strength: integer("strength").notNull().default(1),
     description: text("description"),
+    originType: entityOriginTypeEnum("origin_type").notNull().default("manual"),
+    originSuggestionId: uuid("origin_suggestion_id").references(
+      () => learningSuggestions.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -319,6 +411,13 @@ export const scenarios = pgTable(
       .$type<string[]>()
       .default(sql`'[]'::jsonb`)
       .notNull(),
+    originType: entityOriginTypeEnum("origin_type").notNull().default("manual"),
+    originSuggestionId: uuid("origin_suggestion_id").references(
+      () => learningSuggestions.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -399,6 +498,331 @@ export const scenarioRunSteps = pgTable(
     ),
     index("scenario_run_steps_run_idx").on(table.scenarioRunId),
     index("scenario_run_steps_concept_idx").on(table.conceptId),
+  ]
+);
+
+export const learningSourceFragments = learningSchema.table(
+  "source_fragments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id").references(() => maps.id, {
+      onDelete: "set null",
+    }),
+    authorUserId: uuid("author_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    sourceType: sourceFragmentTypeEnum("source_type").notNull(),
+    rawText: text("raw_text").notNull(),
+    normalizedText: text("normalized_text").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("learning_source_fragments_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt
+    ),
+    index("learning_source_fragments_map_created_idx").on(
+      table.mapId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const learningSuggestionBatches = learningSchema.table(
+  "suggestion_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id").references(() => maps.id, {
+      onDelete: "set null",
+    }),
+    initiatedByUserId: uuid("initiated_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    batchType: suggestionBatchTypeEnum("batch_type").notNull(),
+    modelName: varchar("model_name", { length: 160 }).notNull(),
+    modelVersion: varchar("model_version", { length: 64 }).notNull(),
+    promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+    inputHash: varchar("input_hash", { length: 128 }).notNull(),
+    status: suggestionBatchStatusEnum("status").notNull().default("pending"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+  },
+  (table) => [
+    index("learning_suggestion_batches_workspace_started_idx").on(
+      table.workspaceId,
+      table.startedAt
+    ),
+    index("learning_suggestion_batches_map_started_idx").on(
+      table.mapId,
+      table.startedAt
+    ),
+    index("learning_suggestion_batches_type_started_idx").on(
+      table.batchType,
+      table.startedAt
+    ),
+    index("learning_suggestion_batches_input_hash_idx").on(table.inputHash),
+  ]
+);
+
+export const learningSuggestions = learningSchema.table(
+  "suggestions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => learningSuggestionBatches.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id").references(() => maps.id, {
+      onDelete: "set null",
+    }),
+    sourceFragmentId: uuid("source_fragment_id").references(
+      () => learningSourceFragments.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    suggestionType: suggestionTypeEnum("suggestion_type").notNull(),
+    targetEntityType: suggestionTargetEntityTypeEnum("target_entity_type")
+      .notNull()
+      .default("none"),
+    targetEntityId: uuid("target_entity_id"),
+    proposedPayload: jsonb("proposed_payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    rationale: text("rationale"),
+    confidence: doublePrecision("confidence"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("learning_suggestions_batch_created_idx").on(
+      table.batchId,
+      table.createdAt
+    ),
+    index("learning_suggestions_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt
+    ),
+    index("learning_suggestions_map_created_idx").on(
+      table.mapId,
+      table.createdAt
+    ),
+    index("learning_suggestions_target_entity_idx").on(
+      table.targetEntityType,
+      table.targetEntityId
+    ),
+  ]
+);
+
+export const learningSuggestionResolutions = learningSchema.table(
+  "suggestion_resolutions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    suggestionId: uuid("suggestion_id")
+      .notNull()
+      .references(() => learningSuggestions.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id").references(() => maps.id, {
+      onDelete: "set null",
+    }),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    resolutionType: suggestionResolutionTypeEnum("resolution_type").notNull(),
+    beforePayload: jsonb("before_payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    afterPayload: jsonb("after_payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    reasonText: text("reason_text"),
+    latencyMs: integer("latency_ms"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_suggestion_resolutions_suggestion_key").on(
+      table.suggestionId
+    ),
+    index("learning_suggestion_resolutions_workspace_resolved_idx").on(
+      table.workspaceId,
+      table.resolvedAt
+    ),
+    index("learning_suggestion_resolutions_map_resolved_idx").on(
+      table.mapId,
+      table.resolvedAt
+    ),
+    index("learning_suggestion_resolutions_type_resolved_idx").on(
+      table.resolutionType,
+      table.resolvedAt
+    ),
+  ]
+);
+
+export const learningMapVersions = learningSchema.table(
+  "map_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, { onDelete: "cascade" }),
+    versionNo: integer("version_no").notNull(),
+    triggerType: mapVersionTriggerTypeEnum("trigger_type").notNull(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    snapshotJson: jsonb("snapshot_json")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    diffJson: jsonb("diff_json")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_map_versions_map_version_key").on(
+      table.mapId,
+      table.versionNo
+    ),
+    index("learning_map_versions_map_version_desc_idx").on(
+      table.mapId,
+      table.versionNo
+    ),
+    index("learning_map_versions_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const learningEntityLineage = learningSchema.table(
+  "entity_lineage",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, { onDelete: "cascade" }),
+    entityType: lineageEntityTypeEnum("entity_type").notNull(),
+    fromEntityId: uuid("from_entity_id"),
+    toEntityId: uuid("to_entity_id"),
+    transitionType: lineageTransitionTypeEnum("transition_type").notNull(),
+    causedByResolutionId: uuid("caused_by_resolution_id").references(
+      () => learningSuggestionResolutions.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("learning_entity_lineage_from_idx").on(
+      table.mapId,
+      table.entityType,
+      table.fromEntityId
+    ),
+    index("learning_entity_lineage_to_idx").on(
+      table.mapId,
+      table.entityType,
+      table.toEntityId
+    ),
+  ]
+);
+
+export const learningScenarioRunFeedback = learningSchema.table(
+  "scenario_run_feedback",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scenarioRunId: uuid("scenario_run_id")
+      .notNull()
+      .references(() => scenarioRuns.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, { onDelete: "cascade" }),
+    reviewerUserId: uuid("reviewer_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    overallScore: integer("overall_score").notNull(),
+    verdict: scenarioRunFeedbackVerdictEnum("verdict").notNull(),
+    feedbackText: text("feedback_text"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_scenario_run_feedback_run_reviewer_key").on(
+      table.scenarioRunId,
+      table.reviewerUserId
+    ),
+  ]
+);
+
+export const learningScenarioStepFeedback = learningSchema.table(
+  "scenario_step_feedback",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scenarioRunStepId: uuid("scenario_run_step_id")
+      .notNull()
+      .references(() => scenarioRunSteps.id, { onDelete: "cascade" }),
+    scenarioRunId: uuid("scenario_run_id")
+      .notNull()
+      .references(() => scenarioRuns.id, { onDelete: "cascade" }),
+    verdict: scenarioStepFeedbackVerdictEnum("verdict").notNull(),
+    correctedExplanation: text("corrected_explanation"),
+    correctedScore: integer("corrected_score"),
+    reviewerUserId: uuid("reviewer_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_scenario_step_feedback_step_reviewer_key").on(
+      table.scenarioRunStepId,
+      table.reviewerUserId
+    ),
   ]
 );
 
@@ -602,6 +1026,10 @@ export const conceptRelations = relations(concepts, ({ many, one }) => ({
     fields: [concepts.createdByUserId],
     references: [users.id],
   }),
+  originSuggestion: one(learningSuggestions, {
+    fields: [concepts.originSuggestionId],
+    references: [learningSuggestions.id],
+  }),
   outgoingLinks: many(links, { relationName: "outgoing_links" }),
   incomingLinks: many(links, { relationName: "incoming_links" }),
   scenarioSteps: many(scenarioRunSteps),
@@ -630,6 +1058,10 @@ export const linkRelations = relations(links, ({ one }) => ({
     fields: [links.createdByUserId],
     references: [users.id],
   }),
+  originSuggestion: one(learningSuggestions, {
+    fields: [links.originSuggestionId],
+    references: [learningSuggestions.id],
+  }),
 }));
 
 export const scenarioRelations = relations(scenarios, ({ many, one }) => ({
@@ -644,6 +1076,10 @@ export const scenarioRelations = relations(scenarios, ({ many, one }) => ({
   creator: one(users, {
     fields: [scenarios.createdByUserId],
     references: [users.id],
+  }),
+  originSuggestion: one(learningSuggestions, {
+    fields: [scenarios.originSuggestionId],
+    references: [learningSuggestions.id],
   }),
   runs: many(scenarioRuns),
 }));
@@ -685,6 +1121,166 @@ export const scenarioRunStepRelations = relations(
     viaLink: one(links, {
       fields: [scenarioRunSteps.viaLinkId],
       references: [links.id],
+    }),
+  })
+);
+
+export const learningSourceFragmentRelations = relations(
+  learningSourceFragments,
+  ({ many, one }) => ({
+    workspace: one(workspaces, {
+      fields: [learningSourceFragments.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningSourceFragments.mapId],
+      references: [maps.id],
+    }),
+    author: one(users, {
+      fields: [learningSourceFragments.authorUserId],
+      references: [users.id],
+    }),
+    suggestions: many(learningSuggestions),
+  })
+);
+
+export const learningSuggestionBatchRelations = relations(
+  learningSuggestionBatches,
+  ({ many, one }) => ({
+    workspace: one(workspaces, {
+      fields: [learningSuggestionBatches.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningSuggestionBatches.mapId],
+      references: [maps.id],
+    }),
+    initiator: one(users, {
+      fields: [learningSuggestionBatches.initiatedByUserId],
+      references: [users.id],
+    }),
+    suggestions: many(learningSuggestions),
+  })
+);
+
+export const learningSuggestionRelations = relations(
+  learningSuggestions,
+  ({ many, one }) => ({
+    batch: one(learningSuggestionBatches, {
+      fields: [learningSuggestions.batchId],
+      references: [learningSuggestionBatches.id],
+    }),
+    workspace: one(workspaces, {
+      fields: [learningSuggestions.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningSuggestions.mapId],
+      references: [maps.id],
+    }),
+    sourceFragment: one(learningSourceFragments, {
+      fields: [learningSuggestions.sourceFragmentId],
+      references: [learningSourceFragments.id],
+    }),
+    resolutions: many(learningSuggestionResolutions),
+  })
+);
+
+export const learningSuggestionResolutionRelations = relations(
+  learningSuggestionResolutions,
+  ({ many, one }) => ({
+    suggestion: one(learningSuggestions, {
+      fields: [learningSuggestionResolutions.suggestionId],
+      references: [learningSuggestions.id],
+    }),
+    workspace: one(workspaces, {
+      fields: [learningSuggestionResolutions.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningSuggestionResolutions.mapId],
+      references: [maps.id],
+    }),
+    actor: one(users, {
+      fields: [learningSuggestionResolutions.actorUserId],
+      references: [users.id],
+    }),
+    lineageEntries: many(learningEntityLineage),
+  })
+);
+
+export const learningMapVersionRelations = relations(
+  learningMapVersions,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [learningMapVersions.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningMapVersions.mapId],
+      references: [maps.id],
+    }),
+    actor: one(users, {
+      fields: [learningMapVersions.actorUserId],
+      references: [users.id],
+    }),
+  })
+);
+
+export const learningEntityLineageRelations = relations(
+  learningEntityLineage,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [learningEntityLineage.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningEntityLineage.mapId],
+      references: [maps.id],
+    }),
+    causedByResolution: one(learningSuggestionResolutions, {
+      fields: [learningEntityLineage.causedByResolutionId],
+      references: [learningSuggestionResolutions.id],
+    }),
+  })
+);
+
+export const learningScenarioRunFeedbackRelations = relations(
+  learningScenarioRunFeedback,
+  ({ one }) => ({
+    scenarioRun: one(scenarioRuns, {
+      fields: [learningScenarioRunFeedback.scenarioRunId],
+      references: [scenarioRuns.id],
+    }),
+    workspace: one(workspaces, {
+      fields: [learningScenarioRunFeedback.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningScenarioRunFeedback.mapId],
+      references: [maps.id],
+    }),
+    reviewer: one(users, {
+      fields: [learningScenarioRunFeedback.reviewerUserId],
+      references: [users.id],
+    }),
+  })
+);
+
+export const learningScenarioStepFeedbackRelations = relations(
+  learningScenarioStepFeedback,
+  ({ one }) => ({
+    scenarioRunStep: one(scenarioRunSteps, {
+      fields: [learningScenarioStepFeedback.scenarioRunStepId],
+      references: [scenarioRunSteps.id],
+    }),
+    scenarioRun: one(scenarioRuns, {
+      fields: [learningScenarioStepFeedback.scenarioRunId],
+      references: [scenarioRuns.id],
+    }),
+    reviewer: one(users, {
+      fields: [learningScenarioStepFeedback.reviewerUserId],
+      references: [users.id],
     }),
   })
 );
@@ -736,5 +1332,27 @@ export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type ConceptType = (typeof conceptTypeEnum.enumValues)[number];
 export type RelationType = (typeof relationTypeEnum.enumValues)[number];
+export type EntityOriginType = (typeof entityOriginTypeEnum.enumValues)[number];
 export type ScenarioRunStatus =
   (typeof scenarioRunStatusEnum.enumValues)[number];
+export type SourceFragmentType =
+  (typeof sourceFragmentTypeEnum.enumValues)[number];
+export type SuggestionBatchType =
+  (typeof suggestionBatchTypeEnum.enumValues)[number];
+export type SuggestionBatchStatus =
+  (typeof suggestionBatchStatusEnum.enumValues)[number];
+export type SuggestionType = (typeof suggestionTypeEnum.enumValues)[number];
+export type SuggestionTargetEntityType =
+  (typeof suggestionTargetEntityTypeEnum.enumValues)[number];
+export type SuggestionResolutionType =
+  (typeof suggestionResolutionTypeEnum.enumValues)[number];
+export type MapVersionTriggerType =
+  (typeof mapVersionTriggerTypeEnum.enumValues)[number];
+export type LineageEntityType =
+  (typeof lineageEntityTypeEnum.enumValues)[number];
+export type LineageTransitionType =
+  (typeof lineageTransitionTypeEnum.enumValues)[number];
+export type ScenarioRunFeedbackVerdict =
+  (typeof scenarioRunFeedbackVerdictEnum.enumValues)[number];
+export type ScenarioStepFeedbackVerdict =
+  (typeof scenarioStepFeedbackVerdictEnum.enumValues)[number];

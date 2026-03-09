@@ -20,6 +20,7 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
   const { workspaceSlug } = await params;
   const { access } = await requireWorkspaceAccess(workspaceSlug);
   const data = await getMapsHomeData(access.workspace.id);
+  const hasMaps = data.maps.length > 0;
 
   return (
     <div className="page-stack maps-home-page">
@@ -28,62 +29,77 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
         description="A map turns scattered notes into an explainable structure of Concepts, Links, and scenario paths."
       />
 
-      <div className="maps-home-grid">
+      {!hasMaps ? (
         <SectionCard
-          title="Create map"
-          description="Start with one person, one map, and the first meaningful Concept."
+          title="Create your first map"
+          description="Start with one person, then place the first Concept directly on the canvas."
         >
-          <CreateMapForm workspaceSlug={workspaceSlug} />
+          <Grid columns={{ initial: "1", md: "2" }} gap="5">
+            <CreateMapForm workspaceSlug={workspaceSlug} />
+            <Flex direction="column" gap="3">
+              <Text weight="medium">What happens next</Text>
+              <Text color="gray" size="2">
+                1. Create one map for one person.
+              </Text>
+              <Text color="gray" size="2">
+                2. Place the first Concept on the canvas.
+              </Text>
+              <Text color="gray" size="2">
+                3. Add the second Concept, connect the first Link, then run a Scenario.
+              </Text>
+            </Flex>
+          </Grid>
         </SectionCard>
+      ) : (
+        <div className="maps-home-grid">
+          <SectionCard
+            title="Create map"
+            description="Start with one person, one map, and the first meaningful Concept."
+          >
+            <CreateMapForm workspaceSlug={workspaceSlug} />
+          </SectionCard>
 
-        <SectionCard
-          title="Recent scenario runs"
-          description="Recent checks across this workspace stay inside a bounded panel."
-          className="scroll-card"
-        >
-          {data.recentRuns.length === 0 ? (
-            <EmptyState
-              title="No scenario runs yet"
-              description="Runs appear after someone tests a situation against a map. Each run keeps an ordered explanation path."
-            />
-          ) : (
-            <ScrollArea type="auto" scrollbars="vertical" className="panel-scroll">
-              <Grid gap="3">
-                {data.recentRuns.map((run) => (
-                  <Card key={run.id} variant="surface">
-                    <Flex direction="column" gap="2">
-                      <Flex align="start" justify="between" gap="3">
-                        <Flex direction="column" gap="1">
-                          <Text weight="medium">{run.map.title}</Text>
-                          <Text color="gray" size="2">
-                            {run.triggerText}
-                          </Text>
+          <SectionCard
+            title="Recent scenario runs"
+            description="Recent checks across this workspace stay inside a bounded panel."
+            className="scroll-card"
+          >
+            {data.recentRuns.length === 0 ? (
+              <EmptyState
+                title="No scenario runs yet"
+                description="Runs appear after someone tests a situation against a map. Each run keeps an ordered explanation path."
+              />
+            ) : (
+              <ScrollArea type="auto" scrollbars="vertical" className="panel-scroll">
+                <Grid gap="3">
+                  {data.recentRuns.map((run) => (
+                    <Card key={run.id} variant="surface">
+                      <Flex direction="column" gap="2">
+                        <Flex align="start" justify="between" gap="3">
+                          <Flex direction="column" gap="1">
+                            <Text weight="medium">{run.map.title}</Text>
+                            <Text color="gray" size="2">
+                              {run.triggerText}
+                            </Text>
+                          </Flex>
+                          <StatusBadge status={run.status} />
                         </Flex>
-                        <StatusBadge status={run.status} />
+                        <Text color="gray" size="2">
+                          {run.starter.fullName ?? run.starter.email} | {run.createdAt.toLocaleString()}
+                        </Text>
                       </Flex>
-                      <Text color="gray" size="2">
-                        {run.starter.fullName ?? run.starter.email} ·{" "}
-                        {run.createdAt.toLocaleString()}
-                      </Text>
-                    </Flex>
-                  </Card>
-                ))}
-              </Grid>
-            </ScrollArea>
-          )}
-        </SectionCard>
+                    </Card>
+                  ))}
+                </Grid>
+              </ScrollArea>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Workspace maps"
-          description="Open an existing map or create the first one for this workspace."
-          className="maps-list-card"
-        >
-          {data.maps.length === 0 ? (
-            <EmptyState
-              title="No maps yet"
-              description="A person's model begins with the first Concept. Create a map, then add Concepts and Links until the structure becomes explainable."
-            />
-          ) : (
+          <SectionCard
+            title="Workspace maps"
+            description="Open an existing map or create a new one for this workspace."
+            className="maps-list-card"
+          >
             <ScrollArea type="auto" scrollbars="vertical" className="panel-scroll">
               <Grid gap="3">
                 {data.maps.map((map) => (
@@ -114,9 +130,9 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
                 ))}
               </Grid>
             </ScrollArea>
-          )}
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
+      )}
     </div>
   );
 }
