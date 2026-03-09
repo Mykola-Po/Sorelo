@@ -1,62 +1,95 @@
-﻿# Sorela V1
+# Sorelo
 
-Initial greenfield foundation based on:
-- final development specification (2026-03-06)
-- greenfield DB deployment order (2026-03-06)
+Current repository codename is still `sorela`, but the canonical product name is `Sorelo`.
+
+Sorelo is a visual tool for building an explainable map of a person through Concepts, Links, the Inspector, and Scenarios.
+
+## Product baseline
+
+- Product model: Concepts, Links, Inspector, Scenarios
+- Auth: Google OAuth through Supabase
+- Tenancy: workspace-first
+- Current infrastructure slice: workspaces, memberships, activity, and temporary project/task flows
+- UI baseline: Radix-only component system with tokenized styling
+- UX rule: no full-page scrolling in the product shell; long content scrolls inside bounded panels
+
+## Product source of truth
+
+- [Sorelo source of truth](/C:/Users/matve/.codex/worktrees/56f8/Sorela/docs/product/sorelo-source-of-truth.md)
+- [Sorelo content documentation framework](/C:/Users/matve/.codex/worktrees/56f8/Sorela/docs/content/sorelo-content-documentation-framework.md)
+
+## Current architectural position
+
+The infrastructure foundation remains valid:
+
+- auth
+- user identity
+- workspace tenancy
+- permissions
+- database schema
+- deployment baseline
+
+The next domain rewrite should pivot the product layer away from temporary `projects/tasks` surfaces and toward Sorelo-native slices:
+
+- concepts
+- links
+- inspector
+- scenarios
+- evidence
+- checks
 
 ## Stack
-- Next.js 14 + React 18 + TypeScript
-- Zustand (canonical client state)
-- Dexie (IndexedDB local-first persistence)
-- Supabase (Auth/Postgres/RLS/Realtime/Edge Functions)
-- Zod validation
-- React Flow adapter layer
 
-## Quick start
+- Next.js App Router
+- React 19
+- TypeScript strict mode
+- Radix Themes
+- Supabase Auth
+- Drizzle ORM + SQL migrations
+- Zod runtime validation
+- Vitest
+- Playwright
+
+## Scripts
+
 ```bash
-npm install
 npm run dev
+npm run lint
+npm run typecheck
+npm run test
+npm run test:e2e
+npm run build
+npm run format
+npm run db:generate
 ```
 
 ## Environment
-Copy `.env.example` to `.env.local` and set:
+
+Copy `.env.example` into a local env file and provide:
+
+- `NEXT_PUBLIC_APP_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `DATABASE_URL`
+- `SUPABASE_SECRET_KEY`
 
-## DB migrations
-Order is fixed and already split as:
-1. `0001_extensions_and_enums.sql`
-2. `0002_functions_and_profiles.sql`
-3. `0003_workspaces_and_members.sql`
-4. `0004_graph_core.sql`
-5. `0005_evidence_scenarios_and_sync.sql`
-6. `0006_sharing_audit_and_flags.sql`
-7. `0007_semantic_chunks.sql`
-8. `0008_indexes_and_triggers.sql`
-9. `0009_rls_policies.sql`
-10. `0010_seed_and_dev_bootstrap.sql`
+The env contract is validated with Zod. Missing required values should fail fast.
 
-Apply in order via Supabase migration workflow.
+## Structure
 
-## Cloud connect (clean greenfield)
-If old MVP infra should be discarded, create a fresh Supabase project and a fresh Vercel project.
+```text
+app/                    Routes, layouts, server page composition
+src/features/           Product domain slices
+src/shared/             Shared auth, db, config, validation, and UI primitives
+supabase/migrations/    SQL schema and RLS
+tests/unit/             Unit tests
+tests/e2e/              Browser smoke coverage
+```
 
-1. Login Supabase CLI:
-```bash
-npx supabase login
-```
-2. Link this repo to your Supabase project (CLI will ask `project-ref`):
-```bash
-npm run db:link
-```
-3. Push migrations:
-```bash
-npm run db:push
-```
-4. Set frontend env values in Vercel project:
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-5. Link and deploy on Vercel:
-```bash
-npx vercel link
-npx vercel --prod
-```
+## UX principles
+
+- Keep one stable shell for authenticated work.
+- Prefer obvious actions over decorative chrome.
+- Use local scroll regions for tables, task lists, and activity streams.
+- Keep route logic server-first and interactive state local.
+- Keep terminology stable across product, help, onboarding, and marketing.
