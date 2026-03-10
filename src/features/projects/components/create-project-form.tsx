@@ -1,11 +1,16 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 
 import { createProjectAction } from "@/features/projects/actions";
+import {
+  FormErrorMessage,
+  FormStack,
+  SubmitButton,
+  TextAreaField,
+  TextInputField,
+} from "@/shared/ui/components/form-controls";
 import type { ActionState } from "@/shared/validation/action-state";
-import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 
 const initialState: ActionState<"name" | "slug" | "description"> = {
   status: "idle",
@@ -24,37 +29,32 @@ export function CreateProjectForm({ workspaceSlug }: CreateProjectFormProps) {
   return (
     <form action={formAction}>
       <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-      <Flex direction="column" gap="4">
-        <InlineFormField
+      <FormStack>
+        <TextInputField
           label="Project name"
           error={state.fieldErrors?.name?.[0]}
-        >
-          <TextField.Root name="name" placeholder="Pilot onboarding" size="3" />
-        </InlineFormField>
-        <InlineFormField
+          name="name"
+          placeholder="Pilot onboarding"
+          size="3"
+        />
+        <TextInputField
           label="Project slug"
           error={state.fieldErrors?.slug?.[0]}
-        >
-          <TextField.Root name="slug" placeholder="pilot-onboarding" size="3" />
-        </InlineFormField>
-        <InlineFormField
+          name="slug"
+          placeholder="pilot-onboarding"
+          size="3"
+        />
+        <TextAreaField
           label="Description"
           error={state.fieldErrors?.description?.[0]}
-        >
-          <TextArea
-            name="description"
-            placeholder="Scope, owners, and success markers."
-          />
-        </InlineFormField>
-        {state.message ? (
-          <Text color="red" size="2">
-            {state.message}
-          </Text>
-        ) : null}
-        <Button type="submit" loading={isPending}>
+          name="description"
+          placeholder="Scope, owners, and success markers."
+        />
+        <FormErrorMessage message={state.message} />
+        <SubmitButton loading={isPending}>
           Create project
-        </Button>
-      </Flex>
+        </SubmitButton>
+      </FormStack>
     </form>
   );
 }

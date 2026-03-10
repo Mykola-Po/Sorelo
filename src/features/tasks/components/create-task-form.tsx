@@ -1,11 +1,16 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 
 import { createTaskAction } from "@/features/tasks/actions";
+import {
+  FormErrorMessage,
+  FormStack,
+  SubmitButton,
+  TextAreaField,
+  TextInputField,
+} from "@/shared/ui/components/form-controls";
 import type { ActionState } from "@/shared/validation/action-state";
-import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 
 const initialState: ActionState<"title" | "description"> = { status: "idle" };
 
@@ -27,35 +32,25 @@ export function CreateTaskForm({
     <form action={formAction}>
       <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
       <input type="hidden" name="projectId" value={projectId} />
-      <Flex direction="column" gap="4">
-        <InlineFormField
+      <FormStack>
+        <TextInputField
           label="Task title"
           error={state.fieldErrors?.title?.[0]}
-        >
-          <TextField.Root
-            name="title"
-            placeholder="Call pilot customer"
-            size="3"
-          />
-        </InlineFormField>
-        <InlineFormField
+          name="title"
+          placeholder="Call pilot customer"
+          size="3"
+        />
+        <TextAreaField
           label="Description"
           error={state.fieldErrors?.description?.[0]}
-        >
-          <TextArea
-            name="description"
-            placeholder="Capture the exact next action with enough context to execute."
-          />
-        </InlineFormField>
-        {state.message ? (
-          <Text color="red" size="2">
-            {state.message}
-          </Text>
-        ) : null}
-        <Button type="submit" loading={isPending}>
+          name="description"
+          placeholder="Capture the exact next action with enough context to execute."
+        />
+        <FormErrorMessage message={state.message} />
+        <SubmitButton loading={isPending}>
           Add task
-        </Button>
-      </Flex>
+        </SubmitButton>
+      </FormStack>
     </form>
   );
 }

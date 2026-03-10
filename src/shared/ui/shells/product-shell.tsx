@@ -4,8 +4,10 @@ import {
   Button,
   DropdownMenu,
   Flex,
+  IconButton,
   Text,
 } from "@radix-ui/themes";
+import { GearIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -87,14 +89,16 @@ export function ProductShell({
               {activeWorkspace ? (
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger>
-                    <Button
+                    <IconButton
                       type="button"
-                      size="1"
+                      size="2"
                       variant="surface"
                       color="gray"
+                      radius="full"
+                      aria-label={messages.shell.settings}
                     >
-                      {messages.shell.settings}
-                    </Button>
+                      <GearIcon width="16" height="16" />
+                    </IconButton>
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end">
                     <DropdownMenu.Item asChild>
@@ -110,28 +114,54 @@ export function ProductShell({
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>
               ) : null}
-              <Flex align="center" gap="2" className="topbar-user">
-                <Avatar
-                  fallback={
-                    user.fullName?.[0] ?? user.email[0]?.toUpperCase() ?? "S"
-                  }
-                  size="2"
-                  radius="full"
-                />
-                <Flex direction="column" gap="1">
-                  <Text size="1" weight="medium">
-                    {user.fullName ?? messages.shell.signedInUser}
-                  </Text>
-                  <Text size="1" color="gray">
-                    {user.email}
-                  </Text>
-                </Flex>
-              </Flex>
-              <form action={signOutAction}>
-                <Button type="submit" variant="soft" color="gray" size="1">
-                  {messages.shell.signOut}
-                </Button>
-              </form>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  <IconButton
+                    type="button"
+                    size="2"
+                    variant="surface"
+                    color="gray"
+                    radius="full"
+                    className="profile-trigger"
+                    aria-label={user.fullName ?? messages.shell.signedInUser}
+                  >
+                    <Avatar
+                      fallback={
+                        user.fullName?.[0] ?? user.email[0]?.toUpperCase() ?? "S"
+                      }
+                      size="2"
+                      radius="full"
+                    />
+                  </IconButton>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end" className="profile-menu-content">
+                  <Flex align="center" gap="2" className="profile-menu-header">
+                    <Avatar
+                      fallback={
+                        user.fullName?.[0] ?? user.email[0]?.toUpperCase() ?? "S"
+                      }
+                      size="3"
+                      radius="full"
+                    />
+                    <Flex direction="column" gap="1">
+                      <Text size="1" weight="medium">
+                        {user.fullName ?? messages.shell.signedInUser}
+                      </Text>
+                      <Text size="1" color="gray">
+                        {user.email}
+                      </Text>
+                    </Flex>
+                  </Flex>
+                  <DropdownMenu.Separator />
+                  <Box className="profile-menu-actions">
+                    <form action={signOutAction}>
+                      <Button type="submit" variant="soft" color="gray" size="1">
+                        {messages.shell.signOut}
+                      </Button>
+                    </form>
+                  </Box>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
             </Flex>
           </Flex>
         </Box>

@@ -4,6 +4,10 @@ import { useActionState } from "react";
 import { Flex, Select, Text } from "@radix-ui/themes";
 
 import { updateMemberRoleAction } from "@/features/workspace/actions";
+import {
+  FormErrorMessage,
+  SubmitButton,
+} from "@/shared/ui/components/form-controls";
 import type { ActionState } from "@/shared/validation/action-state";
 
 const initialState: ActionState<"role"> = { status: "idle" };
@@ -40,12 +44,10 @@ export function MemberRoleForm({
             <Select.Item value="member">Member</Select.Item>
           </Select.Content>
         </Select.Root>
-        <button type="submit">Update role</button>
-        {state.message ? (
-          <Text color="red" size="1">
-            {state.message}
-          </Text>
-        ) : null}
+        <SubmitButton size="1" variant="soft" color="gray">
+          Update role
+        </SubmitButton>
+        <FormErrorMessage message={state.message} size="1" />
       </Flex>
     </form>
   );
