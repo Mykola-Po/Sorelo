@@ -1,0 +1,84 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 4998 >>
+stream
+BT /F1 20.00 Tf 1 0 0 1 48.00 748.00 Tm (Sorelo App Summary) Tj ET
+BT /F1 9.00 Tf 1 0 0 1 48.00 724.00 Tm (One-page repo-based brief | Generated on 2026-03-10) Tj ET
+BT /F1 12.00 Tf 1 0 0 1 48.00 704.00 Tm (What It Is) Tj ET
+BT /F1 9.60 Tf 1 0 0 1 48.00 689.00 Tm (Sorelo is a Next.js app for building an explainable map of a person with Concepts, Links, the Inspector, and) Tj ET
+BT /F1 9.60 Tf 1 0 0 1 48.00 677.00 Tm (deterministic Scenarios.) Tj ET
+BT /F1 9.60 Tf 1 0 0 1 48.00 665.00 Tm (It combines a canvas-first interface with workspace tenancy so users can model, inspect, and test reaction paths.) Tj ET
+BT /F1 12.00 Tf 1 0 0 1 48.00 646.00 Tm (Who It Is For) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 631.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 631.00 Tm (Primary persona: people who need a structured, explainable model of a person instead of fragmented observations.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 620.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 620.00 Tm (Specific profession or industry persona: Not found in repo.) Tj ET
+BT /F1 12.00 Tf 1 0 0 1 48.00 602.00 Tm (What It Does) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 587.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 587.00 Tm (Supports Google OAuth sign-in via Supabase plus workspace-based access control.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 576.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 576.00 Tm (Creates and manages workspaces and multiple maps per workspace.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 565.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 565.00 Tm (Provides map canvas editing: create concepts, connect links, and drag concept positions.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 554.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 554.00 Tm (Shows Inspector details for selected concepts and links, including editable metadata.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 543.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 543.00 Tm (Runs deterministic scenario simulations and persists step-by-step run results.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 532.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 532.00 Tm (Shows recent scenario runs and map-level activity context inside the product shell.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 521.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 521.00 Tm (Exposes protected internal learning APIs for suggestions, fragments, and resolutions.) Tj ET
+BT /F1 12.00 Tf 1 0 0 1 48.00 503.00 Tm (How It Works \(Architecture\)) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 488.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 488.00 Tm (Components: Next.js App Router pages \(`app/`\), `ProductShell`/`MarketingShell`, `MapWorkspace`, `GraphCanvasRuntime`,) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 477.00 Tm (`InspectorPanel`, and `ScenarioPanel`.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 466.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 466.00 Tm (Services: route handlers in `app/api/maps/*` and `app/api/internal/learning/*` with Zod validation and access checks.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 455.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 455.00 Tm (Domain layer: `src/features/*/commands.ts` and `queries.ts` modules implement map, concept, link, scenario, workspace, and) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 444.00 Tm (learning behavior.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 433.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 433.00 Tm (Data/auth: Supabase SSR auth plus session sync into Postgres via Drizzle ORM; schema and migrations live in) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 422.00 Tm (`src/shared/db/schema.ts` and `supabase/migrations/`.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 411.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 411.00 Tm (Data flow: browser requests viewport snapshots from `/api/maps/:mapId/graph`; mutation routes update entities and graph) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 400.00 Tm (revision; scenario runs use a rule-based engine and write `scenario_runs` + `scenario_run_steps`.) Tj ET
+BT /F1 12.00 Tf 1 0 0 1 48.00 382.00 Tm (How To Run \(Minimal\)) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 367.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 367.00 Tm (Install dependencies: `npm install` \(or `npm.cmd install` on restricted PowerShell setups\).) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 356.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 356.00 Tm (Create local env file from `.env.example` to `.env.local` and fill required keys.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 345.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 345.00 Tm (Start the dev server with `npm run dev`.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 334.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 334.00 Tm (Open `http://localhost:3000` and sign in with Google.) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 59.00 323.00 Tm (- ) Tj ET
+BT /F1 9.40 Tf 1 0 0 1 70.00 323.00 Tm (First-time local database bootstrap/migration command: Not found in repo \(scripts list `db:generate` and `db:check`\).) Tj ET
+BT /F1 8.40 Tf 1 0 0 1 48.00 310.00 Tm (Evidence source: README.md, docs/product/*, app/*, src/features/*, src/shared/*, supabase/migrations/*.) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+5361
+%%EOF
