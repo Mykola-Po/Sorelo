@@ -15,8 +15,12 @@ import {
   workspaceMapsPath,
   workspaceMembersPath,
 } from "@/shared/config/routes";
+import type { SupportedLocale } from "@/shared/i18n/config";
+import { getAppShellMessages } from "@/shared/i18n/messages/app-shell";
+import { PathnameLocaleSwitcher } from "@/shared/ui/components/pathname-locale-switcher";
 
 type ProductShellProps = {
+  locale: SupportedLocale;
   user: {
     fullName: string | null;
     email: string;
@@ -32,11 +36,13 @@ type ProductShellProps = {
 };
 
 export function ProductShell({
+  locale,
   user,
   workspaces,
   activeWorkspaceSlug,
   children,
 }: ProductShellProps) {
+  const messages = getAppShellMessages(locale);
   const activeWorkspace = workspaces.find(
     (workspace) => workspace.slug === activeWorkspaceSlug
   );
@@ -58,7 +64,7 @@ export function ProductShell({
                   Sorelo
                 </Text>
                 <Text color="gray" size="1" className="brand-subtitle">
-                  Explainable human maps
+                  {messages.shell.brandNote}
                 </Text>
               </Flex>
             </Flex>
@@ -67,6 +73,7 @@ export function ProductShell({
               <WorkspaceSwitcher
                 workspaces={workspaces}
                 activeWorkspaceSlug={activeWorkspaceSlug}
+                ariaLabel={messages.shell.workspaceSwitcherLabel}
               />
             </Flex>
 
@@ -76,6 +83,7 @@ export function ProductShell({
               wrap="wrap"
               className="product-topbar-right"
             >
+              <PathnameLocaleSwitcher currentLocale={locale} />
               {activeWorkspace ? (
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger>
@@ -85,18 +93,18 @@ export function ProductShell({
                       variant="surface"
                       color="gray"
                     >
-                      Settings
+                      {messages.shell.settings}
                     </Button>
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end">
                     <DropdownMenu.Item asChild>
                       <Link href={workspaceMapsPath(activeWorkspace.slug)}>
-                        Maps
+                        {messages.shell.maps}
                       </Link>
                     </DropdownMenu.Item>
                     <DropdownMenu.Item asChild>
                       <Link href={workspaceMembersPath(activeWorkspace.slug)}>
-                        Members
+                        {messages.shell.members}
                       </Link>
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
@@ -112,7 +120,7 @@ export function ProductShell({
                 />
                 <Flex direction="column" gap="1">
                   <Text size="1" weight="medium">
-                    {user.fullName ?? "Signed in user"}
+                    {user.fullName ?? messages.shell.signedInUser}
                   </Text>
                   <Text size="1" color="gray">
                     {user.email}
@@ -121,7 +129,7 @@ export function ProductShell({
               </Flex>
               <form action={signOutAction}>
                 <Button type="submit" variant="soft" color="gray" size="1">
-                  Sign out
+                  {messages.shell.signOut}
                 </Button>
               </form>
             </Flex>

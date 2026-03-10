@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { Button, Card, Flex, Grid, ScrollArea, Text } from "@radix-ui/themes";
 
@@ -5,6 +6,13 @@ import { CreateMapForm } from "@/features/maps/components/create-map-form";
 import { getMapsHomeData } from "@/features/maps/queries";
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 import { workspaceMapPath } from "@/shared/config/routes";
+import {
+  getIntlLocale,
+  LOCALE_COOKIE,
+  resolveSupportedLocale,
+} from "@/shared/i18n/config";
+import { getAppShellMessages } from "@/shared/i18n/messages/app-shell";
+import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 import { EmptyState } from "@/shared/ui/components/empty-state";
 import { PageHeader } from "@/shared/ui/components/page-header";
 import { SectionCard } from "@/shared/ui/components/section-card";
@@ -19,33 +27,38 @@ type MapsHomePageProps = {
 export default async function MapsHomePage({ params }: MapsHomePageProps) {
   const { workspaceSlug } = await params;
   const { access } = await requireWorkspaceAccess(workspaceSlug);
+  const cookieStore = await cookies();
+  const locale = resolveSupportedLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const messages = getAppShellMessages(locale);
+  const mapMessages = getMapWorkspaceMessages(locale);
+  const intlLocale = getIntlLocale(locale);
   const data = await getMapsHomeData(access.workspace.id);
   const hasMaps = data.maps.length > 0;
 
   return (
     <div className="page-stack maps-home-page">
       <PageHeader
-        title="Maps"
-        description="A map turns scattered notes into an explainable structure of Concepts, Links, and scenario paths."
+        title={messages.mapsHome.title}
+        description={messages.mapsHome.description}
       />
 
       {!hasMaps ? (
         <SectionCard
-          title="Create your first map"
-          description="Start with one person, then place the first Concept directly on the canvas."
+          title={messages.mapsHome.emptyState.title}
+          description={messages.mapsHome.emptyState.description}
         >
           <Grid columns={{ initial: "1", md: "2" }} gap="5">
-            <CreateMapForm workspaceSlug={workspaceSlug} />
+            <CreateMapForm workspaceSlug={workspaceSlug} locale={locale} />
             <Flex direction="column" gap="3">
-              <Text weight="medium">What happens next</Text>
+              <Text weight="medium">{messages.mapsHome.emptyState.nextLabel}</Text>
               <Text color="gray" size="2">
-                1. Create one map for one person.
+                {messages.mapsHome.emptyState.steps[0]}
               </Text>
               <Text color="gray" size="2">
-                2. Place the first Concept on the canvas.
+                {messages.mapsHome.emptyState.steps[1]}
               </Text>
               <Text color="gray" size="2">
-                3. Add the second Concept, connect the first Link, then run a Scenario.
+                {messages.mapsHome.emptyState.steps[2]}
               </Text>
             </Flex>
           </Grid>
@@ -53,21 +66,21 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
       ) : (
         <div className="maps-home-grid">
           <SectionCard
-            title="Create map"
-            description="Start with one person, one map, and the first meaningful Concept."
+            title={messages.mapsHome.createCard.title}
+            description={messages.mapsHome.createCard.description}
           >
-            <CreateMapForm workspaceSlug={workspaceSlug} />
+            <CreateMapForm workspaceSlug={workspaceSlug} locale={locale} />
           </SectionCard>
 
           <SectionCard
-            title="Recent scenario runs"
-            description="Recent checks across this workspace stay inside a bounded panel."
+            title={messages.mapsHome.recentRuns.title}
+            description={messages.mapsHome.recentRuns.description}
             className="scroll-card"
           >
             {data.recentRuns.length === 0 ? (
               <EmptyState
-                title="No scenario runs yet"
-                description="Runs appear after someone tests a situation against a map. Each run keeps an ordered explanation path."
+                title={messages.mapsHome.recentRuns.emptyTitle}
+                description={messages.mapsHome.recentRuns.emptyDescription}
               />
             ) : (
               <ScrollArea type="auto" scrollbars="vertical" className="panel-scroll">
@@ -82,10 +95,14 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
                               {run.triggerText}
                             </Text>
                           </Flex>
-                          <StatusBadge status={run.status} />
+                          <StatusBadge
+                            status={run.status}
+                            label={mapMessages.labels.scenarioStatuses[run.status]}
+                          />
                         </Flex>
                         <Text color="gray" size="2">
-                          {run.starter.fullName ?? run.starter.email} | {run.createdAt.toLocaleString()}
+                          {run.starter.fullName ?? run.starter.email} |{" "}
+                          {run.createdAt.toLocaleString(intlLocale)}
                         </Text>
                       </Flex>
                     </Card>
@@ -96,8 +113,8 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
           </SectionCard>
 
           <SectionCard
-            title="Workspace maps"
-            description="Open an existing map or create a new one for this workspace."
+            title={messages.mapsHome.workspaceMaps.title}
+            description={messages.mapsHome.workspaceMaps.description}
             className="maps-list-card"
           >
             <ScrollArea type="auto" scrollbars="vertical" className="panel-scroll">
@@ -113,16 +130,15 @@ export default async function MapsHomePage({ params }: MapsHomePageProps) {
                           </Text>
                         </Flex>
                         <Text color="gray" size="1">
-                          {map.updatedAt.toLocaleDateString()}
+                          {map.updatedAt.toLocaleDateString(intlLocale)}
                         </Text>
                       </Flex>
                       <Text color="gray" size="2">
-                        {map.description ??
-                          "Open the map to start defining Concepts, Links, and Scenarios."}
+                        {map.description ?? messages.mapsHome.workspaceMaps.emptyDescription}
                       </Text>
                       <Button asChild>
                         <Link href={workspaceMapPath(workspaceSlug, map.id)}>
-                          Open map
+                          {messages.mapsHome.workspaceMaps.openMap}
                         </Link>
                       </Button>
                     </Flex>

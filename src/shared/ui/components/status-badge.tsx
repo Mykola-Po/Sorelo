@@ -2,6 +2,7 @@ import { Badge } from "@radix-ui/themes";
 
 type StatusBadgeProps = {
   status: string;
+  label?: string;
 };
 
 const statusToColor: Record<
@@ -33,10 +34,10 @@ const statusToColor: Record<
   failed: "red",
 };
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export function StatusBadge({ status, label }: StatusBadgeProps) {
   return (
     <Badge color={statusToColor[status] ?? "gray"} radius="full" variant="soft">
-      {status.replace(/_/g, " ")}
+      {label ?? status.replace(/_/g, " ")}
     </Badge>
   );
 }

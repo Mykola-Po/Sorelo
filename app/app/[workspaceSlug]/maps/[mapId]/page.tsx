@@ -1,8 +1,13 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { MapWorkspace } from "@/features/maps/components/map-workspace";
-import { getMapWorkspaceDetail } from "@/features/maps/queries";
+import { getMapWorkspaceChromeData } from "@/features/maps/queries";
 import { requireWorkspaceAccess } from "@/shared/auth/session";
+import {
+  LOCALE_COOKIE,
+  resolveSupportedLocale,
+} from "@/shared/i18n/config";
 
 type MapWorkspacePageProps = {
   params: Promise<{
@@ -16,7 +21,9 @@ export default async function MapWorkspacePage({
 }: MapWorkspacePageProps) {
   const { workspaceSlug, mapId } = await params;
   const { access } = await requireWorkspaceAccess(workspaceSlug);
-  const detail = await getMapWorkspaceDetail(mapId, access.workspace.id);
+  const cookieStore = await cookies();
+  const locale = resolveSupportedLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const detail = await getMapWorkspaceChromeData(mapId, access.workspace.id);
 
   if (!detail) {
     notFound();
@@ -24,12 +31,12 @@ export default async function MapWorkspacePage({
 
   return (
     <MapWorkspace
+      locale={locale}
       workspaceSlug={workspaceSlug}
       workspaceRole={access.role}
       map={detail.map}
       availableMaps={detail.availableMaps}
-      concepts={detail.concepts}
-      links={detail.links}
+      graphMetrics={detail.graphMetrics}
       scenarios={detail.scenarios}
       runs={detail.runs}
     />

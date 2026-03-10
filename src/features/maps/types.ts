@@ -1,9 +1,17 @@
 import type {
   ConceptType,
   RelationType,
-  ScenarioRunStatus,
   WorkspaceRole,
 } from "@/shared/db/schema";
+import type { SupportedLocale } from "@/shared/i18n/config";
+import type {
+  ConceptCatalogEntry,
+  GraphCounts,
+  GraphConceptNode,
+  GraphLinkEdge,
+  ScenarioPanelSummary,
+  ScenarioRunPanelSummary,
+} from "@/features/map-runtime/types";
 
 export type MapSummary = {
   id: string;
@@ -20,6 +28,7 @@ export type MapDetail = {
   slug: string;
   subjectLabel: string;
   description: string | null;
+  graphRevision: number;
   updatedAt: Date;
   workspace: {
     id: string;
@@ -50,53 +59,23 @@ export type LinkSummary = {
   updatedAt: Date;
 };
 
-export type ScenarioSummary = {
-  id: string;
-  title: string;
-  situation: string;
-  seedConceptIds: string[];
-  updatedAt: Date;
+export type GraphMetrics = GraphCounts & {
+  revision: number;
 };
 
-export type ScenarioRunStepSummary = {
-  id: string;
-  scenarioRunId: string;
-  stepOrder: number;
-  conceptId: string;
-  viaLinkId: string | null;
-  effectType: string;
-  explanation: string;
-  score: number;
-};
-
-export type ScenarioRunSummary = {
-  id: string;
-  scenarioId: string | null;
-  triggerText: string;
-  status: ScenarioRunStatus;
-  summary: string | null;
-  createdAt: Date;
-  starter: {
-    id: string;
-    fullName: string | null;
-    email: string;
-  };
-  scenario:
-    | {
-        id: string;
-        title: string;
-      }
-    | null;
-  steps: ScenarioRunStepSummary[];
-};
+export type ScenarioSummary = ScenarioPanelSummary;
+export type ScenarioRunSummary = ScenarioRunPanelSummary;
+export type GraphConceptSummary = GraphConceptNode;
+export type GraphLinkSummary = GraphLinkEdge;
+export type MapConceptCatalogEntry = ConceptCatalogEntry;
 
 export type MapWorkspaceProps = {
+  locale: SupportedLocale;
   workspaceSlug: string;
   workspaceRole: WorkspaceRole;
   map: MapDetail;
   availableMaps: MapSummary[];
-  concepts: ConceptSummary[];
-  links: LinkSummary[];
+  graphMetrics: GraphMetrics;
   scenarios: ScenarioSummary[];
   runs: ScenarioRunSummary[];
 };

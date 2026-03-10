@@ -12,11 +12,13 @@ type WorkspaceSwitcherProps = {
     name: string;
   }>;
   activeWorkspaceSlug?: string | undefined;
+  ariaLabel?: string;
 };
 
 export function WorkspaceSwitcher({
   workspaces,
   activeWorkspaceSlug,
+  ariaLabel,
 }: WorkspaceSwitcherProps) {
   const initialValue = activeWorkspaceSlug ?? workspaces[0]?.slug ?? "";
   const formRef = useRef<HTMLFormElement>(null);
@@ -52,7 +54,7 @@ export function WorkspaceSwitcher({
           formRef.current?.requestSubmit();
         }}
       >
-        <Select.Trigger />
+        <Select.Trigger aria-label={ariaLabel} />
         <Select.Content>
           {workspaces.map((workspace) => (
             <Select.Item key={workspace.id} value={workspace.slug}>

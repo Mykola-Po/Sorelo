@@ -19,10 +19,23 @@ import {
   workspaceMapsPath,
 } from "@/shared/config/routes";
 import {
+  resolveSupportedLocale,
+  type SupportedLocale,
+} from "@/shared/i18n/config";
+import { getAppShellMessages } from "@/shared/i18n/messages/app-shell";
+import {
   createIdleState,
   toActionError,
   zodErrorToActionState,
 } from "@/shared/validation/action-state";
+
+function getCreateMapLocale(formData: FormData): SupportedLocale {
+  return resolveSupportedLocale(
+    typeof formData.get("locale") === "string"
+      ? (formData.get("locale") as string)
+      : undefined
+  );
+}
 
 export async function createMapAction(
   _: {
@@ -34,6 +47,8 @@ export async function createMapAction(
   },
   formData: FormData
 ) {
+  const locale = getCreateMapLocale(formData);
+  const messages = getAppShellMessages(locale).createMapForm;
   const parsed = createMapSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     title: formData.get("title"),
@@ -45,7 +60,7 @@ export async function createMapAction(
   if (!parsed.success) {
     return zodErrorToActionState<
       "title" | "slug" | "subjectLabel" | "description"
-    >(parsed.error);
+    >(parsed.error, messages.reviewFields);
   }
 
   try {
@@ -64,7 +79,7 @@ export async function createMapAction(
     redirect(workspaceMapPath(parsed.data.workspaceSlug, map.id));
   } catch (error) {
     return toActionError<"title" | "slug" | "subjectLabel" | "description">(
-      error instanceof Error ? error.message : "Unable to create map."
+      error instanceof Error ? error.message : messages.unableToCreate
     );
   }
 }

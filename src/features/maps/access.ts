@@ -52,3 +52,31 @@ export async function requireActiveMap(workspaceId: string, mapId: string) {
 
   return map;
 }
+
+export async function requireMapMembershipById(mapId: string, userId: string) {
+  const rows = await db
+    .select({
+      mapId: maps.id,
+      workspaceId: maps.workspaceId,
+      mapTitle: maps.title,
+      role: workspaceMembers.role,
+    })
+    .from(maps)
+    .innerJoin(
+      workspaceMembers,
+      and(
+        eq(workspaceMembers.workspaceId, maps.workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    )
+    .where(and(eq(maps.id, mapId), isNull(maps.archivedAt)))
+    .limit(1);
+
+  const mapAccess = rows[0];
+
+  if (!mapAccess) {
+    throw new Error("Map access required.");
+  }
+
+  return mapAccess;
+}

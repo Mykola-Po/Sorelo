@@ -61,7 +61,7 @@ export const docsHubSections: DocsHubSection[] = [
       {
         id: "user-flows",
         title: "User Flows",
-        status: "next",
+        status: "existing",
         priority: "P0",
         owner: "shared",
         path: "docs/product/user-flows.md",

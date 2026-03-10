@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  bigint,
   doublePrecision,
   foreignKey,
   index,
@@ -272,6 +273,9 @@ export const maps = pgTable(
     slug: varchar("slug", { length: 80 }).notNull(),
     subjectLabel: varchar("subject_label", { length: 160 }).notNull(),
     description: text("description"),
+    graphRevision: bigint("graph_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

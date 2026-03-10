@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
+import { bumpMapGraphRevision } from "@/features/maps/commands";
 import {
   requireActiveMap,
   requireWorkspaceMembership,
@@ -73,6 +74,11 @@ export async function createLinkCommand(input: {
       throw new Error("Link creation failed.");
     }
 
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
     await recordActivity(tx, {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
@@ -112,42 +118,49 @@ export async function updateLinkCommand(input: {
     assertConceptMembership(input.workspaceId, input.mapId, input.targetConceptId),
   ]);
 
-  const [link] = await db
-    .update(links)
-    .set({
-      sourceConceptId: input.sourceConceptId,
-      targetConceptId: input.targetConceptId,
-      relationType: input.relationType,
-      strength: input.strength,
-      description: input.description || null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(links.id, input.linkId),
-        eq(links.workspaceId, input.workspaceId),
-        eq(links.mapId, input.mapId)
+  return db.transaction(async (tx) => {
+    const [link] = await tx
+      .update(links)
+      .set({
+        sourceConceptId: input.sourceConceptId,
+        targetConceptId: input.targetConceptId,
+        relationType: input.relationType,
+        strength: input.strength,
+        description: input.description || null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(links.id, input.linkId),
+          eq(links.workspaceId, input.workspaceId),
+          eq(links.mapId, input.mapId)
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (!link) {
-    throw new Error("Link not found.");
-  }
+    if (!link) {
+      throw new Error("Link not found.");
+    }
 
-  await recordActivity(db, {
-    workspaceId: input.workspaceId,
-    actorUserId: input.actorUserId,
-    entityType: "link",
-    entityId: link.id,
-    action: "link.updated",
-    payload: {
-      relationType: link.relationType,
-      strength: link.strength,
-    },
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "link",
+      entityId: link.id,
+      action: "link.updated",
+      payload: {
+        relationType: link.relationType,
+        strength: link.strength,
+      },
+    });
+
+    return link;
   });
-
-  return link;
 }
 
 export async function deleteLinkCommand(input: {
@@ -159,21 +172,28 @@ export async function deleteLinkCommand(input: {
   await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  await db
-    .delete(links)
-    .where(
-      and(
-        eq(links.id, input.linkId),
-        eq(links.workspaceId, input.workspaceId),
-        eq(links.mapId, input.mapId)
-      )
-    );
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(links)
+      .where(
+        and(
+          eq(links.id, input.linkId),
+          eq(links.workspaceId, input.workspaceId),
+          eq(links.mapId, input.mapId)
+        )
+      );
 
-  await recordActivity(db, {
-    workspaceId: input.workspaceId,
-    actorUserId: input.actorUserId,
-    entityType: "link",
-    entityId: input.linkId,
-    action: "link.deleted",
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "link",
+      entityId: input.linkId,
+      action: "link.deleted",
+    });
   });
 }

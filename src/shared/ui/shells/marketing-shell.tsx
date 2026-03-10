@@ -7,9 +7,9 @@ type MarketingShellProps = {
 
 export function MarketingShell({ children }: MarketingShellProps) {
   return (
-    <Box className="viewport-shell">
+    <Box className="viewport-shell marketing-shell">
       <Container size="4" className="viewport-container">
-        <Flex direction="column" justify="center" className="marketing-grid">
+        <Flex direction="column" className="marketing-grid">
           {children}
         </Flex>
       </Container>

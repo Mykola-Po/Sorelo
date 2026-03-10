@@ -1,9 +1,17 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { db } from "@/shared/db/client";
-import { maps, scenarioRunSteps, scenarioRuns, scenarios, users } from "@/shared/db/schema";
+import {
+  concepts,
+  links,
+  maps,
+  scenarioRunSteps,
+  scenarioRuns,
+  scenarios,
+  users,
+} from "@/shared/db/schema";
 
 export async function listScenarioRunsForMap(
   mapId: string,
@@ -54,15 +62,71 @@ export async function listScenarioRunsForMap(
     .from(scenarioRunSteps)
     .where(inArray(scenarioRunSteps.scenarioRunId, runIds));
 
-  const stepsByRunId = new Map<string, typeof steps>();
+  const conceptIds = Array.from(new Set(steps.map((step) => step.conceptId)));
+  const linkIds = Array.from(
+    new Set(
+      steps
+        .map((step) => step.viaLinkId)
+        .filter((linkId): linkId is string => Boolean(linkId))
+    )
+  );
+
+  const [stepConcepts, stepLinks] = await Promise.all([
+    conceptIds.length > 0
+      ? db
+          .select({
+            id: concepts.id,
+            title: concepts.title,
+          })
+          .from(concepts)
+          .where(
+            and(
+              eq(concepts.mapId, mapId),
+              eq(concepts.workspaceId, workspaceId),
+              isNull(concepts.archivedAt),
+              inArray(concepts.id, conceptIds)
+            )
+          )
+      : [],
+    linkIds.length > 0
+      ? db
+          .select({
+            id: links.id,
+            relationType: links.relationType,
+          })
+          .from(links)
+          .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId), inArray(links.id, linkIds)))
+      : [],
+  ]);
+
+  const conceptTitleById = new Map(
+    stepConcepts.map((concept) => [concept.id, concept.title])
+  );
+  const linkRelationById = new Map(
+    stepLinks.map((link) => [link.id, link.relationType])
+  );
+
+  type EnrichedStep = (typeof steps)[number] & {
+    conceptTitle: string;
+    viaLinkRelationType: (typeof stepLinks)[number]["relationType"] | null;
+  };
+
+  const stepsByRunId = new Map<string, EnrichedStep[]>();
   for (const step of steps) {
     const bucket = stepsByRunId.get(step.scenarioRunId) ?? [];
-    bucket.push(step);
+    bucket.push({
+      ...step,
+      conceptTitle: conceptTitleById.get(step.conceptId) ?? "Unknown concept",
+      viaLinkRelationType: step.viaLinkId
+        ? (linkRelationById.get(step.viaLinkId) ?? null)
+        : null,
+    });
     stepsByRunId.set(step.scenarioRunId, bucket);
   }
 
   return runs.map((run) => ({
     ...run,
+    createdAt: run.createdAt.toISOString(),
     steps:
       stepsByRunId.get(run.id)?.sort(
         (left, right) => left.stepOrder - right.stepOrder

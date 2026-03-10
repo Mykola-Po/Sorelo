@@ -1,6 +1,16 @@
 import "server-only";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+} from "drizzle-orm";
 
 import { listScenarioRunsForMap, listScenarioRunsForWorkspace } from "@/features/scenarios/queries";
 import { db } from "@/shared/db/client";
@@ -12,6 +22,7 @@ import {
   workspaceMembers,
   workspaces,
 } from "@/shared/db/schema";
+import type { GraphViewport } from "@/features/map-runtime/types";
 import type { InspectorSelection } from "@/features/inspector/types";
 
 export async function listMapsForWorkspace(workspaceId: string) {
@@ -71,6 +82,7 @@ export async function getMapWorkspace(mapId: string, workspaceId: string) {
       slug: maps.slug,
       subjectLabel: maps.subjectLabel,
       description: maps.description,
+      graphRevision: maps.graphRevision,
       updatedAt: maps.updatedAt,
       workspace: {
         id: workspaces.id,
@@ -92,74 +104,238 @@ export async function getMapWorkspace(mapId: string, workspaceId: string) {
   return rows[0] ?? null;
 }
 
-export async function getMapWorkspaceDetail(mapId: string, workspaceId: string) {
+export async function getMapGraphMetrics(mapId: string, workspaceId: string) {
+  const [conceptCountRow, linkCountRow] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(concepts)
+      .where(
+        and(
+          eq(concepts.mapId, mapId),
+          eq(concepts.workspaceId, workspaceId),
+          isNull(concepts.archivedAt)
+        )
+      ),
+    db
+      .select({ value: count() })
+      .from(links)
+      .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId))),
+  ]);
+
   const map = await getMapWorkspace(mapId, workspaceId);
 
   if (!map) {
     return null;
   }
 
-  const [availableMaps, mapConcepts, mapLinks, mapScenarios, mapRuns] =
+  return {
+    revision: map.graphRevision,
+    conceptCount: Number(conceptCountRow[0]?.value ?? 0),
+    linkCount: Number(linkCountRow[0]?.value ?? 0),
+  };
+}
+
+async function listScenarioSummariesForMap(mapId: string, workspaceId: string) {
+  const rows = await db
+    .select({
+      id: scenarios.id,
+      title: scenarios.title,
+      situation: scenarios.situation,
+      seedConceptIds: scenarios.seedConceptIds,
+      updatedAt: scenarios.updatedAt,
+    })
+    .from(scenarios)
+    .where(and(eq(scenarios.mapId, mapId), eq(scenarios.workspaceId, workspaceId)))
+    .orderBy(desc(scenarios.updatedAt));
+
+  const uniqueSeedIds = Array.from(
+    new Set(rows.flatMap((scenario) => scenario.seedConceptIds))
+  );
+
+  const seedConceptRows =
+    uniqueSeedIds.length > 0
+      ? await db
+          .select({
+            id: concepts.id,
+            title: concepts.title,
+          })
+          .from(concepts)
+          .where(
+            and(
+              eq(concepts.mapId, mapId),
+              eq(concepts.workspaceId, workspaceId),
+              isNull(concepts.archivedAt),
+              inArray(concepts.id, uniqueSeedIds)
+            )
+          )
+      : [];
+
+  const seedTitleById = new Map(
+    seedConceptRows.map((concept) => [concept.id, concept.title])
+  );
+
+  return rows.map((scenario) => ({
+    id: scenario.id,
+    title: scenario.title,
+    situation: scenario.situation,
+    updatedAt: scenario.updatedAt.toISOString(),
+    seedConcepts: scenario.seedConceptIds
+      .map((seedId) => ({
+        id: seedId,
+        title: seedTitleById.get(seedId),
+      }))
+      .filter(
+        (
+          seed
+        ): seed is {
+          id: string;
+          title: string;
+        } => Boolean(seed.title)
+      ),
+  }));
+}
+
+export async function getMapWorkspaceChromeData(
+  mapId: string,
+  workspaceId: string
+) {
+  const map = await getMapWorkspace(mapId, workspaceId);
+
+  if (!map) {
+    return null;
+  }
+
+  const [availableMaps, graphMetrics, mapScenarios, mapRuns] =
     await Promise.all([
       listMapsForWorkspace(workspaceId),
-      db
-        .select({
-          id: concepts.id,
-          title: concepts.title,
-          conceptType: concepts.conceptType,
-          summary: concepts.summary,
-          description: concepts.description,
-          x: concepts.x,
-          y: concepts.y,
-          createdByUserId: concepts.createdByUserId,
-          updatedAt: concepts.updatedAt,
-        })
-        .from(concepts)
-        .where(
-          and(
-            eq(concepts.mapId, mapId),
-            eq(concepts.workspaceId, workspaceId),
-            isNull(concepts.archivedAt)
-          )
-        )
-        .orderBy(desc(concepts.updatedAt), concepts.title),
-      db
-        .select({
-          id: links.id,
-          sourceConceptId: links.sourceConceptId,
-          targetConceptId: links.targetConceptId,
-          relationType: links.relationType,
-          strength: links.strength,
-          description: links.description,
-          updatedAt: links.updatedAt,
-        })
-        .from(links)
-        .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId)))
-        .orderBy(desc(links.updatedAt)),
-      db
-        .select({
-          id: scenarios.id,
-          title: scenarios.title,
-          situation: scenarios.situation,
-          seedConceptIds: scenarios.seedConceptIds,
-          updatedAt: scenarios.updatedAt,
-        })
-        .from(scenarios)
-        .where(
-          and(eq(scenarios.mapId, mapId), eq(scenarios.workspaceId, workspaceId))
-        )
-        .orderBy(desc(scenarios.updatedAt)),
+      getMapGraphMetrics(mapId, workspaceId),
+      listScenarioSummariesForMap(mapId, workspaceId),
       listScenarioRunsForMap(mapId, workspaceId, 8),
     ]);
+
+  if (!graphMetrics) {
+    return null;
+  }
 
   return {
     map,
     availableMaps,
-    concepts: mapConcepts,
-    links: mapLinks,
+    graphMetrics,
     scenarios: mapScenarios,
     runs: mapRuns,
   };
+}
+
+export async function getGraphSnapshot(
+  mapId: string,
+  workspaceId: string,
+  viewport: GraphViewport
+) {
+  const metrics = await getMapGraphMetrics(mapId, workspaceId);
+
+  if (!metrics) {
+    return null;
+  }
+
+  const minX = Math.max(0, viewport.x - viewport.overscan);
+  const minY = Math.max(0, viewport.y - viewport.overscan);
+  const maxX = viewport.x + viewport.width + viewport.overscan;
+  const maxY = viewport.y + viewport.height + viewport.overscan;
+
+  const visibleConcepts = await db
+    .select({
+      id: concepts.id,
+      title: concepts.title,
+      conceptType: concepts.conceptType,
+      summary: concepts.summary,
+      description: concepts.description,
+      x: concepts.x,
+      y: concepts.y,
+      updatedAt: concepts.updatedAt,
+    })
+    .from(concepts)
+    .where(
+      and(
+        eq(concepts.mapId, mapId),
+        eq(concepts.workspaceId, workspaceId),
+        isNull(concepts.archivedAt),
+        gte(concepts.x, minX),
+        lte(concepts.x, maxX),
+        gte(concepts.y, minY),
+        lte(concepts.y, maxY)
+      )
+    )
+    .orderBy(desc(concepts.updatedAt), concepts.title);
+
+  const visibleConceptIds = visibleConcepts.map((concept) => concept.id);
+
+  const visibleLinks =
+    visibleConceptIds.length > 0
+      ? await db
+          .select({
+            id: links.id,
+            sourceConceptId: links.sourceConceptId,
+            targetConceptId: links.targetConceptId,
+            relationType: links.relationType,
+            strength: links.strength,
+            description: links.description,
+            updatedAt: links.updatedAt,
+          })
+          .from(links)
+          .where(
+            and(
+              eq(links.mapId, mapId),
+              eq(links.workspaceId, workspaceId),
+              inArray(links.sourceConceptId, visibleConceptIds),
+              inArray(links.targetConceptId, visibleConceptIds)
+            )
+          )
+          .orderBy(desc(links.updatedAt))
+      : [];
+
+  return {
+    revision: metrics.revision,
+    counts: {
+      conceptCount: metrics.conceptCount,
+      linkCount: metrics.linkCount,
+    },
+    concepts: visibleConcepts.map((concept) => ({
+      ...concept,
+      updatedAt: concept.updatedAt.toISOString(),
+    })),
+    links: visibleLinks.map((link) => ({
+      ...link,
+      updatedAt: link.updatedAt.toISOString(),
+    })),
+  };
+}
+
+export async function listConceptCatalogForMap(
+  mapId: string,
+  workspaceId: string,
+  options?: {
+    query?: string;
+  }
+) {
+  const query = options?.query?.trim();
+  const filters = [
+    eq(concepts.mapId, mapId),
+    eq(concepts.workspaceId, workspaceId),
+    isNull(concepts.archivedAt),
+  ];
+
+  if (query) {
+    filters.push(ilike(concepts.title, `%${query}%`));
+  }
+
+  return db
+    .select({
+      id: concepts.id,
+      title: concepts.title,
+    })
+    .from(concepts)
+    .where(and(...filters))
+    .orderBy(desc(concepts.updatedAt), concepts.title);
 }
 
 export async function getInspectorPayload(
@@ -199,30 +375,80 @@ export async function getInspectorPayload(
           id: links.id,
           relationType: links.relationType,
           strength: links.strength,
-          sourceConceptId: links.sourceConceptId,
+          relatedConceptId: links.sourceConceptId,
         })
         .from(links)
         .where(
-          and(eq(links.targetConceptId, concept.id), eq(links.mapId, mapId))
+          and(
+            eq(links.targetConceptId, concept.id),
+            eq(links.mapId, mapId),
+            eq(links.workspaceId, workspaceId)
+          )
         ),
       db
         .select({
           id: links.id,
           relationType: links.relationType,
           strength: links.strength,
-          targetConceptId: links.targetConceptId,
+          relatedConceptId: links.targetConceptId,
         })
         .from(links)
         .where(
-          and(eq(links.sourceConceptId, concept.id), eq(links.mapId, mapId))
+          and(
+            eq(links.sourceConceptId, concept.id),
+            eq(links.mapId, mapId),
+            eq(links.workspaceId, workspaceId)
+          )
         ),
     ]);
+
+    const relatedIds = Array.from(
+      new Set(
+        [...incoming, ...outgoing].map((link) => link.relatedConceptId)
+      )
+    );
+
+    const relatedConcepts =
+      relatedIds.length > 0
+        ? await db
+            .select({
+              id: concepts.id,
+              title: concepts.title,
+            })
+            .from(concepts)
+            .where(
+              and(
+                eq(concepts.mapId, mapId),
+                eq(concepts.workspaceId, workspaceId),
+                isNull(concepts.archivedAt),
+                inArray(concepts.id, relatedIds)
+              )
+            )
+        : [];
+
+    const relatedTitleById = new Map(
+      relatedConcepts.map((item) => [item.id, item.title])
+    );
 
     return {
       kind: "concept" as const,
       concept,
-      incoming,
-      outgoing,
+      incoming: incoming.map((link) => ({
+        id: link.id,
+        relationType: link.relationType,
+        strength: link.strength,
+        relatedConceptId: link.relatedConceptId,
+        relatedConceptTitle:
+          relatedTitleById.get(link.relatedConceptId) ?? "Unknown concept",
+      })),
+      outgoing: outgoing.map((link) => ({
+        id: link.id,
+        relationType: link.relationType,
+        strength: link.strength,
+        relatedConceptId: link.relatedConceptId,
+        relatedConceptTitle:
+          relatedTitleById.get(link.relatedConceptId) ?? "Unknown concept",
+      })),
     };
   }
 
@@ -238,7 +464,11 @@ export async function getInspectorPayload(
       })
       .from(links)
       .where(
-        and(eq(links.id, selection.id), eq(links.mapId, mapId), eq(links.workspaceId, workspaceId))
+        and(
+          eq(links.id, selection.id),
+          eq(links.mapId, mapId),
+          eq(links.workspaceId, workspaceId)
+        )
       )
       .limit(1);
 

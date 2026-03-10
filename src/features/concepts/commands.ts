@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
+import { bumpMapGraphRevision } from "@/features/maps/commands";
 import {
   requireActiveMap,
   requireWorkspaceMembership,
@@ -51,6 +52,11 @@ export async function createConceptCommand(input: {
       throw new Error("Concept creation failed.");
     }
 
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
     await recordActivity(tx, {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
@@ -89,44 +95,51 @@ export async function updateConceptCommand(input: {
   await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  const [concept] = await db
-    .update(concepts)
-    .set({
-      title: input.title,
-      conceptType: input.conceptType,
-      summary: input.summary || null,
-      description: input.description || null,
-      x: input.x,
-      y: input.y,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(concepts.id, input.conceptId),
-        eq(concepts.mapId, input.mapId),
-        eq(concepts.workspaceId, input.workspaceId),
-        isNull(concepts.archivedAt)
+  return db.transaction(async (tx) => {
+    const [concept] = await tx
+      .update(concepts)
+      .set({
+        title: input.title,
+        conceptType: input.conceptType,
+        summary: input.summary || null,
+        description: input.description || null,
+        x: input.x,
+        y: input.y,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(concepts.id, input.conceptId),
+          eq(concepts.mapId, input.mapId),
+          eq(concepts.workspaceId, input.workspaceId),
+          isNull(concepts.archivedAt)
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (!concept) {
-    throw new Error("Concept not found.");
-  }
+    if (!concept) {
+      throw new Error("Concept not found.");
+    }
 
-  await recordActivity(db, {
-    workspaceId: input.workspaceId,
-    actorUserId: input.actorUserId,
-    entityType: "concept",
-    entityId: concept.id,
-    action: "concept.updated",
-    payload: {
-      title: concept.title,
-      conceptType: concept.conceptType,
-    },
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "concept",
+      entityId: concept.id,
+      action: "concept.updated",
+      payload: {
+        title: concept.title,
+        conceptType: concept.conceptType,
+      },
+    });
+
+    return concept;
   });
-
-  return concept;
 }
 
 export async function repositionConceptCommand(input: {
@@ -140,40 +153,47 @@ export async function repositionConceptCommand(input: {
   await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  const [concept] = await db
-    .update(concepts)
-    .set({
-      x: input.x,
-      y: input.y,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(concepts.id, input.conceptId),
-        eq(concepts.mapId, input.mapId),
-        eq(concepts.workspaceId, input.workspaceId),
-        isNull(concepts.archivedAt)
+  return db.transaction(async (tx) => {
+    const [concept] = await tx
+      .update(concepts)
+      .set({
+        x: input.x,
+        y: input.y,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(concepts.id, input.conceptId),
+          eq(concepts.mapId, input.mapId),
+          eq(concepts.workspaceId, input.workspaceId),
+          isNull(concepts.archivedAt)
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (!concept) {
-    throw new Error("Concept not found.");
-  }
+    if (!concept) {
+      throw new Error("Concept not found.");
+    }
 
-  await recordActivity(db, {
-    workspaceId: input.workspaceId,
-    actorUserId: input.actorUserId,
-    entityType: "concept",
-    entityId: concept.id,
-    action: "concept.repositioned",
-    payload: {
-      x: concept.x,
-      y: concept.y,
-    },
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "concept",
+      entityId: concept.id,
+      action: "concept.repositioned",
+      payload: {
+        x: concept.x,
+        y: concept.y,
+      },
+    });
+
+    return concept;
   });
-
-  return concept;
 }
 
 export async function archiveConceptCommand(input: {
@@ -185,31 +205,38 @@ export async function archiveConceptCommand(input: {
   await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  const [concept] = await db
-    .update(concepts)
-    .set({
-      archivedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(concepts.id, input.conceptId),
-        eq(concepts.mapId, input.mapId),
-        eq(concepts.workspaceId, input.workspaceId),
-        isNull(concepts.archivedAt)
+  await db.transaction(async (tx) => {
+    const [concept] = await tx
+      .update(concepts)
+      .set({
+        archivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(concepts.id, input.conceptId),
+          eq(concepts.mapId, input.mapId),
+          eq(concepts.workspaceId, input.workspaceId),
+          isNull(concepts.archivedAt)
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (!concept) {
-    throw new Error("Concept not found.");
-  }
+    if (!concept) {
+      throw new Error("Concept not found.");
+    }
 
-  await recordActivity(db, {
-    workspaceId: input.workspaceId,
-    actorUserId: input.actorUserId,
-    entityType: "concept",
-    entityId: concept.id,
-    action: "concept.archived",
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "concept",
+      entityId: concept.id,
+      action: "concept.archived",
+    });
   });
 }

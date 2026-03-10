@@ -1,12 +1,36 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import { requireActiveMap, requireWorkspaceMembership } from "@/features/maps/access";
 import { normalizeMapSlug } from "@/features/maps/utils";
 import { db } from "@/shared/db/client";
 import { maps } from "@/shared/db/schema";
+
+type MapRevisionWriter = Pick<typeof db, "update">;
+
+export async function bumpMapGraphRevision(
+  dbOrTx: MapRevisionWriter,
+  input: {
+    workspaceId: string;
+    mapId: string;
+  }
+) {
+  await dbOrTx
+    .update(maps)
+    .set({
+      graphRevision: sql`${maps.graphRevision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(maps.id, input.mapId),
+        eq(maps.workspaceId, input.workspaceId),
+        isNull(maps.archivedAt)
+      )
+    );
+}
 
 export async function createMapCommand(input: {
   workspaceId: string;
