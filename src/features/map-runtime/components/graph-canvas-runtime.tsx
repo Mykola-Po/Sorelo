@@ -21,6 +21,15 @@ const NODE_HEIGHT = 124;
 const CANVAS_WIDTH = 2200;
 const CANVAS_HEIGHT = 1500;
 const VIEWPORT_OVERSCAN = 320;
+const VIEWPORT_FETCH_DEBOUNCE_MS = 180;
+const VIEWPORT_SNAP_STEP = 120;
+const INITIAL_VIEWPORT: GraphViewport = {
+  x: 0,
+  y: 0,
+  width: 1280,
+  height: 860,
+  overscan: VIEWPORT_OVERSCAN,
+};
 
 type DragState = {
   id: string;
@@ -66,13 +75,10 @@ export function GraphCanvasRuntime({
   const messages = getMapWorkspaceMessages(locale);
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
   const [runtimeRevision, setRuntimeRevision] = useState(graphMetrics.revision);
-  const [viewport, setViewport] = useState<GraphViewport>({
-    x: 0,
-    y: 0,
-    width: 1280,
-    height: 860,
-    overscan: VIEWPORT_OVERSCAN,
-  });
+  const [viewport, setViewport] = useState<GraphViewport>(INITIAL_VIEWPORT);
+  const [requestedViewport, setRequestedViewport] = useState<GraphViewport>(() =>
+    toRequestedViewport(INITIAL_VIEWPORT)
+  );
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(true);
@@ -163,6 +169,19 @@ export function GraphCanvasRuntime({
   }, [syncViewport]);
 
   useEffect(() => {
+    const timeout = setTimeout(() => {
+      const nextViewport = toRequestedViewport(viewport);
+      setRequestedViewport((current) =>
+        areViewportsEqual(current, nextViewport) ? current : nextViewport
+      );
+    }, VIEWPORT_FETCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [viewport]);
+
+  useEffect(() => {
     const controller = new AbortController();
 
     async function loadSnapshot() {
@@ -171,11 +190,11 @@ export function GraphCanvasRuntime({
 
       try {
         const searchParams = new URLSearchParams({
-          x: String(Math.round(viewport.x)),
-          y: String(Math.round(viewport.y)),
-          width: String(Math.round(viewport.width)),
-          height: String(Math.round(viewport.height)),
-          overscan: String(viewport.overscan),
+          x: String(requestedViewport.x),
+          y: String(requestedViewport.y),
+          width: String(requestedViewport.width),
+          height: String(requestedViewport.height),
+          overscan: String(requestedViewport.overscan),
         });
 
         const response = await fetch(`/api/maps/${map.id}/graph?${searchParams.toString()}`, {
@@ -234,7 +253,7 @@ export function GraphCanvasRuntime({
     return () => {
       controller.abort();
     };
-  }, [map.id, runtimeRevision, viewport]);
+  }, [map.id, requestedViewport, runtimeRevision]);
 
   const renderedConcepts = useMemo(() => snapshot?.concepts ?? [], [snapshot]);
   const renderedLinks = useMemo(() => {
@@ -656,5 +675,33 @@ function clampCoordinate(value: number, max: number) {
   }
 
   return value;
+}
+
+function toRequestedViewport(viewport: GraphViewport): GraphViewport {
+  return {
+    x: snapViewportValue(viewport.x),
+    y: snapViewportValue(viewport.y),
+    width: Math.max(1, snapViewportDimension(viewport.width)),
+    height: Math.max(1, snapViewportDimension(viewport.height)),
+    overscan: VIEWPORT_OVERSCAN,
+  };
+}
+
+function snapViewportValue(value: number) {
+  return Math.max(0, Math.floor(value / VIEWPORT_SNAP_STEP) * VIEWPORT_SNAP_STEP);
+}
+
+function snapViewportDimension(value: number) {
+  return Math.ceil(value / VIEWPORT_SNAP_STEP) * VIEWPORT_SNAP_STEP;
+}
+
+function areViewportsEqual(current: GraphViewport, next: GraphViewport) {
+  return (
+    current.x === next.x &&
+    current.y === next.y &&
+    current.width === next.width &&
+    current.height === next.height &&
+    current.overscan === next.overscan
+  );
 }
 

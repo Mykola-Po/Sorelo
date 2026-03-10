@@ -4,14 +4,25 @@ import { NextResponse } from "next/server";
 import type { z } from "zod";
 
 import { requireMapMembershipById } from "@/features/maps/access";
-import { requireUser } from "@/shared/auth/session";
+import { createServerSupabaseClient } from "@/shared/auth/supabase/server";
 
 export async function requireMapRuntimeAccess(mapId: string) {
-  const user = await requireUser();
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Authentication required.");
+  }
+
   const access = await requireMapMembershipById(mapId, user.id);
 
   return {
-    user,
+    user: {
+      id: user.id,
+      email: user.email ?? "",
+    },
     access,
   };
 }
@@ -19,7 +30,7 @@ export async function requireMapRuntimeAccess(mapId: string) {
 export async function parseRouteJson<TSchema extends z.ZodTypeAny>(
   request: Request,
   schema: TSchema
-) {
+){
   type ParsedData = z.infer<TSchema>;
 
   try {
