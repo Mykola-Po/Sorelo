@@ -196,6 +196,94 @@ export async function repositionConceptCommand(input: {
   });
 }
 
+export async function repositionConceptsBatchCommand(input: {
+  workspaceId: string;
+  actorUserId: string;
+  mapId: string;
+  positions: Array<{
+    conceptId: string;
+    x: number;
+    y: number;
+  }>;
+}) {
+  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireActiveMap(input.workspaceId, input.mapId);
+
+  const dedupedPositions = Array.from(
+    new Map(
+      input.positions.map((position) => [
+        position.conceptId,
+        {
+          conceptId: position.conceptId,
+          x: position.x,
+          y: position.y,
+        },
+      ])
+    ).values()
+  );
+
+  if (dedupedPositions.length === 0) {
+    return [];
+  }
+
+  return db.transaction(async (tx) => {
+    const updatedConcepts: Array<{
+      id: string;
+      x: number;
+      y: number;
+    }> = [];
+
+    for (const position of dedupedPositions) {
+      const [concept] = await tx
+        .update(concepts)
+        .set({
+          x: position.x,
+          y: position.y,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(concepts.id, position.conceptId),
+            eq(concepts.mapId, input.mapId),
+            eq(concepts.workspaceId, input.workspaceId),
+            isNull(concepts.archivedAt)
+          )
+        )
+        .returning({
+          id: concepts.id,
+          x: concepts.x,
+          y: concepts.y,
+        });
+
+      if (concept) {
+        updatedConcepts.push(concept);
+      }
+    }
+
+    if (updatedConcepts.length === 0) {
+      return [];
+    }
+
+    await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "map",
+      entityId: input.mapId,
+      action: "concept.repositioned.batch",
+      payload: {
+        count: updatedConcepts.length,
+      },
+    });
+
+    return updatedConcepts;
+  });
+}
+
 export async function archiveConceptCommand(input: {
   workspaceId: string;
   actorUserId: string;

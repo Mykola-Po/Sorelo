@@ -135,6 +135,24 @@ export async function getMapGraphMetrics(mapId: string, workspaceId: string) {
   };
 }
 
+export async function getMapRevision(mapId: string, workspaceId: string) {
+  const rows = await db
+    .select({
+      revision: maps.graphRevision,
+    })
+    .from(maps)
+    .where(
+      and(
+        eq(maps.id, mapId),
+        eq(maps.workspaceId, workspaceId),
+        isNull(maps.archivedAt)
+      )
+    )
+    .limit(1);
+
+  return rows[0]?.revision ?? null;
+}
+
 async function listScenarioSummariesForMap(mapId: string, workspaceId: string) {
   const rows = await db
     .select({

@@ -23,6 +23,8 @@ const CANVAS_HEIGHT = 1500;
 const VIEWPORT_OVERSCAN = 320;
 const VIEWPORT_FETCH_DEBOUNCE_MS = 180;
 const VIEWPORT_SNAP_STEP = 120;
+const POSITION_FLUSH_DEBOUNCE_MS = 750;
+const POSITION_FLUSH_RETRY_MS = 2000;
 const INITIAL_VIEWPORT: GraphViewport = {
   x: 0,
   y: 0,
@@ -37,6 +39,26 @@ type DragState = {
   pointerY: number;
   startX: number;
   startY: number;
+};
+
+type ConceptPosition = {
+  x: number;
+  y: number;
+};
+
+type PositionUpdate = {
+  conceptId: string;
+  x: number;
+  y: number;
+};
+
+type PositionsPatchResponse = {
+  revision: number;
+  concepts: Array<{
+    id: string;
+    x: number;
+    y: number;
+  }>;
 };
 
 type GraphCanvasRuntimeProps = {
@@ -87,6 +109,14 @@ export function GraphCanvasRuntime({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const positionsRef = useRef(positions);
   const dragStateRef = useRef<DragState | null>(null);
+  const pendingPositionsRef = useRef<Map<string, ConceptPosition>>(new Map());
+  const inFlightPositionIdsRef = useRef<Set<string>>(new Set());
+  const isFlushingPositionsRef = useRef(false);
+  const flushTimeoutRef = useRef<number | null>(null);
+  const isUnmountedRef = useRef(false);
+  const flushPositionsRef = useRef<
+    ((options?: { keepalive?: boolean; allowBeacon?: boolean }) => Promise<void>) | null
+  >(null);
   const rafRef = useRef<number | null>(null);
   const latestPointerRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -101,6 +131,219 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     setRuntimeRevision(graphMetrics.revision);
   }, [graphMetrics.revision]);
+
+  const clearScheduledFlush = useCallback(() => {
+    if (flushTimeoutRef.current !== null) {
+      window.clearTimeout(flushTimeoutRef.current);
+      flushTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    pendingPositionsRef.current.clear();
+    inFlightPositionIdsRef.current = new Set();
+    isFlushingPositionsRef.current = false;
+    clearScheduledFlush();
+    setIsSavingPosition(false);
+  }, [clearScheduledFlush, map.id]);
+
+  const syncSavingState = useCallback(() => {
+    if (isUnmountedRef.current) {
+      return;
+    }
+
+    const hasPending = pendingPositionsRef.current.size > 0;
+    setIsSavingPosition(hasPending || isFlushingPositionsRef.current);
+  }, []);
+
+  const scheduleQueuedFlush = useCallback(
+    (delay = POSITION_FLUSH_DEBOUNCE_MS) => {
+      clearScheduledFlush();
+      flushTimeoutRef.current = window.setTimeout(() => {
+        flushTimeoutRef.current = null;
+        if (!flushPositionsRef.current) {
+          return;
+        }
+        void flushPositionsRef.current();
+      }, delay);
+    },
+    [clearScheduledFlush]
+  );
+
+  const sendPositionsBatch = useCallback(
+    async (
+      updates: PositionUpdate[],
+      options?: { keepalive?: boolean; allowBeacon?: boolean }
+    ) => {
+      const rounded = updates.map((update) => ({
+        conceptId: update.conceptId,
+        x: Math.round(update.x),
+        y: Math.round(update.y),
+      }));
+      const payload = JSON.stringify({ positions: rounded });
+      const endpoint = `/api/maps/${map.id}/concepts/positions`;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: options?.keepalive ? "POST" : "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: payload,
+          keepalive: options?.keepalive ?? false,
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to update concept positions.");
+        }
+
+        return (await response.json()) as PositionsPatchResponse;
+      } catch (error) {
+        if (
+          options?.allowBeacon &&
+          typeof navigator !== "undefined" &&
+          typeof navigator.sendBeacon === "function"
+        ) {
+          const beaconSent = navigator.sendBeacon(
+            endpoint,
+            new Blob([payload], { type: "application/json" })
+          );
+          if (beaconSent) {
+            return null;
+          }
+        }
+
+        throw error;
+      }
+    },
+    [map.id]
+  );
+
+  const flushQueuedPositions = useCallback(
+    async (options?: { keepalive?: boolean; allowBeacon?: boolean }) => {
+      if (isFlushingPositionsRef.current) {
+        return;
+      }
+
+      const pendingUpdates = Array.from(pendingPositionsRef.current.entries()).map(
+        ([conceptId, position]) => ({
+          conceptId,
+          x: position.x,
+          y: position.y,
+        })
+      );
+
+      if (pendingUpdates.length === 0) {
+        syncSavingState();
+        return;
+      }
+
+      isFlushingPositionsRef.current = true;
+      inFlightPositionIdsRef.current = new Set(
+        pendingUpdates.map((update) => update.conceptId)
+      );
+
+      for (const update of pendingUpdates) {
+        pendingPositionsRef.current.delete(update.conceptId);
+      }
+      syncSavingState();
+
+      try {
+        const payload = await sendPositionsBatch(pendingUpdates, options);
+        if (payload && !isUnmountedRef.current) {
+          setRuntimeRevision(payload.revision);
+          setPositions((current) => {
+            const next = { ...current };
+
+            for (const concept of payload.concepts) {
+              if (
+                pendingPositionsRef.current.has(concept.id) ||
+                dragStateRef.current?.id === concept.id
+              ) {
+                continue;
+              }
+
+              next[concept.id] = {
+                x: concept.x,
+                y: concept.y,
+              };
+            }
+
+            positionsRef.current = next;
+            return next;
+          });
+        }
+      } catch {
+        for (const update of pendingUpdates) {
+          if (!pendingPositionsRef.current.has(update.conceptId)) {
+            pendingPositionsRef.current.set(update.conceptId, {
+              x: update.x,
+              y: update.y,
+            });
+          }
+        }
+        scheduleQueuedFlush(POSITION_FLUSH_RETRY_MS);
+      } finally {
+        isFlushingPositionsRef.current = false;
+        inFlightPositionIdsRef.current = new Set();
+
+        if (pendingPositionsRef.current.size > 0) {
+          scheduleQueuedFlush();
+        }
+        syncSavingState();
+      }
+    },
+    [scheduleQueuedFlush, sendPositionsBatch, syncSavingState]
+  );
+
+  const queueConceptPosition = useCallback(
+    (conceptId: string, position: ConceptPosition) => {
+      pendingPositionsRef.current.set(conceptId, {
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+      });
+      syncSavingState();
+      scheduleQueuedFlush();
+    },
+    [scheduleQueuedFlush, syncSavingState]
+  );
+
+  useEffect(() => {
+    flushPositionsRef.current = flushQueuedPositions;
+  }, [flushQueuedPositions]);
+
+  useEffect(() => {
+    return () => {
+      clearScheduledFlush();
+    };
+  }, [clearScheduledFlush]);
+
+  useEffect(() => {
+    const flushWithKeepalive = () => {
+      clearScheduledFlush();
+      if (!flushPositionsRef.current) {
+        return;
+      }
+      void flushPositionsRef.current({ keepalive: true, allowBeacon: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushWithKeepalive();
+      }
+    };
+
+    window.addEventListener("pagehide", flushWithKeepalive);
+    window.addEventListener("beforeunload", flushWithKeepalive);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", flushWithKeepalive);
+      window.removeEventListener("beforeunload", flushWithKeepalive);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      flushWithKeepalive();
+    };
+  }, [clearScheduledFlush]);
 
   const syncViewport = useCallback(() => {
     const element = scrollRef.current;
@@ -218,7 +461,11 @@ export function GraphCanvasRuntime({
           const next = { ...current };
 
           for (const concept of nextSnapshot.concepts) {
-            if (dragStateRef.current?.id === concept.id) {
+            if (
+              dragStateRef.current?.id === concept.id ||
+              pendingPositionsRef.current.has(concept.id) ||
+              inFlightPositionIdsRef.current.has(concept.id)
+            ) {
               continue;
             }
 
@@ -395,7 +642,7 @@ export function GraphCanvasRuntime({
       });
     };
 
-    const handlePointerUp = async () => {
+    const handlePointerUp = () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -420,56 +667,7 @@ export function GraphCanvasRuntime({
         return;
       }
 
-      setIsSavingPosition(true);
-
-      try {
-        const response = await fetch(
-          `/api/maps/${map.id}/concepts/${dragState.id}/position`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              x: Math.round(nextPosition.x),
-              y: Math.round(nextPosition.y),
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error("Unable to update concept position.");
-        }
-
-        const payload = (await response.json()) as {
-          revision: number;
-          concept: { x: number; y: number };
-        };
-
-        setRuntimeRevision(payload.revision);
-        setPositions((current) => {
-          const next = {
-            ...current,
-            [dragState.id]: {
-              x: payload.concept.x,
-              y: payload.concept.y,
-            },
-          };
-          positionsRef.current = next;
-          return next;
-        });
-      } catch {
-        setPositions((current) => {
-          const next = {
-            ...current,
-            [dragState.id]: previousPosition,
-          };
-          positionsRef.current = next;
-          return next;
-        });
-      } finally {
-        setIsSavingPosition(false);
-      }
+      queueConceptPosition(dragState.id, nextPosition);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -483,7 +681,13 @@ export function GraphCanvasRuntime({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [dragState, flushDragPreview, map.id]);
+  }, [dragState, flushDragPreview, queueConceptPosition]);
+
+  useEffect(() => {
+    return () => {
+      isUnmountedRef.current = true;
+    };
+  }, []);
 
   return (
     <div className="canvas-card">

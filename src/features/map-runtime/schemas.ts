@@ -26,6 +26,19 @@ export const patchConceptPositionRouteSchema = z.object({
   y: z.number().int().min(0).max(100000),
 });
 
+export const patchConceptPositionsRouteSchema = z.object({
+  positions: z
+    .array(
+      z.object({
+        conceptId: z.string().uuid(),
+        x: z.number().int().min(0).max(100000),
+        y: z.number().int().min(0).max(100000),
+      })
+    )
+    .min(1)
+    .max(250),
+});
+
 export const createLinkRouteSchema = z.object({
   sourceConceptId: z.string().uuid(),
   targetConceptId: z.string().uuid(),
