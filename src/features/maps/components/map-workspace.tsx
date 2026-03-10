@@ -268,192 +268,207 @@ export function MapWorkspace({
     <div className="map-screen">
       <Dialog.Root open={mobilePanelOpen} onOpenChange={setMobilePanelOpen}>
         <div className="page-stack map-screen-stack">
-          <Flex
-            align="start"
-            justify="between"
-            gap="3"
-            wrap="wrap"
-            className="map-header-bar"
-          >
-            <Flex direction="column" gap="1" className="map-title-block">
-              <Flex gap="2" wrap="wrap" align="center">
-                <Heading size="6">{map.title}</Heading>
-                <Badge color="gray" radius="full" variant="surface">
-                  {map.subjectLabel}
-                </Badge>
-                <Badge color="blue" radius="full" variant="soft">
-                  {guidedStep === "done"
-                    ? messages.mapReadyBadge
-                    : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)}
-                </Badge>
+          <div className="map-canvas-layer">
+            <GraphCanvasRuntime
+              locale={locale}
+              map={map}
+              graphMetrics={graphMetrics}
+              selection={selection}
+              guidedStep={guidedStep}
+              interactionMode={interactionMode}
+              connectLinkSourceId={connectLinkSourceId}
+              connectLinkSourceTitle={linkingSourceConceptTitle}
+              onClearSelection={clearCanvasSelection}
+              onOpenCreateConcept={openCreateConceptAt}
+              onOpenConceptInspector={openConceptInspector}
+              onOpenLinkInspector={openLinkInspector}
+              onPickConnectSource={(conceptId) => {
+                setConnectLinkSourceId(conceptId);
+                setSelection({ kind: "none" });
+                setPanelTab("inspector");
+              }}
+              onCompleteConnectLink={openCreateLinkDraft}
+            />
+          </div>
+
+          <div className="map-overlay-layer">
+            <Flex
+              align="start"
+              justify="between"
+              gap="3"
+              wrap="wrap"
+              className="map-header-bar"
+            >
+              <Flex direction="column" gap="1" className="map-title-block">
+                <Flex gap="2" wrap="wrap" align="center">
+                  <Heading size="6">{map.title}</Heading>
+                  <Badge color="gray" radius="full" variant="surface">
+                    {map.subjectLabel}
+                  </Badge>
+                  <Badge color="blue" radius="full" variant="soft">
+                    {guidedStep === "done"
+                      ? messages.mapReadyBadge
+                      : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)}
+                  </Badge>
+                </Flex>
+                <Text color="gray" size="2" className="map-header-supporting">
+                  {guidedCopy.title}
+                </Text>
               </Flex>
-              <Text color="gray" size="2" className="map-header-supporting">
-                {guidedCopy.title}
-              </Text>
+
+              <Flex gap="2" wrap="wrap" align="center" className="map-header-actions">
+                <div className="map-inline-select">
+                  <Select.Root
+                    size="2"
+                    value={map.id}
+                    onValueChange={(value) =>
+                      router.push(workspaceMapPath(workspaceSlug, value))
+                    }
+                  >
+                    <Select.Trigger />
+                    <Select.Content>
+                      {availableMaps.map((candidate) => (
+                        <Select.Item key={candidate.id} value={candidate.id}>
+                          {candidate.title}
+                        </Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+
+                <StatusBadge
+                  status={workspaceRole}
+                  label={messages.labels.workspaceRoles[workspaceRole]}
+                />
+
+                <Button
+                  type="button"
+                  size="2"
+                  variant={interactionMode === "placeConcept" ? "solid" : "surface"}
+                  onClick={beginPlaceConcept}
+                >
+                  {messages.topBar.newConcept}
+                </Button>
+                <Button
+                  type="button"
+                  size="2"
+                  variant={interactionMode === "connectLink" ? "solid" : "surface"}
+                  onClick={beginConnectLink}
+                >
+                  {messages.topBar.createLink}
+                </Button>
+                <Button
+                  type="button"
+                  size="2"
+                  variant={panelTab === "scenario" ? "solid" : "surface"}
+                  onClick={() => openPanel("scenario")}
+                >
+                  {messages.topBar.runScenario}
+                </Button>
+              </Flex>
             </Flex>
 
-            <Flex gap="2" wrap="wrap" align="center" className="map-header-actions">
-              <div className="map-inline-select">
-                <Select.Root
-                  size="2"
-                  value={map.id}
-                  onValueChange={(value) =>
-                    router.push(workspaceMapPath(workspaceSlug, value))
+            <div className="map-overlay-body">
+              {!isMobileViewport ? (
+                <div
+                  className={
+                    panelVisibility === "collapsed"
+                      ? "map-panel is-collapsed"
+                      : "map-panel"
                   }
                 >
-                  <Select.Trigger />
-                  <Select.Content>
-                    {availableMaps.map((candidate) => (
-                      <Select.Item key={candidate.id} value={candidate.id}>
-                        {candidate.title}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
-              </div>
-
-              <StatusBadge
-                status={workspaceRole}
-                label={messages.labels.workspaceRoles[workspaceRole]}
-              />
-
-              <Button
-                type="button"
-                size="2"
-                variant={interactionMode === "placeConcept" ? "solid" : "surface"}
-                onClick={beginPlaceConcept}
-              >
-                {messages.topBar.newConcept}
-              </Button>
-              <Button
-                type="button"
-                size="2"
-                variant={interactionMode === "connectLink" ? "solid" : "surface"}
-                onClick={beginConnectLink}
-              >
-                {messages.topBar.createLink}
-              </Button>
-              <Button
-                type="button"
-                size="2"
-                variant={panelTab === "scenario" ? "solid" : "surface"}
-                onClick={() => openPanel("scenario")}
-              >
-                {messages.topBar.runScenario}
-              </Button>
-            </Flex>
-          </Flex>
-
-          <div
-            className={
-              !isMobileViewport && panelVisibility === "collapsed"
-                ? "map-workspace-grid is-panel-collapsed"
-                : "map-workspace-grid"
-            }
-          >
-            {!isMobileViewport ? (
-              <div
-                className={
-                  panelVisibility === "collapsed"
-                    ? "map-panel is-collapsed"
-                    : "map-panel"
-                }
-              >
-                {panelVisibility === "collapsed" ? (
-                  <Flex direction="column" gap="2" align="center" className="map-panel-rail">
-                    <Button
-                      type="button"
-                      size="1"
-                      variant="soft"
-                      color="gray"
-                      title={messages.topBar.expandPanel}
-                      onClick={toggleDesktopPanel}
-                    >
-                      <ChevronRightIcon />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="1"
-                      variant={panelTab === "inspector" ? "solid" : "surface"}
-                      title={messages.topBar.openInspector}
-                      onClick={() => openPanel("inspector")}
-                    >
-                      <ReaderIcon />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="1"
-                      variant={panelTab === "scenario" ? "solid" : "surface"}
-                      title={messages.topBar.openScenario}
-                      onClick={() => openPanel("scenario")}
-                    >
-                      <RocketIcon />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="1"
-                      variant="surface"
-                      color="gray"
-                      title={messages.topBar.mapSettings}
-                      onClick={openMapSettings}
-                    >
-                      <GearIcon />
-                    </Button>
-                  </Flex>
-                ) : (
-                  <Flex direction="column" gap="3" height="100%" className="map-panel-stack">
-                    <Flex align="center" justify="between" gap="2">
-                      <Flex gap="2" wrap="wrap">
-                        <Button
-                          type="button"
-                          size="2"
-                          variant={panelTab === "inspector" ? "solid" : "surface"}
-                          onClick={() => setPanelTab("inspector")}
-                        >
-                          {messages.topBar.inspector}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="2"
-                          variant={panelTab === "scenario" ? "solid" : "surface"}
-                          onClick={() => setPanelTab("scenario")}
-                        >
-                          {messages.topBar.scenario}
-                        </Button>
-                      </Flex>
-                      <Flex gap="1" wrap="nowrap">
-                        <Button
-                          type="button"
-                          size="1"
-                          variant="ghost"
-                          color="gray"
-                          title={messages.topBar.mapSettings}
-                          onClick={openMapSettings}
-                        >
-                          <GearIcon />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="1"
-                          variant="ghost"
-                          color="gray"
-                          title={messages.topBar.collapsePanel}
-                          onClick={toggleDesktopPanel}
-                        >
-                          <ChevronLeftIcon />
-                        </Button>
-                      </Flex>
+                  {panelVisibility === "collapsed" ? (
+                    <Flex direction="column" gap="2" align="center" className="map-panel-rail">
+                      <Button
+                        type="button"
+                        size="1"
+                        variant="soft"
+                        color="gray"
+                        title={messages.topBar.expandPanel}
+                        onClick={toggleDesktopPanel}
+                      >
+                        <ChevronRightIcon />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="1"
+                        variant={panelTab === "inspector" ? "solid" : "surface"}
+                        title={messages.topBar.openInspector}
+                        onClick={() => openPanel("inspector")}
+                      >
+                        <ReaderIcon />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="1"
+                        variant={panelTab === "scenario" ? "solid" : "surface"}
+                        title={messages.topBar.openScenario}
+                        onClick={() => openPanel("scenario")}
+                      >
+                        <RocketIcon />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="1"
+                        variant="surface"
+                        color="gray"
+                        title={messages.topBar.mapSettings}
+                        onClick={openMapSettings}
+                      >
+                        <GearIcon />
+                      </Button>
                     </Flex>
-                    <div className="panel-scroll-fill panel-native-scroll">
-                      <div className="panel-content">{renderPanelContent()}</div>
-                    </div>
-                  </Flex>
-                )}
-              </div>
-            ) : null}
-
-            <div className="map-canvas-area">
-              {isMobileViewport ? (
+                  ) : (
+                    <Flex direction="column" gap="3" height="100%" className="map-panel-stack">
+                      <Flex align="center" justify="between" gap="2">
+                        <Flex gap="2" wrap="wrap">
+                          <Button
+                            type="button"
+                            size="2"
+                            variant={panelTab === "inspector" ? "solid" : "surface"}
+                            onClick={() => setPanelTab("inspector")}
+                          >
+                            {messages.topBar.inspector}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="2"
+                            variant={panelTab === "scenario" ? "solid" : "surface"}
+                            onClick={() => setPanelTab("scenario")}
+                          >
+                            {messages.topBar.scenario}
+                          </Button>
+                        </Flex>
+                        <Flex gap="1" wrap="nowrap">
+                          <Button
+                            type="button"
+                            size="1"
+                            variant="ghost"
+                            color="gray"
+                            title={messages.topBar.mapSettings}
+                            onClick={openMapSettings}
+                          >
+                            <GearIcon />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="1"
+                            variant="ghost"
+                            color="gray"
+                            title={messages.topBar.collapsePanel}
+                            onClick={toggleDesktopPanel}
+                          >
+                            <ChevronLeftIcon />
+                          </Button>
+                        </Flex>
+                      </Flex>
+                      <div className="panel-scroll-fill panel-native-scroll">
+                        <div className="panel-content">{renderPanelContent()}</div>
+                      </div>
+                    </Flex>
+                  )}
+                </div>
+              ) : (
                 <Flex gap="2" className="map-mobile-panel-bar">
                   <Button
                     type="button"
@@ -477,32 +492,17 @@ export function MapWorkspace({
                   >
                     {messages.topBar.scenario}
                   </Button>
-                  <Button type="button" size="2" variant="surface" color="gray" onClick={openMapSettings}>
+                  <Button
+                    type="button"
+                    size="2"
+                    variant="surface"
+                    color="gray"
+                    onClick={openMapSettings}
+                  >
                     <GearIcon />
                   </Button>
                 </Flex>
-              ) : null}
-
-              <GraphCanvasRuntime
-                locale={locale}
-                map={map}
-                graphMetrics={graphMetrics}
-                selection={selection}
-                guidedStep={guidedStep}
-                interactionMode={interactionMode}
-                connectLinkSourceId={connectLinkSourceId}
-                connectLinkSourceTitle={linkingSourceConceptTitle}
-                onClearSelection={clearCanvasSelection}
-                onOpenCreateConcept={openCreateConceptAt}
-                onOpenConceptInspector={openConceptInspector}
-                onOpenLinkInspector={openLinkInspector}
-                onPickConnectSource={(conceptId) => {
-                  setConnectLinkSourceId(conceptId);
-                  setSelection({ kind: "none" });
-                  setPanelTab("inspector");
-                }}
-                onCompleteConnectLink={openCreateLinkDraft}
-              />
+              )}
             </div>
           </div>
         </div>

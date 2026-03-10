@@ -562,6 +562,14 @@ select {
   flex: 1 1 auto;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.canvas-scroll-native::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .panel-content {
@@ -590,19 +598,53 @@ select {
 }
 
 .map-screen-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  gap: 0;
+  min-height: 0;
+}
+
+.map-canvas-layer,
+.map-overlay-layer {
+  grid-area: 1 / 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.map-overlay-layer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.map-overlay-body {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  min-width: 0;
+  pointer-events: none;
 }
 
 .map-header-bar {
   align-items: center;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  padding: 10px 12px;
+  pointer-events: auto;
 }
 
 .map-header-actions {
   justify-content: flex-end;
 }
 
-.map-title-block,
-.map-canvas-area {
+.map-title-block {
   min-width: 0;
 }
 
@@ -614,39 +656,25 @@ select {
   min-width: 180px;
 }
 
-.map-workspace-grid {
-  align-items: stretch;
-  display: grid;
-  height: 100%;
-  grid-template-columns: minmax(300px, 344px) minmax(0, 1fr);
-  gap: 12px;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.map-workspace-grid.is-panel-collapsed {
-  grid-template-columns: 60px minmax(0, 1fr);
-}
-
-.map-panel,
-.canvas-card {
+.map-panel {
   height: 100%;
   min-height: 0;
+  width: min(344px, 32vw);
+  min-width: 300px;
   border: 1px solid var(--line);
   border-radius: 24px;
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
   overflow: hidden;
   padding: 12px;
-}
-
-.map-panel {
   display: flex;
+  pointer-events: auto;
 }
 
 .map-panel.is-collapsed {
   justify-content: center;
+  width: 60px;
+  min-width: 60px;
   padding: 10px 8px;
 }
 
@@ -685,23 +713,21 @@ select {
 }
 
 .canvas-card {
+  border-radius: 24px;
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.78),
     rgba(248, 244, 236, 0.78)
   );
-  display: flex;
-  flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
   position: relative;
 }
 
-.map-canvas-area {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  overflow: hidden;
+.canvas-card .canvas-scroll-native {
+  inset: 0;
+  position: absolute;
 }
 
 .canvas-guidance-banner {
@@ -709,15 +735,31 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-bottom: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  left: 12px;
+  padding: 8px 10px;
+  pointer-events: none;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 2;
 }
 
 .canvas-empty-overlay {
   background: rgba(255, 255, 255, 0.55);
   border: 1px dashed var(--line-strong);
   border-radius: 20px;
-  margin-bottom: 12px;
+  left: 12px;
+  margin: 0;
+  max-width: min(520px, calc(100% - 24px));
   padding: 14px 16px;
+  pointer-events: none;
+  position: absolute;
+  top: 74px;
+  z-index: 2;
 }
 
 .canvas-empty-overlay.is-error {
@@ -725,13 +767,22 @@ select {
 }
 
 .canvas-runtime-status {
-  padding-top: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  bottom: 12px;
+  box-shadow: var(--shadow-soft);
+  left: 12px;
+  padding: 8px 10px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
 }
 
 .map-canvas {
   position: relative;
-  width: 2200px;
-  height: 1500px;
+  width: max(2200px, 100%);
+  height: max(1500px, 100%);
   border-radius: 24px;
   background:
     linear-gradient(rgba(17, 24, 39, 0.04) 1px, transparent 1px),
@@ -1070,14 +1121,26 @@ select {
     display: none;
   }
 
-  .map-workspace-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr);
+  .map-overlay-layer {
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .map-overlay-body {
+    align-items: flex-start;
   }
 
   .map-mobile-panel-bar {
     display: flex;
     flex-wrap: wrap;
+    gap: 8px;
+    max-width: min(100%, 720px);
+    pointer-events: auto;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: var(--shadow-soft);
   }
 
   .map-mobile-dialog {
@@ -1353,8 +1416,8 @@ select {
   }
 
   .map-canvas {
-    width: 1600px;
-    height: 1200px;
+    width: max(1600px, 100%);
+    height: max(1200px, 100%);
   }
 
   .locale-switcher {
