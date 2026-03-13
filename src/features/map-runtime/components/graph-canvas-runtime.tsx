@@ -94,6 +94,12 @@ export function GraphCanvasRuntime({
   // Store refs for stable Sigma closures
   const interactionModeRef = useRef(interactionMode);
   const connectLinkSourceIdRef = useRef(connectLinkSourceId);
+  const onOpenCreateConceptRef = useRef(onOpenCreateConcept);
+  const onOpenConceptInspectorRef = useRef(onOpenConceptInspector);
+  const onOpenLinkInspectorRef = useRef(onOpenLinkInspector);
+  const onClearSelectionRef = useRef(onClearSelection);
+  const onPickConnectSourceRef = useRef(onPickConnectSource);
+  const onCompleteConnectLinkRef = useRef(onCompleteConnectLink);
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
@@ -102,6 +108,30 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     connectLinkSourceIdRef.current = connectLinkSourceId;
   }, [connectLinkSourceId]);
+
+  useEffect(() => {
+    onOpenCreateConceptRef.current = onOpenCreateConcept;
+  }, [onOpenCreateConcept]);
+
+  useEffect(() => {
+    onOpenConceptInspectorRef.current = onOpenConceptInspector;
+  }, [onOpenConceptInspector]);
+
+  useEffect(() => {
+    onOpenLinkInspectorRef.current = onOpenLinkInspector;
+  }, [onOpenLinkInspector]);
+
+  useEffect(() => {
+    onClearSelectionRef.current = onClearSelection;
+  }, [onClearSelection]);
+
+  useEffect(() => {
+    onPickConnectSourceRef.current = onPickConnectSource;
+  }, [onPickConnectSource]);
+
+  useEffect(() => {
+    onCompleteConnectLinkRef.current = onCompleteConnectLink;
+  }, [onCompleteConnectLink]);
 
   useEffect(() => {
     hoveredConceptIdRef.current = hoveredConceptId;
@@ -340,19 +370,19 @@ export function GraphCanvasRuntime({
 
       if (mode === "connectLink") {
         if (!sourceId) {
-          onPickConnectSource(conceptId);
+          onPickConnectSourceRef.current(conceptId);
           return;
         }
         if (sourceId === conceptId) {
           return;
         }
-        onCompleteConnectLink(sourceId, conceptId);
+        onCompleteConnectLinkRef.current(sourceId, conceptId);
         return;
       }
 
-      onOpenConceptInspector(conceptId);
+      onOpenConceptInspectorRef.current(conceptId);
     },
-    [onCompleteConnectLink, onOpenConceptInspector, onPickConnectSource]
+    []
   );
 
   const registerConceptCardRef = useCallback(
@@ -558,17 +588,20 @@ export function GraphCanvasRuntime({
     });
 
     sigma.on("clickEdge", (e) => {
-      onOpenLinkInspector(e.edge);
+      onOpenLinkInspectorRef.current(e.edge);
     });
 
     sigma.on("clickStage", (e) => {
       const mode = interactionModeRef.current;
       if (mode === "placeConcept") {
         const graphCoords = sigma.viewportToGraph({ x: e.event.x, y: e.event.y });
-        onOpenCreateConcept(Math.round(graphCoords.x), Math.round(graphCoords.y));
+        onOpenCreateConceptRef.current(
+          Math.round(graphCoords.x),
+          Math.round(graphCoords.y)
+        );
         return;
       }
-      onClearSelection();
+      onClearSelectionRef.current();
     });
 
     let isDragging = false;
@@ -617,9 +650,6 @@ export function GraphCanvasRuntime({
     };
   }, [
     snapshot,
-    onOpenLinkInspector,
-    onOpenCreateConcept,
-    onClearSelection,
     handleConceptActivation,
     saveNodePosition,
     syncConceptPresentation,
@@ -728,7 +758,6 @@ export function GraphCanvasRuntime({
               className={cardClassName}
               onClick={() => handleConceptCardClick(concept.id)}
               onPointerDown={(event) => handleConceptCardPointerDown(concept.id, event)}
-              onWheelCapture={forwardWheelToSigma}
               aria-label={`${concept.title}, ${conceptTypeLabel}`}
             >
               <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
@@ -779,7 +808,6 @@ export function GraphCanvasRuntime({
               onPointerLeave={() => handleDotHoverEnd(concept.id)}
               onFocus={() => handleDotHoverStart(concept.id)}
               onBlur={() => handleDotHoverEnd(concept.id)}
-              onWheelCapture={forwardWheelToSigma}
             />
           );
         })}
