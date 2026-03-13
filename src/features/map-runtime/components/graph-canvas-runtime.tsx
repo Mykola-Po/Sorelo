@@ -3,6 +3,7 @@
 import {
   useLayoutEffect,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
   useRef,
@@ -497,6 +498,39 @@ export function GraphCanvasRuntime({
     [saveNodePosition, syncConceptPresentation, updateConceptPosition]
   );
 
+  const forwardWheelToSigma = useCallback(
+    (event: ReactWheelEvent<HTMLElement>) => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const mouseLayer = container.querySelector(".sigma-mouse");
+      const targetElement =
+        mouseLayer instanceof HTMLElement ? mouseLayer : container;
+
+      const forwardedEvent = new WheelEvent("wheel", {
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaZ: event.deltaZ,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        bubbles: true,
+        cancelable: true,
+      });
+
+      targetElement.dispatchEvent(forwardedEvent);
+    },
+    []
+  );
+
   useEffect(() => {
     return () => {
       teardownCardDragRef.current?.();
@@ -666,7 +700,12 @@ export function GraphCanvasRuntime({
         style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }}
       />
 
-      <div ref={cardsLayerRef} className="sl-concept-card-layer" aria-hidden={!snapshot}>
+      <div
+        ref={cardsLayerRef}
+        className="sl-concept-card-layer"
+        aria-hidden={!snapshot}
+        onWheelCapture={forwardWheelToSigma}
+      >
         {snapshot?.concepts.map((concept) => {
           const conceptTypeLabel = messages.labels.conceptTypes[concept.conceptType];
           const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
@@ -689,6 +728,7 @@ export function GraphCanvasRuntime({
               className={cardClassName}
               onClick={() => handleConceptCardClick(concept.id)}
               onPointerDown={(event) => handleConceptCardPointerDown(concept.id, event)}
+              onWheelCapture={forwardWheelToSigma}
               aria-label={`${concept.title}, ${conceptTypeLabel}`}
             >
               <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
@@ -710,7 +750,11 @@ export function GraphCanvasRuntime({
         })}
       </div>
 
-      <div className="sl-concept-dot-layer" aria-hidden={!snapshot || !isZoomedOut}>
+      <div
+        className="sl-concept-dot-layer"
+        aria-hidden={!snapshot || !isZoomedOut}
+        onWheelCapture={forwardWheelToSigma}
+      >
         {snapshot?.concepts.map((concept) => {
           const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
           const isConnectionSource =
@@ -735,6 +779,7 @@ export function GraphCanvasRuntime({
               onPointerLeave={() => handleDotHoverEnd(concept.id)}
               onFocus={() => handleDotHoverStart(concept.id)}
               onBlur={() => handleDotHoverEnd(concept.id)}
+              onWheelCapture={forwardWheelToSigma}
             />
           );
         })}
