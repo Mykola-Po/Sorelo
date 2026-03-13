@@ -50,7 +50,6 @@ export function GraphCanvasRuntime({
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
   const viewport = useMapStore((s) => s.viewport);
-  const updateViewport = useMapStore((s) => s.updateViewport);
   const interactionMode = useMapStore((s) => s.interactionMode);
   const connectLinkSourceId = useMapStore((s) => s.connectLinkSourceId);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
@@ -140,7 +139,7 @@ export function GraphCanvasRuntime({
   const saveNodePosition = useCallback(
     (conceptId: string, x: number, y: number) => {
       setIsSavingPosition(true);
-      
+
       // Update in Zustand for UI
       updateConceptPosition(conceptId, { x, y });
 
@@ -151,7 +150,7 @@ export function GraphCanvasRuntime({
           .finally(() => setIsSavingPosition(false));
       }, POSITION_FLUSH_DEBOUNCE_MS);
     },
-    [sendPositionsBatch]
+    [sendPositionsBatch, updateConceptPosition]
   );
 
   // --- Sigma Foundation Initializer ---
@@ -204,12 +203,10 @@ export function GraphCanvasRuntime({
     // 4. Custom Drag-and-Drop Implementation over Sigma primitives
     let isDragging = false;
     let dragNode: string | null = null;
-    let cameraStateBeforeDrag: any;
 
     sigma.on("downNode", (e) => {
       isDragging = true;
       dragNode = e.node;
-      cameraStateBeforeDrag = sigma.getCamera().getState();
       sigma.getCamera().disable(); // Prevent map panning while dragging a node
     });
 
@@ -246,6 +243,7 @@ export function GraphCanvasRuntime({
     onCompleteConnectLink,
     onPickConnectSource,
     saveNodePosition,
+    updateConceptPosition,
   ]);
 
   const runtimeStatusMessage =

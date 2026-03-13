@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { createMapStore, type MapStore, type MapState } from "./map-store";
 import type { GraphSnapshot } from "@/features/map-runtime/types";
@@ -18,17 +18,15 @@ export function MapStoreProvider({
   mapId,
   initialSnapshot,
 }: MapStoreProviderProps) {
-  const storeRef = useRef<MapStore>(null);
-
-  if (!storeRef.current) {
-    storeRef.current = createMapStore({ 
-      mapId, 
-      initialSnapshot: initialSnapshot ?? null 
-    });
-  }
+  const [store] = useState<MapStore>(() =>
+    createMapStore({
+      mapId,
+      initialSnapshot: initialSnapshot ?? null,
+    })
+  );
 
   return (
-    <MapStoreContext.Provider value={storeRef.current}>
+    <MapStoreContext.Provider value={store}>
       {children}
     </MapStoreContext.Provider>
   );
