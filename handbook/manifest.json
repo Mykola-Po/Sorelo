@@ -162,6 +162,15 @@
           "legacyNote": "Legacy `/projects` routes remain as compatibility redirects to maps."
         },
         {
+          "id": "map-runtime-architecture",
+          "title": "Map Runtime Architecture",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/map-runtime-architecture.md",
+          "summary": "Technical architecture for the Map Canvas, utilizing Sigma.js for WebGL rendering and Zustand for UI state management.",
+          "tags": ["executable", "maps", "canvas", "sigma", "zustand"]
+        },
+        {
           "id": "legacy-domain-retirement",
           "title": "Legacy Domain Retirement",
           "status": "planned",

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useLayoutEffect,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -172,9 +173,13 @@ export function GraphCanvasRuntime({
 
   const syncConceptCardPositions = useCallback(() => {
     const sigma = sigmaRef.current;
-    if (!sigma || !snapshot) {
+    const layer = cardsLayerRef.current;
+    if (!sigma || !snapshot || !layer) {
       return;
     }
+
+    const graph = sigma.getGraph();
+    const layerRect = layer.getBoundingClientRect();
 
     for (const concept of snapshot.concepts) {
       const cardElement = cardRefs.current.get(concept.id);
@@ -182,17 +187,34 @@ export function GraphCanvasRuntime({
         continue;
       }
 
-      const displayData = sigma.getNodeDisplayData(concept.id);
-      if (!displayData || displayData.hidden) {
+      if (!graph.hasNode(concept.id)) {
         cardElement.style.opacity = "0";
         cardElement.style.pointerEvents = "none";
         continue;
       }
 
+      const graphX = graph.getNodeAttribute(concept.id, "x");
+      const graphY = graph.getNodeAttribute(concept.id, "y");
+      const viewportPosition = sigma.graphToViewport({ x: graphX, y: graphY });
+      const isFinitePosition =
+        Number.isFinite(viewportPosition.x) && Number.isFinite(viewportPosition.y);
+
+      if (!isFinitePosition) {
+        cardElement.style.opacity = "0";
+        cardElement.style.pointerEvents = "none";
+        continue;
+      }
+
+      const isOutsideViewport =
+        viewportPosition.x < -320 ||
+        viewportPosition.y < -240 ||
+        viewportPosition.x > layerRect.width + 320 ||
+        viewportPosition.y > layerRect.height + 240;
+
       cardElement.style.opacity = "1";
-      cardElement.style.pointerEvents = "auto";
-      cardElement.style.left = `${displayData.x}px`;
-      cardElement.style.top = `${displayData.y}px`;
+      cardElement.style.pointerEvents = isOutsideViewport ? "none" : "auto";
+      cardElement.style.left = `${viewportPosition.x}px`;
+      cardElement.style.top = `${viewportPosition.y}px`;
 
       const accentColor =
         (sigma.getGraph().getNodeAttribute(concept.id, "accentColor") as string | undefined) ??
@@ -452,6 +474,13 @@ export function GraphCanvasRuntime({
       window.cancelAnimationFrame(raf);
     };
   }, [snapshot, syncConceptCardPositions]);
+
+  useLayoutEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    syncConceptCardPositions();
+  }, [snapshot, selection, interactionMode, connectLinkSourceId, syncConceptCardPositions]);
 
   const runtimeStatusMessage =
     isSnapshotLoading && !snapshot ? messages.canvas.loadingSnapshot : isSavingPosition ? messages.canvas.updatingPosition : null;
