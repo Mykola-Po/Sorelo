@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Text } from "@radix-ui/themes";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Badge, Text } from "@radix-ui/themes";
 import type { InspectorSelection } from "@/features/inspector/types";
 import type { CanvasInteractionMode } from "@/features/maps/workspace-state";
 import type { GraphMetrics, MapDetail } from "@/features/maps/types";
-import type { GraphSnapshot } from "@/features/map-runtime/types";
+import type { GraphConceptNode, GraphSnapshot } from "@/features/map-runtime/types";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
@@ -15,6 +21,12 @@ import { createSigmaInstance } from "../renderers/sigma-instance";
 import type { Sigma } from "sigma";
 
 const POSITION_FLUSH_DEBOUNCE_MS = 750;
+
+declare global {
+  interface Window {
+    __SIGMA__?: Sigma;
+  }
+}
 
 type GraphCanvasRuntimeProps = {
   locale: SupportedLocale;
@@ -35,6 +47,9 @@ export function GraphCanvasRuntime({
   locale,
   map,
   graphMetrics,
+  selection,
+  interactionMode,
+  connectLinkSourceId,
   onClearSelection,
   onOpenCreateConcept,
   onOpenConceptInspector,
@@ -44,14 +59,16 @@ export function GraphCanvasRuntime({
 }: GraphCanvasRuntimeProps) {
   const messages = getMapWorkspaceMessages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
+  const cardsLayerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
+  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const suppressClickForConceptIdRef = useRef<string | null>(null);
+  const teardownCardDragRef = useRef<(() => void) | null>(null);
 
   // Zustand State
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
   const viewport = useMapStore((s) => s.viewport);
-  const interactionMode = useMapStore((s) => s.interactionMode);
-  const connectLinkSourceId = useMapStore((s) => s.connectLinkSourceId);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
 
   // Store refs for stable Sigma closures
@@ -152,6 +169,186 @@ export function GraphCanvasRuntime({
     },
     [sendPositionsBatch, updateConceptPosition]
   );
+
+  const syncConceptCardPositions = useCallback(() => {
+    const sigma = sigmaRef.current;
+    if (!sigma || !snapshot) {
+      return;
+    }
+
+    for (const concept of snapshot.concepts) {
+      const cardElement = cardRefs.current.get(concept.id);
+      if (!cardElement) {
+        continue;
+      }
+
+      const displayData = sigma.getNodeDisplayData(concept.id);
+      if (!displayData || displayData.hidden) {
+        cardElement.style.opacity = "0";
+        cardElement.style.pointerEvents = "none";
+        continue;
+      }
+
+      cardElement.style.opacity = "1";
+      cardElement.style.pointerEvents = "auto";
+      cardElement.style.left = `${displayData.x}px`;
+      cardElement.style.top = `${displayData.y}px`;
+
+      const accentColor =
+        (sigma.getGraph().getNodeAttribute(concept.id, "accentColor") as string | undefined) ??
+        "#868e96";
+      cardElement.style.setProperty("--sl-concept-card-accent", accentColor);
+    }
+  }, [snapshot]);
+
+  const handleConceptActivation = useCallback(
+    (conceptId: string) => {
+      const mode = interactionModeRef.current;
+      const sourceId = connectLinkSourceIdRef.current;
+
+      if (mode === "connectLink") {
+        if (!sourceId) {
+          onPickConnectSource(conceptId);
+          return;
+        }
+        if (sourceId === conceptId) {
+          return;
+        }
+        onCompleteConnectLink(sourceId, conceptId);
+        return;
+      }
+
+      onOpenConceptInspector(conceptId);
+    },
+    [onCompleteConnectLink, onOpenConceptInspector, onPickConnectSource]
+  );
+
+  const registerConceptCardRef = useCallback(
+    (conceptId: string, element: HTMLButtonElement | null) => {
+      if (element) {
+        cardRefs.current.set(conceptId, element);
+        return;
+      }
+      cardRefs.current.delete(conceptId);
+    },
+    []
+  );
+
+  const getShortSummary = useCallback(
+    (concept: GraphConceptNode) =>
+      concept.summary?.trim() ||
+      concept.description?.trim() ||
+      messages.canvas.conceptSummaryFallback,
+    [messages.canvas.conceptSummaryFallback]
+  );
+
+  const handleConceptCardClick = useCallback(
+    (conceptId: string) => {
+      if (suppressClickForConceptIdRef.current === conceptId) {
+        suppressClickForConceptIdRef.current = null;
+        return;
+      }
+
+      handleConceptActivation(conceptId);
+    },
+    [handleConceptActivation]
+  );
+
+  const handleConceptCardPointerDown = useCallback(
+    (conceptId: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0 || interactionModeRef.current !== "inspect") {
+        return;
+      }
+
+      const sigma = sigmaRef.current;
+      const container = containerRef.current;
+      if (!sigma || !container) {
+        return;
+      }
+
+      teardownCardDragRef.current?.();
+      event.preventDefault();
+      event.stopPropagation();
+
+      const pointerId = event.pointerId;
+      const cardElement = event.currentTarget;
+      cardElement.setPointerCapture(pointerId);
+      sigma.getCamera().disable();
+
+      let moved = false;
+      const minimumDragDistance = 4;
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+
+      const toViewportPoint = (clientX: number, clientY: number) => {
+        const bounds = container.getBoundingClientRect();
+        return { x: clientX - bounds.left, y: clientY - bounds.top };
+      };
+
+      const onPointerMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) {
+          return;
+        }
+
+        const deltaX = moveEvent.clientX - startClientX;
+        const deltaY = moveEvent.clientY - startClientY;
+        if (!moved && Math.hypot(deltaX, deltaY) > minimumDragDistance) {
+          moved = true;
+        }
+
+        const graphPosition = sigma.viewportToGraph(
+          toViewportPoint(moveEvent.clientX, moveEvent.clientY)
+        );
+
+        sigma.getGraph().setNodeAttribute(conceptId, "x", graphPosition.x);
+        sigma.getGraph().setNodeAttribute(conceptId, "y", graphPosition.y);
+        updateConceptPosition(conceptId, { x: graphPosition.x, y: graphPosition.y });
+        sigma.refresh();
+        syncConceptCardPositions();
+      };
+
+      const onPointerEnd = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== pointerId) {
+          return;
+        }
+
+        const x = sigma.getGraph().getNodeAttribute(conceptId, "x");
+        const y = sigma.getGraph().getNodeAttribute(conceptId, "y");
+
+        if (moved) {
+          suppressClickForConceptIdRef.current = conceptId;
+          saveNodePosition(conceptId, x, y);
+        }
+
+        sigma.getCamera().enable();
+        if (cardElement.hasPointerCapture(pointerId)) {
+          cardElement.releasePointerCapture(pointerId);
+        }
+
+        cleanup();
+      };
+
+      const cleanup = () => {
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerEnd);
+        window.removeEventListener("pointercancel", onPointerEnd);
+        teardownCardDragRef.current = null;
+      };
+
+      teardownCardDragRef.current = cleanup;
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerEnd);
+      window.addEventListener("pointercancel", onPointerEnd);
+    },
+    [saveNodePosition, syncConceptCardPositions, updateConceptPosition]
+  );
+
+  useEffect(() => {
+    return () => {
+      teardownCardDragRef.current?.();
+    };
+  }, []);
+
   // --- Sigma Foundation Initializer ---
   useEffect(() => {
     if (!containerRef.current || !snapshot) return;
@@ -167,25 +364,12 @@ export function GraphCanvasRuntime({
     sigmaRef.current = sigma;
 
     if (typeof window !== "undefined") {
-      (window as any).__SIGMA__ = sigma;
+      window.__SIGMA__ = sigma;
     }
 
     // 3. Sigma interaction events
     sigma.on("clickNode", (e) => {
-      const mode = interactionModeRef.current;
-      const sourceId = connectLinkSourceIdRef.current;
-
-      if (mode === "connectLink") {
-        if (!sourceId) {
-          onPickConnectSource(e.node);
-          return;
-        }
-        if (sourceId === e.node) return;
-        onCompleteConnectLink(sourceId, e.node);
-        return;
-      }
-
-      onOpenConceptInspector(e.node);
+      handleConceptActivation(e.node);
     });
 
     sigma.on("clickEdge", (e) => {
@@ -220,6 +404,7 @@ export function GraphCanvasRuntime({
       sigma.getGraph().setNodeAttribute(dragNode, "x", pos.x);
       sigma.getGraph().setNodeAttribute(dragNode, "y", pos.y);
       updateConceptPosition(dragNode, { x: pos.x, y: pos.y });
+      syncConceptCardPositions();
     });
 
     sigma.getMouseCaptor().on("mouseup", () => {
@@ -231,7 +416,12 @@ export function GraphCanvasRuntime({
       isDragging = false;
       dragNode = null;
       sigma.getCamera().enable();
+      syncConceptCardPositions();
     });
+
+    sigma.on("afterRender", syncConceptCardPositions);
+    sigma.getCamera().on("updated", syncConceptCardPositions);
+    syncConceptCardPositions();
 
     // Clean up WebGL context on unmount or snapshot change
     return () => {
@@ -243,11 +433,25 @@ export function GraphCanvasRuntime({
     onOpenLinkInspector,
     onOpenCreateConcept,
     onClearSelection,
-    onCompleteConnectLink,
-    onPickConnectSource,
+    handleConceptActivation,
     saveNodePosition,
+    syncConceptCardPositions,
     updateConceptPosition,
   ]);
+
+  useEffect(() => {
+    if (!snapshot || !cardsLayerRef.current) {
+      return;
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      syncConceptCardPositions();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [snapshot, syncConceptCardPositions]);
 
   const runtimeStatusMessage =
     isSnapshotLoading && !snapshot ? messages.canvas.loadingSnapshot : isSavingPosition ? messages.canvas.updatingPosition : null;
@@ -271,8 +475,8 @@ export function GraphCanvasRuntime({
       ) : null}
 
       {runtimeStatusMessage && (
-        <div style={{ position: "absolute", top: 16, right: 16, zIndex: 10, background: "var(--color-surface)", padding: 8, borderRadius: 6, boxShadow: "var(--shadow-2)" }}>
-           <Text size="1" color="gray">{runtimeStatusMessage}</Text>
+        <div className="canvas-runtime-status">
+          <Text size="1" color="gray">{runtimeStatusMessage}</Text>
         </div>
       )}
 
@@ -282,6 +486,52 @@ export function GraphCanvasRuntime({
          className="sigma-canvas map-canvas" 
          style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} 
       />
+
+      <div ref={cardsLayerRef} className="sl-concept-card-layer" aria-hidden={!snapshot}>
+        {snapshot?.concepts.map((concept) => {
+          const conceptTypeLabel = messages.labels.conceptTypes[concept.conceptType];
+          const isSelectedConcept =
+            selection.kind === "concept" && selection.id === concept.id;
+          const isConnectionSource =
+            interactionMode === "connectLink" &&
+            connectLinkSourceId === concept.id;
+
+          const cardClassName = [
+            "sl-concept-card",
+            isSelectedConcept ? "is-selected" : "",
+            isConnectionSource ? "is-connection-source" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return (
+            <button
+              key={concept.id}
+              type="button"
+              ref={(element) => registerConceptCardRef(concept.id, element)}
+              className={cardClassName}
+              onClick={() => handleConceptCardClick(concept.id)}
+              onPointerDown={(event) => handleConceptCardPointerDown(concept.id, event)}
+              aria-label={`${concept.title}, ${conceptTypeLabel}`}
+            >
+              <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
+                {concept.title}
+              </Text>
+              <Text as="span" size="1" color="gray" className="sl-concept-card-summary">
+                {getShortSummary(concept)}
+              </Text>
+              <Badge
+                color="gray"
+                variant="soft"
+                radius="full"
+                className="sl-concept-card-type"
+              >
+                {conceptTypeLabel}
+              </Badge>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

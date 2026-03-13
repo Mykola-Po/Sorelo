@@ -30,6 +30,7 @@ export default function TestOverlay() {
   const [lastAction, setLastAction] = useState<string>("None");
   const mode = useMapStore(s => s.interactionMode);
   const selection = useMapStore(s => s.selection);
+  const connectLinkSourceId = useMapStore((s) => s.connectLinkSourceId);
   
   const setInteractionMode = useMapStore(s => s.setInteractionMode);
   const setSelection = useMapStore(s => s.setSelection);
@@ -53,9 +54,9 @@ export default function TestOverlay() {
         locale="en"
         map={dummyMap}
         graphMetrics={dummyMetrics}
-        selection={{ kind: "none" }}
-        interactionMode="inspect"
-        connectLinkSourceId={null}
+        selection={selection}
+        interactionMode={mode}
+        connectLinkSourceId={connectLinkSourceId}
         onClearSelection={() => {
            setLastAction("Cleared Selection");
            setSelection({ kind: "none" });

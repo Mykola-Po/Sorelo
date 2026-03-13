@@ -8,9 +8,11 @@ export type SigmaInstanceOptions = {
 
 export function createSigmaInstance({ container, graph }: SigmaInstanceOptions): Sigma {
   return new Sigma(graph, container, {
+    renderLabels: false,
     renderEdgeLabels: true,
     edgeLabelSize: 12,
     edgeLabelColor: { attribute: "color", color: "#868e96" },
+    nodeReducer: (_node, data) => ({ ...data, color: "rgba(0, 0, 0, 0)" }),
     
     defaultNodeType: "circle",
     defaultEdgeType: "arrow",

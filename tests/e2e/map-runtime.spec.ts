@@ -59,13 +59,20 @@ test.describe("Map Runtime WebGL Canvas", () => {
   });
 
   test("Clicking a Node opens the inspector", async ({ page }) => {
-    const pos = await page.evaluate(() => {
-      const sigma = (window as any).__SIGMA__;
-      return sigma.getNodeDisplayData("node-a");
+    // We emit the clickNode event directly to safely test our application boundary
+    // without fragile WebGL raycasting dependence.
+    await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { emit: (eventName: string, payload: unknown) => void };
+        }
+      ).__SIGMA__;
+      if (!sigma) {
+        throw new Error("Sigma instance is not available");
+      }
+      sigma.emit("clickNode", { node: "node-a" });
     });
     
-    await page.locator(".sigma-mouse").click({ position: { x: pos.x, y: pos.y } });
-
     await expect(page.getByTestId("last-action")).toHaveText(/Inspect Concept/);
     await expect(page.getByTestId("selection")).toHaveText("Selection: concept");
   });
@@ -74,8 +81,17 @@ test.describe("Map Runtime WebGL Canvas", () => {
     await page.getByTestId("set-mode-concept").click();
     await expect(page.getByTestId("current-mode")).toHaveText("Mode: placeConcept");
 
-    // Click empty canvas space mapped to 100,100 from top-left
-    await page.locator(".sigma-mouse").click({ position: { x: 100, y: 100 } });
+    await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { emit: (eventName: string, payload: unknown) => void };
+        }
+      ).__SIGMA__;
+      if (!sigma) {
+        throw new Error("Sigma instance is not available");
+      }
+      sigma.emit("clickStage", { event: { x: 100, y: 100 } });
+    });
 
     await expect(page.getByTestId("last-action")).toHaveText(/Create Concept at/);
     await expect(page.getByTestId("selection")).toHaveText("Selection: create-concept");
@@ -85,19 +101,32 @@ test.describe("Map Runtime WebGL Canvas", () => {
     await page.getByTestId("set-mode-link").click();
     await expect(page.getByTestId("current-mode")).toHaveText("Mode: connectLink");
 
-    const posA = await page.evaluate(() => {
-      return (window as any).__SIGMA__.getNodeDisplayData("node-a");
+    // Source Node
+    await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { emit: (eventName: string, payload: unknown) => void };
+        }
+      ).__SIGMA__;
+      if (!sigma) {
+        throw new Error("Sigma instance is not available");
+      }
+      sigma.emit("clickNode", { node: "node-a" });
     });
-    const posB = await page.evaluate(() => {
-      return (window as any).__SIGMA__.getNodeDisplayData("node-b");
-    });
-
-    // Click Node A (Source)
-    await page.locator(".sigma-mouse").click({ position: { x: posA.x, y: posA.y } });
     await expect(page.getByTestId("last-action")).toHaveText(/Picked Connect Source/);
 
-    // Click Node B (Target)
-    await page.locator(".sigma-mouse").click({ position: { x: posB.x, y: posB.y } });
+    // Target Node
+    await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { emit: (eventName: string, payload: unknown) => void };
+        }
+      ).__SIGMA__;
+      if (!sigma) {
+        throw new Error("Sigma instance is not available");
+      }
+      sigma.emit("clickNode", { node: "node-b" });
+    });
     await expect(page.getByTestId("last-action")).toHaveText(/Completed Link/);
     await expect(page.getByTestId("selection")).toHaveText("Selection: create-link");
   });

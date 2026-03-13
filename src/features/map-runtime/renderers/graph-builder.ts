@@ -8,8 +8,10 @@ export type SigmaNodePayload = Attributes & {
   label: string;
   size: number;
   color: string;
+  accentColor: string;
   conceptType: GraphConceptNode["conceptType"];
   summary: string | null;
+  description: string | null;
   selected?: boolean;
 };
 
@@ -66,14 +68,18 @@ export function buildGraphologyInstance(
 
   for (const concept of snapshot.concepts) {
     const position = positions?.[concept.id] ?? { x: concept.x, y: concept.y };
+    const accentColor = getColorForConceptType(concept.conceptType);
+
     graph.addNode(concept.id, {
       x: position.x,
       y: position.y,
-      size: 15,
+      size: 18,
       label: concept.title,
-      color: getColorForConceptType(concept.conceptType),
+      color: accentColor,
+      accentColor,
       conceptType: concept.conceptType,
       summary: concept.summary,
+      description: concept.description,
     } satisfies SigmaNodePayload);
   }
 
