@@ -21,7 +21,15 @@ import { useRouter } from "next/navigation";
 
 import { InspectorPanel } from "@/features/inspector/components/inspector-panel";
 import type { InspectorSelection } from "@/features/inspector/types";
-import { GraphCanvasRuntime } from "@/features/map-runtime/components/graph-canvas-runtime";
+import dynamic from "next/dynamic";
+
+const GraphCanvasRuntime = dynamic(
+  () =>
+    import("@/features/map-runtime/components/graph-canvas-runtime").then(
+      (mod) => mod.GraphCanvasRuntime
+    ),
+  { ssr: false }
+);
 import { MapStoreProvider } from "@/features/map-runtime/store/map-store-provider";
 import { useConceptCatalog } from "@/features/map-runtime/hooks/use-concept-catalog";
 import {
