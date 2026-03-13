@@ -22,6 +22,14 @@ import { createSigmaInstance } from "../renderers/sigma-instance";
 import type { Sigma } from "sigma";
 
 const POSITION_FLUSH_DEBOUNCE_MS = 750;
+const DOT_MODE_ENTER_RATIO = 1.25;
+const DOT_MODE_EXIT_RATIO = 1.14;
+
+type ViewportNodePosition = {
+  x: number;
+  y: number;
+  isOutside: boolean;
+};
 
 declare global {
   interface Window {
@@ -42,6 +50,7 @@ type GraphCanvasRuntimeProps = {
   onOpenLinkInspector: (linkId: string) => void;
   onPickConnectSource: (conceptId: string) => void;
   onCompleteConnectLink: (sourceConceptId: string, targetConceptId: string) => void;
+  onZoomRatioChange?: (ratio: number) => void;
 };
 
 export function GraphCanvasRuntime({
@@ -57,14 +66,23 @@ export function GraphCanvasRuntime({
   onOpenLinkInspector,
   onPickConnectSource,
   onCompleteConnectLink,
+  onZoomRatioChange,
 }: GraphCanvasRuntimeProps) {
   const messages = getMapWorkspaceMessages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
   const cardsLayerRef = useRef<HTMLDivElement>(null);
+  const hoverCardRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const dotRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const suppressClickForConceptIdRef = useRef<string | null>(null);
   const teardownCardDragRef = useRef<(() => void) | null>(null);
+  const conceptViewportPositionsRef = useRef<Map<string, ViewportNodePosition>>(new Map());
+
+  const [isZoomedOut, setIsZoomedOut] = useState(false);
+  const isZoomedOutRef = useRef(isZoomedOut);
+  const [hoveredConceptId, setHoveredConceptId] = useState<string | null>(null);
+  const hoveredConceptIdRef = useRef<string | null>(hoveredConceptId);
 
   // Zustand State
   const snapshot = useMapStore((s) => s.snapshot);
@@ -83,6 +101,20 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     connectLinkSourceIdRef.current = connectLinkSourceId;
   }, [connectLinkSourceId]);
+
+  useEffect(() => {
+    hoveredConceptIdRef.current = hoveredConceptId;
+  }, [hoveredConceptId]);
+
+  useEffect(() => {
+    isZoomedOutRef.current = isZoomedOut;
+  }, [isZoomedOut]);
+
+  useEffect(() => {
+    if (!isZoomedOut) {
+      setHoveredConceptId(null);
+    }
+  }, [isZoomedOut]);
 
   // Local fetch states
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(true);
@@ -139,7 +171,7 @@ export function GraphCanvasRuntime({
     return () => {
       controller.abort();
     };
-  }, [map.id, setSnapshot, viewport]); // Note: In a real robust app, debounce viewport changes to avoid spamming the API
+  }, [map.id, setSnapshot, viewport]);
 
   // --- Map Coordinates Save Logic ---
   const sendPositionsBatch = useCallback(
@@ -158,10 +190,8 @@ export function GraphCanvasRuntime({
     (conceptId: string, x: number, y: number) => {
       setIsSavingPosition(true);
 
-      // Update in Zustand for UI
       updateConceptPosition(conceptId, { x, y });
 
-      // Debounce and send to backend
       setTimeout(() => {
         sendPositionsBatch([{ conceptId, x, y }])
           .catch((err) => console.error("Failed to save position", err))
@@ -171,7 +201,28 @@ export function GraphCanvasRuntime({
     [sendPositionsBatch, updateConceptPosition]
   );
 
-  const syncConceptCardPositions = useCallback(() => {
+  const updateZoomMode = useCallback(
+    (ratio: number) => {
+      if (!Number.isFinite(ratio)) {
+        return;
+      }
+
+      onZoomRatioChange?.(ratio);
+
+      const currentlyZoomedOut = isZoomedOutRef.current;
+      const nextZoomedOut = currentlyZoomedOut
+        ? ratio > DOT_MODE_EXIT_RATIO
+        : ratio >= DOT_MODE_ENTER_RATIO;
+
+      if (nextZoomedOut !== currentlyZoomedOut) {
+        isZoomedOutRef.current = nextZoomedOut;
+        setIsZoomedOut(nextZoomedOut);
+      }
+    },
+    [onZoomRatioChange]
+  );
+
+  const syncConceptPresentation = useCallback(() => {
     const sigma = sigmaRef.current;
     const layer = cardsLayerRef.current;
     if (!sigma || !snapshot || !layer) {
@@ -180,16 +231,22 @@ export function GraphCanvasRuntime({
 
     const graph = sigma.getGraph();
     const layerRect = layer.getBoundingClientRect();
+    const zoomedOut = isZoomedOutRef.current;
+    const nextViewportMap = new Map<string, ViewportNodePosition>();
 
     for (const concept of snapshot.concepts) {
       const cardElement = cardRefs.current.get(concept.id);
-      if (!cardElement) {
-        continue;
-      }
+      const dotElement = dotRefs.current.get(concept.id);
 
       if (!graph.hasNode(concept.id)) {
-        cardElement.style.opacity = "0";
-        cardElement.style.pointerEvents = "none";
+        if (cardElement) {
+          cardElement.style.opacity = "0";
+          cardElement.style.pointerEvents = "none";
+        }
+        if (dotElement) {
+          dotElement.style.opacity = "0";
+          dotElement.style.pointerEvents = "none";
+        }
         continue;
       }
 
@@ -200,8 +257,14 @@ export function GraphCanvasRuntime({
         Number.isFinite(viewportPosition.x) && Number.isFinite(viewportPosition.y);
 
       if (!isFinitePosition) {
-        cardElement.style.opacity = "0";
-        cardElement.style.pointerEvents = "none";
+        if (cardElement) {
+          cardElement.style.opacity = "0";
+          cardElement.style.pointerEvents = "none";
+        }
+        if (dotElement) {
+          dotElement.style.opacity = "0";
+          dotElement.style.pointerEvents = "none";
+        }
         continue;
       }
 
@@ -211,16 +274,62 @@ export function GraphCanvasRuntime({
         viewportPosition.x > layerRect.width + 320 ||
         viewportPosition.y > layerRect.height + 240;
 
-      cardElement.style.opacity = "1";
-      cardElement.style.pointerEvents = isOutsideViewport ? "none" : "auto";
-      cardElement.style.left = `${viewportPosition.x}px`;
-      cardElement.style.top = `${viewportPosition.y}px`;
+      nextViewportMap.set(concept.id, {
+        x: viewportPosition.x,
+        y: viewportPosition.y,
+        isOutside: isOutsideViewport,
+      });
 
       const accentColor =
-        (sigma.getGraph().getNodeAttribute(concept.id, "accentColor") as string | undefined) ??
-        "#868e96";
-      cardElement.style.setProperty("--sl-concept-card-accent", accentColor);
+        (graph.getNodeAttribute(concept.id, "accentColor") as string | undefined) ?? "#868e96";
+
+      if (cardElement) {
+        const isCardVisible = !zoomedOut && !isOutsideViewport;
+        cardElement.style.left = `${viewportPosition.x}px`;
+        cardElement.style.top = `${viewportPosition.y}px`;
+        cardElement.style.opacity = isCardVisible ? "1" : "0";
+        cardElement.style.pointerEvents = isCardVisible ? "auto" : "none";
+        cardElement.style.setProperty("--sl-concept-card-accent", accentColor);
+      }
+
+      if (dotElement) {
+        const isDotVisible = zoomedOut && !isOutsideViewport;
+        dotElement.style.left = `${viewportPosition.x}px`;
+        dotElement.style.top = `${viewportPosition.y}px`;
+        dotElement.style.opacity = isDotVisible ? "1" : "0";
+        dotElement.style.pointerEvents = isDotVisible ? "auto" : "none";
+        dotElement.style.setProperty("--sl-concept-card-accent", accentColor);
+      }
     }
+
+    conceptViewportPositionsRef.current = nextViewportMap;
+
+    const hoverCardElement = hoverCardRef.current;
+    if (!hoverCardElement) {
+      return;
+    }
+
+    const hoveredId = hoveredConceptIdRef.current;
+    if (!zoomedOut || !hoveredId) {
+      hoverCardElement.style.opacity = "0";
+      hoverCardElement.style.pointerEvents = "none";
+      return;
+    }
+
+    const hoveredPosition = nextViewportMap.get(hoveredId);
+    if (!hoveredPosition || hoveredPosition.isOutside) {
+      hoverCardElement.style.opacity = "0";
+      hoverCardElement.style.pointerEvents = "none";
+      return;
+    }
+
+    const accentColor =
+      (graph.getNodeAttribute(hoveredId, "accentColor") as string | undefined) ?? "#868e96";
+    hoverCardElement.style.left = `${hoveredPosition.x}px`;
+    hoverCardElement.style.top = `${hoveredPosition.y}px`;
+    hoverCardElement.style.opacity = "1";
+    hoverCardElement.style.pointerEvents = "none";
+    hoverCardElement.style.setProperty("--sl-concept-card-accent", accentColor);
   }, [snapshot]);
 
   const handleConceptActivation = useCallback(
@@ -256,6 +365,17 @@ export function GraphCanvasRuntime({
     []
   );
 
+  const registerConceptDotRef = useCallback(
+    (conceptId: string, element: HTMLButtonElement | null) => {
+      if (element) {
+        dotRefs.current.set(conceptId, element);
+        return;
+      }
+      dotRefs.current.delete(conceptId);
+    },
+    []
+  );
+
   const getShortSummary = useCallback(
     (concept: GraphConceptNode) =>
       concept.summary?.trim() ||
@@ -276,9 +396,21 @@ export function GraphCanvasRuntime({
     [handleConceptActivation]
   );
 
+  const handleDotHoverStart = useCallback((conceptId: string) => {
+    setHoveredConceptId(conceptId);
+  }, []);
+
+  const handleDotHoverEnd = useCallback((conceptId: string) => {
+    setHoveredConceptId((current) => (current === conceptId ? null : current));
+  }, []);
+
   const handleConceptCardPointerDown = useCallback(
     (conceptId: string, event: ReactPointerEvent<HTMLButtonElement>) => {
-      if (event.button !== 0 || interactionModeRef.current !== "inspect") {
+      if (
+        event.button !== 0 ||
+        interactionModeRef.current !== "inspect" ||
+        isZoomedOutRef.current
+      ) {
         return;
       }
 
@@ -326,7 +458,7 @@ export function GraphCanvasRuntime({
         sigma.getGraph().setNodeAttribute(conceptId, "y", graphPosition.y);
         updateConceptPosition(conceptId, { x: graphPosition.x, y: graphPosition.y });
         sigma.refresh();
-        syncConceptCardPositions();
+        syncConceptPresentation();
       };
 
       const onPointerEnd = (endEvent: PointerEvent) => {
@@ -362,7 +494,7 @@ export function GraphCanvasRuntime({
       window.addEventListener("pointerup", onPointerEnd);
       window.addEventListener("pointercancel", onPointerEnd);
     },
-    [saveNodePosition, syncConceptCardPositions, updateConceptPosition]
+    [saveNodePosition, syncConceptPresentation, updateConceptPosition]
   );
 
   useEffect(() => {
@@ -375,10 +507,8 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     if (!containerRef.current || !snapshot) return;
 
-    // 1. Convert snapshot to graphology instance
     const graph = buildGraphologyInstance(snapshot);
 
-    // 2. Instantiate Sigma Engine
     const sigma = createSigmaInstance({
       container: containerRef.current,
       graph,
@@ -389,7 +519,6 @@ export function GraphCanvasRuntime({
       window.__SIGMA__ = sigma;
     }
 
-    // 3. Sigma interaction events
     sigma.on("clickNode", (e) => {
       handleConceptActivation(e.node);
     });
@@ -401,7 +530,6 @@ export function GraphCanvasRuntime({
     sigma.on("clickStage", (e) => {
       const mode = interactionModeRef.current;
       if (mode === "placeConcept") {
-        // Transform screen coords to graph coordinates
         const graphCoords = sigma.viewportToGraph({ x: e.event.x, y: e.event.y });
         onOpenCreateConcept(Math.round(graphCoords.x), Math.round(graphCoords.y));
         return;
@@ -409,14 +537,13 @@ export function GraphCanvasRuntime({
       onClearSelection();
     });
 
-    // 4. Custom Drag-and-Drop Implementation over Sigma primitives
     let isDragging = false;
     let dragNode: string | null = null;
 
     sigma.on("downNode", (e) => {
       isDragging = true;
       dragNode = e.node;
-      sigma.getCamera().disable(); // Prevent map panning while dragging a node
+      sigma.getCamera().disable();
     });
 
     sigma.getMouseCaptor().on("mousemovebody", (e) => {
@@ -426,7 +553,7 @@ export function GraphCanvasRuntime({
       sigma.getGraph().setNodeAttribute(dragNode, "x", pos.x);
       sigma.getGraph().setNodeAttribute(dragNode, "y", pos.y);
       updateConceptPosition(dragNode, { x: pos.x, y: pos.y });
-      syncConceptCardPositions();
+      syncConceptPresentation();
     });
 
     sigma.getMouseCaptor().on("mouseup", () => {
@@ -438,27 +565,32 @@ export function GraphCanvasRuntime({
       isDragging = false;
       dragNode = null;
       sigma.getCamera().enable();
-      syncConceptCardPositions();
+      syncConceptPresentation();
     });
 
-    sigma.on("afterRender", syncConceptCardPositions);
-    sigma.getCamera().on("updated", syncConceptCardPositions);
-    syncConceptCardPositions();
+    const handleCameraUpdated = () => {
+      const ratio = sigma.getCamera().getState().ratio;
+      updateZoomMode(ratio);
+      syncConceptPresentation();
+    };
 
-    // Clean up WebGL context on unmount or snapshot change
+    sigma.on("afterRender", syncConceptPresentation);
+    sigma.getCamera().on("updated", handleCameraUpdated);
+    handleCameraUpdated();
+
     return () => {
       sigma.kill();
     };
   }, [
     snapshot,
-    onOpenConceptInspector,
     onOpenLinkInspector,
     onOpenCreateConcept,
     onClearSelection,
     handleConceptActivation,
     saveNodePosition,
-    syncConceptCardPositions,
+    syncConceptPresentation,
     updateConceptPosition,
+    updateZoomMode,
   ]);
 
   useEffect(() => {
@@ -467,23 +599,40 @@ export function GraphCanvasRuntime({
     }
 
     const raf = window.requestAnimationFrame(() => {
-      syncConceptCardPositions();
+      syncConceptPresentation();
     });
 
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [snapshot, syncConceptCardPositions]);
+  }, [snapshot, syncConceptPresentation]);
 
   useLayoutEffect(() => {
     if (!snapshot) {
       return;
     }
-    syncConceptCardPositions();
-  }, [snapshot, selection, interactionMode, connectLinkSourceId, syncConceptCardPositions]);
+    syncConceptPresentation();
+  }, [
+    snapshot,
+    selection,
+    interactionMode,
+    connectLinkSourceId,
+    isZoomedOut,
+    hoveredConceptId,
+    syncConceptPresentation,
+  ]);
 
   const runtimeStatusMessage =
-    isSnapshotLoading && !snapshot ? messages.canvas.loadingSnapshot : isSavingPosition ? messages.canvas.updatingPosition : null;
+    isSnapshotLoading && !snapshot
+      ? messages.canvas.loadingSnapshot
+      : isSavingPosition
+        ? messages.canvas.updatingPosition
+        : null;
+
+  const hoveredConcept =
+    isZoomedOut && hoveredConceptId
+      ? snapshot?.concepts.find((concept) => concept.id === hoveredConceptId) ?? null
+      : null;
 
   return (
     <div className="canvas-card" style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -505,25 +654,24 @@ export function GraphCanvasRuntime({
 
       {runtimeStatusMessage && (
         <div className="canvas-runtime-status">
-          <Text size="1" color="gray">{runtimeStatusMessage}</Text>
+          <Text size="1" color="gray">
+            {runtimeStatusMessage}
+          </Text>
         </div>
       )}
 
-      {/* SIGMA.JS WEBGL RENDER MOUNT TARGET */}
-      <div 
-         ref={containerRef} 
-         className="sigma-canvas map-canvas" 
-         style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} 
+      <div
+        ref={containerRef}
+        className="sigma-canvas map-canvas"
+        style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }}
       />
 
       <div ref={cardsLayerRef} className="sl-concept-card-layer" aria-hidden={!snapshot}>
         {snapshot?.concepts.map((concept) => {
           const conceptTypeLabel = messages.labels.conceptTypes[concept.conceptType];
-          const isSelectedConcept =
-            selection.kind === "concept" && selection.id === concept.id;
+          const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
           const isConnectionSource =
-            interactionMode === "connectLink" &&
-            connectLinkSourceId === concept.id;
+            interactionMode === "connectLink" && connectLinkSourceId === concept.id;
 
           const cardClassName = [
             "sl-concept-card",
@@ -560,6 +708,52 @@ export function GraphCanvasRuntime({
             </button>
           );
         })}
+      </div>
+
+      <div className="sl-concept-dot-layer" aria-hidden={!snapshot || !isZoomedOut}>
+        {snapshot?.concepts.map((concept) => {
+          const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
+          const isConnectionSource =
+            interactionMode === "connectLink" && connectLinkSourceId === concept.id;
+          const dotClassName = [
+            "sl-concept-dot",
+            isSelectedConcept ? "is-selected" : "",
+            isConnectionSource ? "is-connection-source" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return (
+            <button
+              key={concept.id}
+              type="button"
+              ref={(element) => registerConceptDotRef(concept.id, element)}
+              className={dotClassName}
+              aria-label={concept.title}
+              onClick={() => handleConceptCardClick(concept.id)}
+              onPointerEnter={() => handleDotHoverStart(concept.id)}
+              onPointerLeave={() => handleDotHoverEnd(concept.id)}
+              onFocus={() => handleDotHoverStart(concept.id)}
+              onBlur={() => handleDotHoverEnd(concept.id)}
+            />
+          );
+        })}
+      </div>
+
+      <div className="sl-concept-hover-card-layer" aria-hidden={!hoveredConcept}>
+        {hoveredConcept ? (
+          <div ref={hoverCardRef} className="sl-concept-card is-hover-preview">
+            <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
+              {hoveredConcept.title}
+            </Text>
+            <Text as="span" size="1" color="gray" className="sl-concept-card-summary">
+              {getShortSummary(hoveredConcept)}
+            </Text>
+            <Badge color="gray" variant="soft" radius="full" className="sl-concept-card-type">
+              {messages.labels.conceptTypes[hoveredConcept.conceptType]}
+            </Badge>
+          </div>
+        ) : null}
       </div>
     </div>
   );

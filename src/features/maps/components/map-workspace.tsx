@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Cross2Icon,
   Link2Icon,
@@ -15,6 +15,7 @@ import {
   Flex,
   IconButton,
   Select,
+  Text,
   Tooltip,
 } from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
@@ -70,6 +71,7 @@ export function MapWorkspace({
   const [connectLinkSourceId, setConnectLinkSourceId] = useState<string | null>(
     null
   );
+  const [zoomRatio, setZoomRatio] = useState(1);
   const [panelOpen, setPanelOpen] = useState(false);
   const {
     catalog: conceptCatalog,
@@ -93,6 +95,15 @@ export function MapWorkspace({
     : null;
   const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
   const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
+  const handleZoomRatioChange = useCallback((nextRatio: number) => {
+    if (!Number.isFinite(nextRatio)) {
+      return;
+    }
+
+    setZoomRatio((prevRatio) =>
+      Math.abs(prevRatio - nextRatio) < 0.01 ? prevRatio : nextRatio
+    );
+  }, []);
 
   const openInspectorPanel = () => {
     setPanelTab("inspector");
@@ -259,6 +270,7 @@ export function MapWorkspace({
                 setPanelTab("inspector");
               }}
               onCompleteConnectLink={openCreateLinkDraft}
+              onZoomRatioChange={handleZoomRatioChange}
             />
           </div>
           </MapStoreProvider>
@@ -283,6 +295,7 @@ export function MapWorkspace({
                   router.push(workspaceMapPath(workspaceSlug, value))
                 }
               />
+              <MapScaleRuler zoomRatio={zoomRatio} />
             </div>
 
             <div className="map-overlay-bottom">
@@ -515,6 +528,37 @@ function MapTopStrip({
           </Select.Root>
         </div>
       </div>
+    </div>
+  );
+}
+
+type MapScaleRulerProps = {
+  zoomRatio: number;
+};
+
+function MapScaleRuler({ zoomRatio }: MapScaleRulerProps) {
+  const minRatio = 0.45;
+  const maxRatio = 2.8;
+  const safeRatio = Math.min(Math.max(zoomRatio, minRatio), maxRatio);
+  const minLog = Math.log(minRatio);
+  const maxLog = Math.log(maxRatio);
+  const thumbPositionPercent = ((Math.log(safeRatio) - minLog) / (maxLog - minLog)) * 100;
+  const zoomPercent = Math.round((1 / safeRatio) * 100);
+
+  return (
+    <div className="map-scale-ruler" aria-hidden="true">
+      <div className="map-scale-ruler-track">
+        <span className="map-scale-ruler-tick is-start" />
+        <span className="map-scale-ruler-tick is-mid" />
+        <span className="map-scale-ruler-tick is-end" />
+        <span
+          className="map-scale-ruler-thumb"
+          style={{ left: `${thumbPositionPercent}%` }}
+        />
+      </div>
+      <Text size="1" color="gray" className="map-scale-ruler-value">
+        {zoomPercent}%
+      </Text>
     </div>
   );
 }
