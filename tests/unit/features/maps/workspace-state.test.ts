@@ -5,8 +5,6 @@ import {
   deriveGuidedOnboardingStep,
   getDefaultConceptPosition,
   getGuidedOnboardingCopy,
-  getNextPanelVisibilityState,
-  parseStoredPanelVisibilityState,
 } from "@/features/maps/workspace-state";
 
 describe("workspace state helpers", () => {
@@ -69,25 +67,5 @@ describe("workspace state helpers", () => {
       relationType: "causes",
       strength: 3,
     });
-  });
-
-  it("normalizes stored panel visibility state", () => {
-    expect(parseStoredPanelVisibilityState("collapsed")).toBe("collapsed");
-    expect(parseStoredPanelVisibilityState("expanded")).toBe("expanded");
-    expect(parseStoredPanelVisibilityState(null)).toBe("expanded");
-  });
-
-  it("expands panel for non-toggle intents and toggles explicitly", () => {
-    expect(getNextPanelVisibilityState("expanded", "toggle")).toBe("collapsed");
-    expect(getNextPanelVisibilityState("collapsed", "toggle")).toBe("expanded");
-    expect(getNextPanelVisibilityState("collapsed", "open-panel")).toBe(
-      "expanded"
-    );
-    expect(getNextPanelVisibilityState("collapsed", "open-selection")).toBe(
-      "expanded"
-    );
-    expect(getNextPanelVisibilityState("collapsed", "open-settings")).toBe(
-      "expanded"
-    );
   });
 });

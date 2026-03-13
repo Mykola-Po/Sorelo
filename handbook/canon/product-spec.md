@@ -155,7 +155,7 @@ The current technical foundation remains correct:
 - learning schema
 - server-first architecture
 
-But every user-facing decision should now be evaluated against the Sorelo model, not against legacy project/task patterns.
+But every user-facing decision should now be evaluated against the Sorelo model, not against legacy `projects/tasks` compatibility patterns.
 
 ## Glossary
 

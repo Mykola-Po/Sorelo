@@ -1,0 +1,177 @@
+{
+  "sections": [
+    {
+      "id": "canon",
+      "title": "Product Canon",
+      "tier": "canon",
+      "summary": "Defines what Sorelo is, which terms are authoritative, and which product promises must remain stable.",
+      "documents": [
+        {
+          "id": "source-of-truth",
+          "title": "Sorelo Source of Truth",
+          "status": "existing",
+          "owner": "product",
+          "path": "handbook/canon/sorelo-source-of-truth.md",
+          "summary": "Canonical statement of the Sorelo product model and its non-negotiable vocabulary.",
+          "tags": ["canon", "product", "terminology"]
+        },
+        {
+          "id": "product-spec",
+          "title": "Product Spec",
+          "status": "existing",
+          "owner": "product",
+          "path": "handbook/canon/product-spec.md",
+          "summary": "Working v1 contract for scope, promises, glossary, and non-goals.",
+          "tags": ["canon", "scope", "v1", "product"]
+        },
+        {
+          "id": "naming-and-codenames",
+          "title": "Naming and Codenames",
+          "status": "existing",
+          "owner": "shared",
+          "path": "handbook/canon/naming-and-codenames.md",
+          "summary": "Naming policy for Sorelo as the product and `sorela` as the technical codename.",
+          "tags": ["canon", "naming", "codename"]
+        }
+      ]
+    },
+    {
+      "id": "rules",
+      "title": "Implementation Rules",
+      "tier": "rules",
+      "summary": "Constrains how canon is implemented in code, UX, copy, and repository operations.",
+      "documents": [
+        {
+          "id": "implementation-principles",
+          "title": "Implementation Principles",
+          "status": "existing",
+          "owner": "shared",
+          "path": "handbook/rules/implementation-principles.md",
+          "summary": "Durable implementation principles distilled from AGENTS.md and the current repository baseline.",
+          "tags": ["rules", "architecture", "ux", "durability"]
+        },
+        {
+          "id": "content-framework",
+          "title": "Content Documentation Framework",
+          "status": "existing",
+          "owner": "product",
+          "path": "handbook/rules/content-documentation-framework.md",
+          "summary": "Language and copy framework used to keep product messaging stable and coherent.",
+          "tags": ["rules", "content", "copy", "messaging"]
+        },
+        {
+          "id": "ui-engineering-playbook",
+          "title": "UI Engineering Playbook",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/rules/ui-engineering-playbook.md",
+          "summary": "UI system rules for Radix-first components, vanilla CSS, bounded scroll, and predictable shell behavior.",
+          "tags": ["rules", "ui", "radix", "css"]
+        },
+        {
+          "id": "repository-operations",
+          "title": "Repository Operations Playbook",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/rules/repository-operations-playbook.md",
+          "summary": "Repository safety, Git discipline, backups, worktrees, and CI guardrails.",
+          "tags": ["rules", "git", "operations", "ci"]
+        }
+      ]
+    },
+    {
+      "id": "surfaces",
+      "title": "Derived Surfaces",
+      "tier": "surfaces",
+      "summary": "Maps how canon and rules are currently expressed in public copy, internal UI surfaces, and user-facing flows.",
+      "documents": [
+        {
+          "id": "positioning-surfaces",
+          "title": "Positioning Surfaces Inventory",
+          "status": "existing",
+          "owner": "shared",
+          "path": "handbook/surfaces/positioning-surfaces.md",
+          "summary": "Inventory of current public and internal positioning surfaces that derive from canon and rules.",
+          "tags": ["surfaces", "positioning", "landing", "app-shell"],
+          "derivedFrom": ["source-of-truth", "product-spec", "implementation-principles", "content-framework"]
+        },
+        {
+          "id": "current-user-flows",
+          "title": "Current User Flows",
+          "status": "existing",
+          "owner": "shared",
+          "path": "handbook/surfaces/current-user-flows.md",
+          "summary": "Current sign-in, workspace, map, Inspector, and Scenario flows derived from the active product model.",
+          "tags": ["surfaces", "flows", "maps", "scenarios"],
+          "derivedFrom": ["product-spec", "implementation-principles"]
+        },
+        {
+          "id": "surface-copy-audit",
+          "title": "Surface Copy Audit",
+          "status": "next",
+          "owner": "shared",
+          "summary": "Cross-surface audit of landing, app shell, and localized strings once the current handbook tiers settle.",
+          "tags": ["surfaces", "copy", "i18n", "audit"],
+          "derivedFrom": ["positioning-surfaces", "current-user-flows"]
+        }
+      ]
+    },
+    {
+      "id": "executable",
+      "title": "Executable Truth",
+      "tier": "executable",
+      "summary": "Describes what is currently true in schema, routes, runtime behavior, and deterministic scenario execution.",
+      "documents": [
+        {
+          "id": "public-schema",
+          "title": "Public Schema",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/public-schema.md",
+          "summary": "Current public operational schema for workspaces, maps, concepts, links, scenarios, runs, and legacy compatibility tables.",
+          "tags": ["executable", "schema", "database", "public"],
+          "legacyNote": "The public schema still carries legacy `projects` and `tasks` tables for compatibility."
+        },
+        {
+          "id": "learning-schema",
+          "title": "Learning Schema",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/learning-schema.md",
+          "summary": "Current learning/provenance layer for source fragments, suggestions, resolutions, versions, lineage, and scenario feedback.",
+          "tags": ["executable", "schema", "learning", "provenance"]
+        },
+        {
+          "id": "scenario-engine-v1",
+          "title": "Scenario Engine V1",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/scenario-engine-v1.md",
+          "summary": "Deterministic scenario execution contract with explicit seed resolution, ordered steps, explanations, and persisted run records.",
+          "tags": ["executable", "scenario", "engine", "deterministic"]
+        },
+        {
+          "id": "map-first-routing-and-flows",
+          "title": "Map-First Routing and Flows",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/map-first-routing-and-flows.md",
+          "summary": "Current route and redirect behavior that sends authenticated users into workspace and map-first product paths.",
+          "tags": ["executable", "routing", "maps", "flows"],
+          "derivedFrom": ["product-spec", "current-user-flows"],
+          "legacyNote": "Legacy `/projects` routes remain as compatibility redirects to maps."
+        },
+        {
+          "id": "legacy-domain-retirement",
+          "title": "Legacy Domain Retirement",
+          "status": "planned",
+          "owner": "engineering",
+          "summary": "Retirement plan for legacy `projects/tasks` compatibility once schema and redirect routes can be safely removed.",
+          "tags": ["executable", "legacy", "cleanup", "compatibility"],
+          "derivedFrom": ["public-schema", "map-first-routing-and-flows"],
+          "legacyNote": "Do not remove legacy tables or compatibility redirects in the current cycle."
+        }
+      ]
+    }
+  ]
+}

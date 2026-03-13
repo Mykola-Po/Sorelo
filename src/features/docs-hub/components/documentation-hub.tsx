@@ -21,7 +21,13 @@ import {
   TextField,
 } from "@radix-ui/themes";
 
-import type { DocsHubDocument, DocsHubSection } from "@/features/docs-hub/content";
+import {
+  formatDocsHubStatus,
+  formatDocsHubTier,
+  type DocsHubDocument,
+  type DocsHubSection,
+  type DocsHubTier,
+} from "@/features/docs-hub/content";
 
 type DocumentationHubProps = {
   sections: DocsHubSection[];
@@ -166,29 +172,53 @@ export function DocumentationHub({ sections }: DocumentationHubProps) {
 
   return (
     <div className="docs-hub-layout">
-      <Flex align="center" justify="between" gap="3" className="docs-hub-search">
-        <TextField.Root
-          size="3"
-          value={query}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            setQuery(event.target.value)
-          }
-          placeholder="Search product, data, security, ops, and UI docs"
-          aria-label="Search documentation"
-          className="docs-hub-search-field"
+      <Flex direction="column" gap="3">
+        <Flex
+          align="center"
+          justify="between"
+          gap="3"
+          wrap="wrap"
+          className="docs-hub-search"
         >
-          <TextField.Slot>
-            <MagnifyingGlassIcon />
-          </TextField.Slot>
-        </TextField.Root>
+          <TextField.Root
+            size="3"
+            value={query}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              setQuery(event.target.value)
+            }
+            placeholder="Search canon, rules, surfaces, and executable docs"
+            aria-label="Search documentation"
+            className="docs-hub-search-field"
+          >
+            <TextField.Slot>
+              <MagnifyingGlassIcon />
+            </TextField.Slot>
+          </TextField.Root>
 
-        <Flex gap="2" wrap="wrap" justify="end">
-          <Badge radius="full" variant="surface" color="gray">
-            {visibleSections.length} sections
-          </Badge>
-          <Badge radius="full" variant="surface" color="blue">
-            {visibleDocumentCount} documents
-          </Badge>
+          <Flex gap="2" wrap="wrap" justify="end">
+            <Badge radius="full" variant="surface" color="gray">
+              {visibleSections.length} sections
+            </Badge>
+            <Badge radius="full" variant="surface" color="blue">
+              {visibleDocumentCount} documents
+            </Badge>
+          </Flex>
+        </Flex>
+
+        <Flex align="center" gap="2" wrap="wrap">
+          <Text size="1" color="gray">
+            Authority order
+          </Text>
+          {(["canon", "rules", "surfaces", "executable"] as const).map((tier) => (
+            <Badge
+              key={tier}
+              radius="full"
+              variant="soft"
+              color={getTierColor(tier)}
+            >
+              {formatDocsHubTier(tier)}
+            </Badge>
+          ))}
         </Flex>
       </Flex>
 
@@ -201,7 +231,7 @@ export function DocumentationHub({ sections }: DocumentationHubProps) {
                   <Heading size="5">No matching documents</Heading>
                   <Text size="2" color="gray">
                     Refine the query or clear the search to see the full
-                    documentation roadmap.
+                    handbook authority map.
                   </Text>
                 </Flex>
               </Card>
@@ -214,7 +244,16 @@ export function DocumentationHub({ sections }: DocumentationHubProps) {
                   className="docs-hub-section"
                 >
                   <Flex direction="column" gap="2" className="docs-section-head">
-                    <Heading size="6">{section.title}</Heading>
+                    <Flex align="center" gap="2" wrap="wrap">
+                      <Heading size="6">{section.title}</Heading>
+                      <Badge
+                        radius="full"
+                        variant="soft"
+                        color={getTierColor(section.tier)}
+                      >
+                        {formatDocsHubTier(section.tier)}
+                      </Badge>
+                    </Flex>
                     <Text size="2" color="gray">
                       {section.summary}
                     </Text>
@@ -249,18 +288,18 @@ export function DocumentationHub({ sections }: DocumentationHubProps) {
             <div className="docs-hub-toc-scroll">
               {visibleSections.map((section) => (
                 <Flex key={section.id} direction="column" gap="2">
-                    <Button
-                      type="button"
-                      size="1"
-                      variant={
-                        resolvedActiveAnchor === section.id ? "solid" : "ghost"
-                      }
-                      color={
-                        resolvedActiveAnchor === section.id ? "blue" : "gray"
-                      }
-                      className="docs-toc-section"
-                      onClick={() => scrollToAnchor(section.id)}
-                    >
+                  <Button
+                    type="button"
+                    size="1"
+                    variant={
+                      resolvedActiveAnchor === section.id ? "solid" : "ghost"
+                    }
+                    color={
+                      resolvedActiveAnchor === section.id ? "blue" : "gray"
+                    }
+                    className="docs-toc-section"
+                    onClick={() => scrollToAnchor(section.id)}
+                  >
                     {section.title}
                   </Button>
                   <Flex direction="column" gap="1" className="docs-toc-children">
@@ -323,27 +362,35 @@ function DocsDocumentCard({ document, sectionId }: DocsDocumentCardProps) {
             color={getStatusColor(document.status)}
             variant="soft"
           >
-            {formatStatus(document.status)}
+            {formatDocsHubStatus(document.status)}
           </Badge>
         </Flex>
 
         <Flex gap="2" wrap="wrap">
           <Badge radius="full" variant="surface" color="gray">
-            {document.priority}
-          </Badge>
-          <Badge radius="full" variant="surface" color="gray">
             {document.owner}
           </Badge>
         </Flex>
 
-        <Box className="docs-document-meta">
-          <Text size="1" color="gray">
-            Canonical file
-          </Text>
-          <Text size="2" className="docs-document-path">
-            {document.path}
-          </Text>
-        </Box>
+        {document.path ? (
+          <Box className="docs-document-meta">
+            <Text size="1" color="gray">
+              Canonical file
+            </Text>
+            <Text size="2" className="docs-document-path">
+              {document.path}
+            </Text>
+          </Box>
+        ) : null}
+
+        {document.legacyNote ? (
+          <Box className="docs-document-meta">
+            <Text size="1" color="gray">
+              Legacy note
+            </Text>
+            <Text size="2">{document.legacyNote}</Text>
+          </Box>
+        ) : null}
 
         <Flex gap="2" wrap="wrap">
           {document.tags.map((tag) => (
@@ -379,16 +426,20 @@ function getStatusColor(status: DocsHubDocumentStatus) {
   return "gray";
 }
 
-function formatStatus(status: DocsHubDocumentStatus) {
-  if (status === "existing") {
-    return "Existing";
+function getTierColor(tier: DocsHubTier) {
+  if (tier === "canon") {
+    return "amber";
   }
 
-  if (status === "next") {
-    return "Next";
+  if (tier === "rules") {
+    return "blue";
   }
 
-  return "Planned";
+  if (tier === "surfaces") {
+    return "violet";
+  }
+
+  return "green";
 }
 
 type DocsHubDocumentStatus = DocsHubDocument["status"];

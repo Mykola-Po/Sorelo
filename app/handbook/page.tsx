@@ -9,7 +9,7 @@ import {
   DOCS_HUB_ACCESS_COOKIE,
   hasDocsHubAccess,
 } from "@/features/docs-hub/access";
-import { docsHubSections } from "@/features/docs-hub/content";
+import { loadDocsHubSections } from "@/features/docs-hub/manifest";
 import { env } from "@/shared/config/env";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Sorelo Handbook",
   description:
-    "Internal documentation hub for product, data, UI, security, and operations.",
+    "Internal handbook for Sorelo canon, implementation rules, derived surfaces, and executable truth.",
   robots: {
     index: false,
     follow: false,
@@ -32,6 +32,7 @@ export default async function HandbookPage() {
     env.DOCS_HUB_PASSWORD,
     env.SUPABASE_SECRET_KEY
   );
+  const sections = hasAccess ? await loadDocsHubSections() : [];
 
   return (
     <div className="viewport-shell docs-hub-viewport">
@@ -57,15 +58,15 @@ export default async function HandbookPage() {
 
         <div className="docs-hub-surface">
           {hasAccess ? (
-            <DocumentationHub sections={docsHubSections} />
+            <DocumentationHub sections={sections} />
           ) : (
             <div className="docs-hub-locked">
               <div className="docs-hub-locked-copy">
                 <Heading size="7">Shared documentation entrypoint</Heading>
                 <Text size="2" color="gray">
-                  This page is designed as a strict internal hub for product,
-                  data, UI, security, and operations documentation. Access is
-                  gated by a shared password.
+                  This page is designed as a strict internal handbook for
+                  product canon, implementation rules, derived surfaces, and
+                  executable truth. Access is gated by a shared password.
                 </Text>
               </div>
               <HandbookUnlockCard />

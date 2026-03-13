@@ -8,12 +8,6 @@ export type GuidedOnboardingStep =
   | "done";
 
 export type CanvasInteractionMode = "inspect" | "placeConcept" | "connectLink";
-export type PanelVisibilityState = "expanded" | "collapsed";
-export type PanelVisibilityIntent =
-  | "toggle"
-  | "open-panel"
-  | "open-selection"
-  | "open-settings";
 
 export type GuidedOnboardingCopy = {
   step: GuidedOnboardingStep;
@@ -28,8 +22,6 @@ export type LinkDraftDefaults = {
   relationType: RelationType;
   strength: number;
 };
-
-export const MAP_PANEL_VISIBILITY_STORAGE_KEY = "sorelo-map-panel-visibility";
 
 export function deriveGuidedOnboardingStep(input: {
   conceptCount: number;
@@ -124,21 +116,4 @@ export function buildLinkDraftDefaults(): LinkDraftDefaults {
     relationType: "causes",
     strength: 3,
   };
-}
-
-export function parseStoredPanelVisibilityState(
-  value: string | null | undefined
-): PanelVisibilityState {
-  return value === "collapsed" ? "collapsed" : "expanded";
-}
-
-export function getNextPanelVisibilityState(
-  current: PanelVisibilityState,
-  intent: PanelVisibilityIntent
-): PanelVisibilityState {
-  if (intent === "toggle") {
-    return current === "expanded" ? "collapsed" : "expanded";
-  }
-
-  return "expanded";
 }

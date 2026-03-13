@@ -116,7 +116,7 @@ These are platform capabilities, not the end-user product model.
 
 ### Product Layer
 
-The product layer must pivot from the temporary `projects/tasks/activity` slice toward:
+The product layer must keep moving away from the legacy `projects/tasks/activity` compatibility residue toward:
 
 - concepts
 - links
@@ -126,11 +126,11 @@ The product layer must pivot from the temporary `projects/tasks/activity` slice 
 - checks
 - clusters
 
-`projects/tasks` are not the long-term domain vocabulary of Sorelo.
+`projects/tasks` are not the active domain vocabulary of Sorelo and should be treated as legacy compatibility only.
 
 ## Architectural Consequence
 
-The infrastructure foundation should be preserved, but the next domain build-out must replace the temporary workspace/project/task surfaces with Sorelo-native domain slices.
+The infrastructure foundation should be preserved, but user-facing decisions must treat workspace/project/task surfaces as legacy residue and keep the active product centered on Sorelo-native domain slices.
 
 Target feature slices:
 

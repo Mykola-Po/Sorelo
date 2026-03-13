@@ -32,6 +32,7 @@ export type MapWorkspaceMessages = {
     createLinkTargetTitle: (conceptTitle: string) => string;
     createLinkTargetDescription: string;
     emptyOverlay: string;
+    loadingSnapshot: string;
     conceptSummaryFallback: string;
     updatingPosition: string;
   };
@@ -293,6 +294,7 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
         "The second click opens the Link form with source and target already filled in.",
       emptyOverlay:
         "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
+      loadingSnapshot: "Loading graph snapshot...",
       conceptSummaryFallback: "Open Inspector to define the meaning of this Concept.",
       updatingPosition: "Updating canvas position...",
     },
@@ -447,6 +449,7 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
         "Другий клік відкриє форму Зв’язку з уже заповненими source і target.",
       emptyOverlay:
         "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
+      loadingSnapshot: "Завантажуємо snapshot графа...",
       conceptSummaryFallback: "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
       updatingPosition: "Оновлюємо позицію на canvas...",
     },
@@ -602,6 +605,7 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
         "Второй клик откроет форму Связи с уже заполненными source и target.",
       emptyOverlay:
         "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
+      loadingSnapshot: "Загружаем snapshot графа...",
       conceptSummaryFallback: "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
       updatingPosition: "Обновляем позицию на canvas...",
     },

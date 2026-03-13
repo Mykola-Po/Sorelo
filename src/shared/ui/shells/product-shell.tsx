@@ -7,7 +7,6 @@ import {
   IconButton,
   Text,
 } from "@radix-ui/themes";
-import { GearIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -65,9 +64,6 @@ export function ProductShell({
                 <Text size="4" weight="bold">
                   Sorelo
                 </Text>
-                <Text color="gray" size="1" className="brand-subtitle">
-                  {messages.shell.brandNote}
-                </Text>
               </Flex>
             </Flex>
 
@@ -81,39 +77,9 @@ export function ProductShell({
 
             <Flex
               align="center"
-              gap="2"
-              wrap="wrap"
+              gap="0"
               className="product-topbar-right"
             >
-              <PathnameLocaleSwitcher currentLocale={locale} />
-              {activeWorkspace ? (
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger>
-                    <IconButton
-                      type="button"
-                      size="2"
-                      variant="surface"
-                      color="gray"
-                      radius="full"
-                      aria-label={messages.shell.settings}
-                    >
-                      <GearIcon width="16" height="16" />
-                    </IconButton>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content align="end">
-                    <DropdownMenu.Item asChild>
-                      <Link href={workspaceMapsPath(activeWorkspace.slug)}>
-                        {messages.shell.maps}
-                      </Link>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item asChild>
-                      <Link href={workspaceMembersPath(activeWorkspace.slug)}>
-                        {messages.shell.members}
-                      </Link>
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-              ) : null}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   <IconButton
@@ -134,7 +100,7 @@ export function ProductShell({
                     />
                   </IconButton>
                 </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end" className="profile-menu-content">
+                  <DropdownMenu.Content align="end" className="profile-menu-content">
                   <Flex align="center" gap="2" className="profile-menu-header">
                     <Avatar
                       fallback={
@@ -152,6 +118,25 @@ export function ProductShell({
                       </Text>
                     </Flex>
                   </Flex>
+                  {activeWorkspace ? (
+                    <>
+                      <DropdownMenu.Separator />
+                      <DropdownMenu.Item asChild>
+                        <Link href={workspaceMapsPath(activeWorkspace.slug)}>
+                          {messages.shell.maps}
+                        </Link>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item asChild>
+                        <Link href={workspaceMembersPath(activeWorkspace.slug)}>
+                          {messages.shell.members}
+                        </Link>
+                      </DropdownMenu.Item>
+                    </>
+                  ) : null}
+                  <DropdownMenu.Separator />
+                  <Box className="profile-menu-locale">
+                    <PathnameLocaleSwitcher currentLocale={locale} />
+                  </Box>
                   <DropdownMenu.Separator />
                   <Box className="profile-menu-actions">
                     <form action={signOutAction}>

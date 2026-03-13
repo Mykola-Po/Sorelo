@@ -173,17 +173,137 @@ type GuidedInspectorStateProps = {
 
 function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSourceConceptTitle, onStartCreateConcept, onStartCreateLink, onOpenScenario, onCancelInteraction }: GuidedInspectorStateProps) {
   const messages = getMapWorkspaceMessages(locale);
+  const stepBadge =
+    guidedStep === "done"
+      ? messages.mapReadyBadge
+      : messages.stepLabel(
+          messages.guided[guidedStep].stepNumber,
+          messages.guided[guidedStep].totalSteps
+        );
 
   if (interactionMode === "placeConcept") {
-    return <EmptyState title={messages.inspector.placeConceptTitle} description={messages.inspector.placeConceptDescription} action={<Button type="button" variant="soft" onClick={onCancelInteraction}>{messages.inspector.cancel}</Button>} />;
+    return (
+      <EmptyState
+        eyebrow={
+          <Flex
+            gap="2"
+            wrap="wrap"
+            align="center"
+            className="inspector-empty-eyebrow-group"
+          >
+            <Badge color="blue" radius="full" variant="soft">
+              {messages.canvas.placeConceptBadge}
+            </Badge>
+          </Flex>
+        }
+        title={messages.inspector.placeConceptTitle}
+        description={messages.inspector.placeConceptDescription}
+        action={
+          <Button type="button" variant="soft" onClick={onCancelInteraction}>
+            {messages.inspector.cancel}
+          </Button>
+        }
+        className="inspector-empty-state is-mode-state"
+      />
+    );
   }
 
   if (interactionMode === "connectLink") {
-    return <EmptyState title={linkingSourceConceptTitle ? messages.inspector.connectLinkTargetTitle(linkingSourceConceptTitle) : messages.inspector.connectLinkSourceTitle} description={linkingSourceConceptTitle ? messages.inspector.connectLinkTargetDescription : messages.inspector.connectLinkSourceDescription} action={<Button type="button" variant="soft" onClick={onCancelInteraction}>{messages.inspector.cancel}</Button>} />;
+    return (
+      <EmptyState
+        eyebrow={
+          <Flex
+            gap="2"
+            wrap="wrap"
+            align="center"
+            className="inspector-empty-eyebrow-group"
+          >
+            <Badge color="blue" radius="full" variant="soft">
+              {messages.canvas.createLinkBadge}
+            </Badge>
+            {linkingSourceConceptTitle ? (
+              <Badge color="gray" radius="full" variant="surface">
+                {linkingSourceConceptTitle}
+              </Badge>
+            ) : null}
+          </Flex>
+        }
+        title={
+          linkingSourceConceptTitle
+            ? messages.inspector.connectLinkTargetTitle(linkingSourceConceptTitle)
+            : messages.inspector.connectLinkSourceTitle
+        }
+        description={
+          linkingSourceConceptTitle
+            ? messages.inspector.connectLinkTargetDescription
+            : messages.inspector.connectLinkSourceDescription
+        }
+        action={
+          <Button type="button" variant="soft" onClick={onCancelInteraction}>
+            {messages.inspector.cancel}
+          </Button>
+        }
+        className="inspector-empty-state is-mode-state"
+      />
+    );
   }
 
   const guidedCopy = messages.guided[guidedStep];
-  return <EmptyState title={guidedCopy.title} description={guidedCopy.description} action={guidedStep === "no_concepts" || guidedStep === "one_concept_no_link" ? <Button type="button" onClick={onStartCreateConcept}>{guidedCopy.actionLabel}</Button> : guidedStep === "multiple_concepts_no_link" ? <Button type="button" onClick={onStartCreateLink}>{guidedCopy.actionLabel}</Button> : guidedStep === "has_links_no_run" ? <Button type="button" onClick={onOpenScenario}>{guidedCopy.actionLabel}</Button> : undefined} />;
+  const primaryAction =
+    guidedStep === "no_concepts" || guidedStep === "one_concept_no_link" ? (
+      <Button type="button" onClick={onStartCreateConcept}>
+        {guidedCopy.actionLabel}
+      </Button>
+    ) : guidedStep === "multiple_concepts_no_link" ? (
+      <Button type="button" onClick={onStartCreateLink}>
+        {guidedCopy.actionLabel}
+      </Button>
+    ) : guidedStep === "has_links_no_run" ? (
+      <Button type="button" onClick={onOpenScenario}>
+        {guidedCopy.actionLabel}
+      </Button>
+    ) : (
+      <>
+        <Button type="button" onClick={onStartCreateConcept}>
+          {messages.topBar.newConcept}
+        </Button>
+        <Button type="button" variant="surface" onClick={onStartCreateLink}>
+          {messages.topBar.createLink}
+        </Button>
+        <Button type="button" variant="soft" onClick={onOpenScenario}>
+          {messages.topBar.runScenario}
+        </Button>
+      </>
+    );
+
+  return (
+    <EmptyState
+      eyebrow={
+        <Flex
+          gap="2"
+          wrap="wrap"
+          align="center"
+          className="inspector-empty-eyebrow-group"
+        >
+          <Badge
+            color={guidedStep === "done" ? "green" : "blue"}
+            radius="full"
+            variant="soft"
+          >
+            {stepBadge}
+          </Badge>
+        </Flex>
+      }
+      title={guidedCopy.title}
+      description={guidedCopy.description}
+      action={primaryAction}
+      className={
+        guidedStep === "done"
+          ? "inspector-empty-state is-ready-state"
+          : "inspector-empty-state"
+      }
+    />
+  );
 }
 
 type CreateConceptCardProps = { locale: SupportedLocale; workspaceSlug: string; mapId: string; conceptCount: number; initialX: number | undefined; initialY: number | undefined; };

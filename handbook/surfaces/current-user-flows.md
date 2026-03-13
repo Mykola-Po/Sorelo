@@ -1,4 +1,4 @@
-# Sorelo User Flows
+# Current Sorelo User Flows
 
 ## Purpose
 
@@ -71,7 +71,7 @@ After successful creation:
 
 - no dead-end success state
 - no need to manually choose the just-created Workspace again
-- no redirect into legacy project/task surfaces
+- no redirect into legacy compatibility routes
 
 ## Maps Home Flow
 
@@ -286,7 +286,7 @@ The user must be able to answer:
 
 ### Non-Goal For V1
 
-The output does not need to feel “creative”.
+The output does not need to feel "creative".
 
 It needs to feel inspectable and coherent.
 

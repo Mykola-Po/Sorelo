@@ -3,7 +3,7 @@ import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { getDocsHubDocument } from "@/features/docs-hub/content";
+import { findDocsHubDocument } from "@/features/docs-hub/manifest";
 
 export type MarkdownInlinePart =
   | { type: "text"; value: string }
@@ -37,9 +37,9 @@ export type ParsedMarkdownDocument = {
 };
 
 export async function loadParsedDocsHubDocument(documentId: string) {
-  const document = getDocsHubDocument(documentId);
+  const document = await findDocsHubDocument(documentId);
 
-  if (!document) {
+  if (!document || !document.path) {
     return null;
   }
 

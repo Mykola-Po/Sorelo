@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeftIcon } from "@radix-ui/react-icons";
 import {
   Badge,
+  Box,
   Button,
   Card,
   Flex,
@@ -13,7 +14,12 @@ import {
   Text,
 } from "@radix-ui/themes";
 
-import type { DocsHubDocument } from "@/features/docs-hub/content";
+import {
+  formatDocsHubStatus,
+  formatDocsHubTier,
+  type DocsHubResolvedDocument,
+  type DocsHubTier,
+} from "@/features/docs-hub/content";
 import type {
   MarkdownBlock,
   ParsedMarkdownDocument,
@@ -21,7 +27,7 @@ import type {
 import { handbookPath } from "@/shared/config/routes";
 
 type DocumentationArticleProps = {
-  docsDocument: DocsHubDocument;
+  docsDocument: DocsHubResolvedDocument;
   content: ParsedMarkdownDocument;
 };
 
@@ -114,6 +120,18 @@ export function DocumentationArticle({
               Back to hub
             </Link>
           </Button>
+          <Flex gap="2" wrap="wrap" align="center">
+            <Badge
+              radius="full"
+              variant="soft"
+              color={getTierColor(docsDocument.tier)}
+            >
+              {formatDocsHubTier(docsDocument.tier)}
+            </Badge>
+            <Text size="1" color="gray">
+              {docsDocument.sectionTitle}
+            </Text>
+          </Flex>
           <Heading size="7">{content.title}</Heading>
           <Text size="2" color="gray" className="docs-article-summary">
             {docsDocument.summary}
@@ -122,13 +140,14 @@ export function DocumentationArticle({
 
         <Flex gap="2" wrap="wrap" justify="end">
           <Badge radius="full" variant="surface" color="gray">
-            {docsDocument.priority}
-          </Badge>
-          <Badge radius="full" variant="surface" color="gray">
             {docsDocument.owner}
           </Badge>
-          <Badge radius="full" variant="soft" color="green">
-            {docsDocument.status}
+          <Badge
+            radius="full"
+            variant="soft"
+            color={getStatusColor(docsDocument.status)}
+          >
+            {formatDocsHubStatus(docsDocument.status)}
           </Badge>
         </Flex>
       </Flex>
@@ -137,6 +156,26 @@ export function DocumentationArticle({
         <div ref={scrollRootRef} className="docs-hub-main-scroll">
           <Card className="docs-article-card">
             <div className="docs-article-body">
+              {docsDocument.path ? (
+                <Box className="docs-document-meta">
+                  <Text size="1" color="gray">
+                    Canonical file
+                  </Text>
+                  <Text size="2" className="docs-document-path">
+                    {docsDocument.path}
+                  </Text>
+                </Box>
+              ) : null}
+
+              {docsDocument.legacyNote ? (
+                <Box className="docs-document-meta">
+                  <Text size="1" color="gray">
+                    Legacy note
+                  </Text>
+                  <Text size="2">{docsDocument.legacyNote}</Text>
+                </Box>
+              ) : null}
+
               {content.blocks.map((block, index) => (
                 <MarkdownBlockRenderer key={`${block.type}-${index}`} block={block} />
               ))}
@@ -183,6 +222,34 @@ export function DocumentationArticle({
       </div>
     </div>
   );
+}
+
+function getStatusColor(status: DocsHubResolvedDocument["status"]) {
+  if (status === "existing") {
+    return "green";
+  }
+
+  if (status === "next") {
+    return "blue";
+  }
+
+  return "gray";
+}
+
+function getTierColor(tier: DocsHubTier) {
+  if (tier === "canon") {
+    return "amber";
+  }
+
+  if (tier === "rules") {
+    return "blue";
+  }
+
+  if (tier === "surfaces") {
+    return "violet";
+  }
+
+  return "green";
 }
 
 function MarkdownBlockRenderer({ block }: { block: MarkdownBlock }) {

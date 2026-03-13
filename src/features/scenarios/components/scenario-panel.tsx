@@ -46,7 +46,7 @@ export function ScenarioPanel({ locale, workspaceSlug, map, conceptCatalog: prel
   };
 
   return (
-    <Flex direction="column" gap="3" height="100%">
+    <Flex direction="column" gap="3" height="100%" className="panel-scroll-fill">
       <Card className="panel-card">
         <Flex direction="column" gap="3">
           <Flex direction="column" gap="1">
@@ -93,96 +93,98 @@ export function ScenarioPanel({ locale, workspaceSlug, map, conceptCatalog: prel
         <Button type="button" size="1" variant={secondaryTab === "runs" ? "solid" : "surface"} onClick={() => setSecondaryTab("runs")}>{messages.scenario.runsTab}</Button>
       </Flex>
 
-      {secondaryTab === "save" ? (
-        <Card className="panel-card">
-          <form action={formAction}>
-            <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-            <input type="hidden" name="mapId" value={map.id} />
-            {draftSeeds.map((seedId) => <input key={`draft-scenario-${seedId}`} type="hidden" name="seedConceptIds" value={seedId} />)}
+      <div className="panel-native-scroll">
+        {secondaryTab === "save" ? (
+          <Card className="panel-card">
+            <form action={formAction}>
+              <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
+              <input type="hidden" name="mapId" value={map.id} />
+              {draftSeeds.map((seedId) => <input key={`draft-scenario-${seedId}`} type="hidden" name="seedConceptIds" value={seedId} />)}
+              <Flex direction="column" gap="3">
+                <Heading size="4">{messages.scenario.saveTitle}</Heading>
+                <InlineFormField label={messages.inspector.titleLabel} error={state.fieldErrors?.title?.[0]}>
+                  <TextField.Root name="title" placeholder={messages.scenario.saveTitlePlaceholder} size="2" />
+                </InlineFormField>
+                <InlineFormField label={messages.scenario.situationLabel} error={state.fieldErrors?.situation?.[0]}>
+                  <TextArea name="situation" placeholder={messages.scenario.saveSituationPlaceholder} defaultValue={triggerText} rows={3} />
+                </InlineFormField>
+                {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+                <Button type="submit" size="2" loading={isPending}>{messages.scenario.saveCta}</Button>
+              </Flex>
+            </form>
+          </Card>
+        ) : null}
+
+        {secondaryTab === "saved" ? (
+          scenarios.length === 0 ? (
+            <EmptyState title={messages.scenario.noScenariosTitle} description={messages.scenario.noScenariosDescription} />
+          ) : (
             <Flex direction="column" gap="3">
-              <Heading size="4">{messages.scenario.saveTitle}</Heading>
-              <InlineFormField label={messages.inspector.titleLabel} error={state.fieldErrors?.title?.[0]}>
-                <TextField.Root name="title" placeholder={messages.scenario.saveTitlePlaceholder} size="2" />
-              </InlineFormField>
-              <InlineFormField label={messages.scenario.situationLabel} error={state.fieldErrors?.situation?.[0]}>
-                <TextArea name="situation" placeholder={messages.scenario.saveSituationPlaceholder} defaultValue={triggerText} rows={3} />
-              </InlineFormField>
-              {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-              <Button type="submit" size="2" loading={isPending}>{messages.scenario.saveCta}</Button>
-            </Flex>
-          </form>
-        </Card>
-      ) : null}
-
-      {secondaryTab === "saved" ? (
-        scenarios.length === 0 ? (
-          <EmptyState title={messages.scenario.noScenariosTitle} description={messages.scenario.noScenariosDescription} />
-        ) : (
-          <Flex direction="column" gap="3">
-            {scenarios.map((scenario) => (
-              <Card key={scenario.id} className="panel-card">
-                <Flex direction="column" gap="3">
-                  <Flex align="start" justify="between" gap="3">
-                    <Flex direction="column" gap="1">
-                      <Heading size="3">{scenario.title}</Heading>
-                      <Text color="gray" size="2">{scenario.situation}</Text>
-                    </Flex>
-                    <Badge color="blue" radius="full" variant="soft">{messages.scenario.savedSeeds(scenario.seedConcepts.length)}</Badge>
-                  </Flex>
-                  <Flex gap="2" wrap="wrap">
-                    {scenario.seedConcepts.map((seed) => <Badge key={`${scenario.id}-${seed.id}`} color="gray" variant="surface">{seed.title}</Badge>)}
-                  </Flex>
-                  <form action={runScenarioAction}>
-                    <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-                    <input type="hidden" name="mapId" value={map.id} />
-                    <input type="hidden" name="scenarioId" value={scenario.id} />
-                    <input type="hidden" name="triggerText" value={scenario.situation} />
-                    {scenario.seedConcepts.map((seed) => <input key={`${scenario.id}-run-${seed.id}`} type="hidden" name="seedConceptIds" value={seed.id} />)}
-                    <Button type="submit" size="2" variant="soft">{messages.scenario.runSavedScenario}</Button>
-                  </form>
-                </Flex>
-              </Card>
-            ))}
-          </Flex>
-        )
-      ) : null}
-
-      {secondaryTab === "runs" ? (
-        runs.length === 0 ? (
-          <EmptyState title={messages.scenario.noRunsTitle} description={messages.scenario.noRunsDescription} />
-        ) : (
-          <Flex direction="column" gap="3">
-            {runs.map((run) => (
-              <Card key={run.id} className="panel-card">
-                <Flex direction="column" gap="3">
-                  <Flex align="start" justify="between" gap="3">
-                    <Flex direction="column" gap="1">
-                      <Heading size="3">{run.scenario?.title ?? run.triggerText}</Heading>
-                      <Text color="gray" size="2">{run.summary ?? messages.scenario.noSummaryYet}</Text>
-                      <Text color="gray" size="1">{run.starter.fullName ?? run.starter.email} | {new Date(run.createdAt).toLocaleString(intlLocale)}</Text>
-                    </Flex>
-                    <StatusBadge status={run.status} label={messages.labels.scenarioStatuses[run.status]} />
-                  </Flex>
-                  <Flex direction="column" gap="2">
-                    {run.steps.map((step) => (
-                      <Flex key={step.id} direction="column" gap="1" className="scenario-step">
-                        <Flex align="center" gap="2" wrap="wrap">
-                          <Badge color="blue" radius="full" variant="soft">{messages.scenario.step(step.stepOrder)}</Badge>
-                          <Text weight="medium">{step.conceptTitle}</Text>
-                          <Badge color="gray" variant="surface">{messages.labels.effectTypes[step.effectType] ?? step.effectType.replace(/_/g, " ")}</Badge>
-                          <Badge color="orange" variant="surface">{messages.scenario.score(step.score)}</Badge>
-                        </Flex>
-                        {step.viaLinkRelationType ? <Text color="gray" size="2">{messages.scenario.viaLink}: {messages.labels.relationTypes[step.viaLinkRelationType]}</Text> : null}
-                        <Text size="2">{step.explanation}</Text>
+              {scenarios.map((scenario) => (
+                <Card key={scenario.id} className="panel-card">
+                  <Flex direction="column" gap="3">
+                    <Flex align="start" justify="between" gap="3">
+                      <Flex direction="column" gap="1">
+                        <Heading size="3">{scenario.title}</Heading>
+                        <Text color="gray" size="2">{scenario.situation}</Text>
                       </Flex>
-                    ))}
+                      <Badge color="blue" radius="full" variant="soft">{messages.scenario.savedSeeds(scenario.seedConcepts.length)}</Badge>
+                    </Flex>
+                    <Flex gap="2" wrap="wrap">
+                      {scenario.seedConcepts.map((seed) => <Badge key={`${scenario.id}-${seed.id}`} color="gray" variant="surface">{seed.title}</Badge>)}
+                    </Flex>
+                    <form action={runScenarioAction}>
+                      <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
+                      <input type="hidden" name="mapId" value={map.id} />
+                      <input type="hidden" name="scenarioId" value={scenario.id} />
+                      <input type="hidden" name="triggerText" value={scenario.situation} />
+                      {scenario.seedConcepts.map((seed) => <input key={`${scenario.id}-run-${seed.id}`} type="hidden" name="seedConceptIds" value={seed.id} />)}
+                      <Button type="submit" size="2" variant="soft">{messages.scenario.runSavedScenario}</Button>
+                    </form>
                   </Flex>
-                </Flex>
-              </Card>
-            ))}
-          </Flex>
-        )
-      ) : null}
+                </Card>
+              ))}
+            </Flex>
+          )
+        ) : null}
+
+        {secondaryTab === "runs" ? (
+          runs.length === 0 ? (
+            <EmptyState title={messages.scenario.noRunsTitle} description={messages.scenario.noRunsDescription} />
+          ) : (
+            <Flex direction="column" gap="3">
+              {runs.map((run) => (
+                <Card key={run.id} className="panel-card">
+                  <Flex direction="column" gap="3">
+                    <Flex align="start" justify="between" gap="3">
+                      <Flex direction="column" gap="1">
+                        <Heading size="3">{run.scenario?.title ?? run.triggerText}</Heading>
+                        <Text color="gray" size="2">{run.summary ?? messages.scenario.noSummaryYet}</Text>
+                        <Text color="gray" size="1">{run.starter.fullName ?? run.starter.email} | {new Date(run.createdAt).toLocaleString(intlLocale)}</Text>
+                      </Flex>
+                      <StatusBadge status={run.status} label={messages.labels.scenarioStatuses[run.status]} />
+                    </Flex>
+                    <Flex direction="column" gap="2">
+                      {run.steps.map((step) => (
+                        <Flex key={step.id} direction="column" gap="1" className="scenario-step">
+                          <Flex align="center" gap="2" wrap="wrap">
+                            <Badge color="blue" radius="full" variant="soft">{messages.scenario.step(step.stepOrder)}</Badge>
+                            <Text weight="medium">{step.conceptTitle}</Text>
+                            <Badge color="gray" variant="surface">{messages.labels.effectTypes[step.effectType] ?? step.effectType.replace(/_/g, " ")}</Badge>
+                            <Badge color="orange" variant="surface">{messages.scenario.score(step.score)}</Badge>
+                          </Flex>
+                          {step.viaLinkRelationType ? <Text color="gray" size="2">{messages.scenario.viaLink}: {messages.labels.relationTypes[step.viaLinkRelationType]}</Text> : null}
+                          <Text size="2">{step.explanation}</Text>
+                        </Flex>
+                      ))}
+                    </Flex>
+                  </Flex>
+                </Card>
+              ))}
+            </Flex>
+          )
+        ) : null}
+      </div>
     </Flex>
   );
 }

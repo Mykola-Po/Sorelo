@@ -1,34 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  GearIcon,
+  Cross2Icon,
+  Link2Icon,
+  PlusIcon,
   ReaderIcon,
   RocketIcon,
 } from "@radix-ui/react-icons";
-import { Badge, Button, Dialog, Flex, Heading, Select, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Dialog,
+  Flex,
+  IconButton,
+  Select,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
 
 import { InspectorPanel } from "@/features/inspector/components/inspector-panel";
 import type { InspectorSelection } from "@/features/inspector/types";
 import { GraphCanvasRuntime } from "@/features/map-runtime/components/graph-canvas-runtime";
+import { MapStoreProvider } from "@/features/map-runtime/store/map-store-provider";
 import { useConceptCatalog } from "@/features/map-runtime/hooks/use-concept-catalog";
 import {
   buildLinkDraftDefaults,
   deriveGuidedOnboardingStep,
-  getNextPanelVisibilityState,
-  MAP_PANEL_VISIBILITY_STORAGE_KEY,
-  parseStoredPanelVisibilityState,
   type CanvasInteractionMode,
-  type PanelVisibilityState,
 } from "@/features/maps/workspace-state";
 import type { MapWorkspaceProps } from "@/features/maps/types";
 import { ScenarioPanel } from "@/features/scenarios/components/scenario-panel";
 import { workspaceMapPath } from "@/shared/config/routes";
-import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
-import { StatusBadge } from "@/shared/ui/components/status-badge";
+import {
+  getMapWorkspaceMessages,
+  type MapWorkspaceMessages,
+} from "@/shared/i18n/messages/map-workspace";
 
 type PanelTab = "inspector" | "scenario";
 
@@ -45,36 +52,22 @@ export function MapWorkspace({
   const router = useRouter();
   const messages = getMapWorkspaceMessages(locale);
   const isMobileViewport = useIsMobileViewport();
+  const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(
+    null
+  );
   const [panelTab, setPanelTab] = useState<PanelTab>("inspector");
   const [selection, setSelection] = useState<InspectorSelection>({ kind: "none" });
-  const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>("inspect");
-  const [connectLinkSourceId, setConnectLinkSourceId] = useState<string | null>(null);
-  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
-  const [panelVisibility, setPanelVisibility] = useState<PanelVisibilityState>(() => {
-    if (typeof window === "undefined") {
-      return "expanded";
-    }
-
-    return parseStoredPanelVisibilityState(
-      window.localStorage.getItem(MAP_PANEL_VISIBILITY_STORAGE_KEY)
-    );
-  });
+  const [interactionMode, setInteractionMode] =
+    useState<CanvasInteractionMode>("inspect");
+  const [connectLinkSourceId, setConnectLinkSourceId] = useState<string | null>(
+    null
+  );
+  const [panelOpen, setPanelOpen] = useState(false);
   const {
     catalog: conceptCatalog,
     isLoading: isConceptCatalogLoading,
     error: conceptCatalogError,
   } = useConceptCatalog(map.id);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || isMobileViewport) {
-      return;
-    }
-
-    window.localStorage.setItem(
-      MAP_PANEL_VISIBILITY_STORAGE_KEY,
-      panelVisibility
-    );
-  }, [isMobileViewport, panelVisibility]);
 
   const conceptCatalogById = useMemo(
     () => new Map(conceptCatalog.map((concept) => [concept.id, concept])),
@@ -90,23 +83,19 @@ export function MapWorkspace({
   const linkingSourceConceptTitle = connectLinkSourceId
     ? conceptCatalogById.get(connectLinkSourceId)?.title ?? null
     : null;
+  const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
+  const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
 
-  const openPanel = (tab: PanelTab) => {
-    setPanelTab(tab);
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
-
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-panel")
-    );
+  const openInspectorPanel = () => {
+    setPanelTab("inspector");
+    setPanelOpen(true);
   };
 
-  const toggleDesktopPanel = () => {
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "toggle")
-    );
+  const openScenarioPanel = () => {
+    setPanelTab("scenario");
+    setInteractionMode("inspect");
+    setConnectLinkSourceId(null);
+    setPanelOpen(true);
   };
 
   const openMapSettings = () => {
@@ -114,15 +103,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "map-settings" });
     setPanelTab("inspector");
-
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
-
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-settings")
-    );
+    setPanelOpen(true);
   };
 
   const beginPlaceConcept = () => {
@@ -130,7 +111,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
     setPanelTab("inspector");
-    setMobilePanelOpen(false);
+    setPanelOpen(false);
   };
 
   const beginConnectLink = () => {
@@ -138,7 +119,8 @@ export function MapWorkspace({
       setInteractionMode("inspect");
       setConnectLinkSourceId(null);
       setSelection({ kind: "create-link" });
-      openPanel("inspector");
+      setPanelTab("inspector");
+      setPanelOpen(true);
       return;
     }
 
@@ -146,7 +128,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
     setPanelTab("inspector");
-    setMobilePanelOpen(false);
+    setPanelOpen(false);
   };
 
   const openConceptInspector = (conceptId: string) => {
@@ -154,14 +136,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "concept", id: conceptId });
     setPanelTab("inspector");
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
-
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-selection")
-    );
+    setPanelOpen(true);
   };
 
   const openLinkInspector = (linkId: string) => {
@@ -169,14 +144,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "link", id: linkId });
     setPanelTab("inspector");
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
-
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-selection")
-    );
+    setPanelOpen(true);
   };
 
   const openCreateConceptAt = (x: number, y: number) => {
@@ -184,17 +152,13 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "create-concept", x, y });
     setPanelTab("inspector");
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
-
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-selection")
-    );
+    setPanelOpen(true);
   };
 
-  const openCreateLinkDraft = (sourceConceptId: string, targetConceptId: string) => {
+  const openCreateLinkDraft = (
+    sourceConceptId: string,
+    targetConceptId: string
+  ) => {
     const defaults = buildLinkDraftDefaults();
     setInteractionMode("inspect");
     setConnectLinkSourceId(null);
@@ -206,23 +170,18 @@ export function MapWorkspace({
       strength: defaults.strength,
     });
     setPanelTab("inspector");
-    if (isMobileViewport) {
-      setMobilePanelOpen(true);
-      return;
-    }
+    setPanelOpen(true);
+  };
 
-    setPanelVisibility((current) =>
-      getNextPanelVisibilityState(current, "open-selection")
-    );
+  const cancelInteraction = () => {
+    setInteractionMode("inspect");
+    setConnectLinkSourceId(null);
   };
 
   const clearCanvasSelection = () => {
-    setInteractionMode("inspect");
-    setConnectLinkSourceId(null);
+    cancelInteraction();
     setSelection({ kind: "none" });
-    if (isMobileViewport) {
-      setMobilePanelOpen(false);
-    }
+    setPanelOpen(false);
   };
 
   const renderPanelContent = () => {
@@ -244,8 +203,8 @@ export function MapWorkspace({
           onSelect={setSelection}
           onStartCreateConcept={beginPlaceConcept}
           onStartCreateLink={beginConnectLink}
-          onOpenScenario={() => openPanel("scenario")}
-          onCancelInteraction={clearCanvasSelection}
+          onOpenScenario={openScenarioPanel}
+          onCancelInteraction={cancelInteraction}
         />
       );
     }
@@ -264,20 +223,24 @@ export function MapWorkspace({
     );
   };
 
+  const dialogDescription =
+    panelTab === "inspector"
+      ? messages.scenario.mobileInspectorDescription
+      : messages.scenario.mobileScenarioDescription;
+
   return (
-    <div className="map-screen">
-      <Dialog.Root open={mobilePanelOpen} onOpenChange={setMobilePanelOpen}>
+    <Dialog.Root open={panelOpen} onOpenChange={setPanelOpen}>
+      <div className="map-screen">
         <div className="page-stack map-screen-stack">
+          <MapStoreProvider mapId={map.id}>
           <div className="map-canvas-layer">
             <GraphCanvasRuntime
               locale={locale}
               map={map}
               graphMetrics={graphMetrics}
               selection={selection}
-              guidedStep={guidedStep}
               interactionMode={interactionMode}
               connectLinkSourceId={connectLinkSourceId}
-              connectLinkSourceTitle={linkingSourceConceptTitle}
               onClearSelection={clearCanvasSelection}
               onOpenCreateConcept={openCreateConceptAt}
               onOpenConceptInspector={openConceptInspector}
@@ -290,260 +253,138 @@ export function MapWorkspace({
               onCompleteConnectLink={openCreateLinkDraft}
             />
           </div>
+          </MapStoreProvider>
 
           <div className="map-overlay-layer">
-            <Flex
-              align="start"
-              justify="between"
-              gap="3"
-              wrap="wrap"
-              className="map-header-bar"
-            >
-              <Flex direction="column" gap="1" className="map-title-block">
-                <Flex gap="2" wrap="wrap" align="center">
-                  <Heading size="6">{map.title}</Heading>
-                  <Badge color="gray" radius="full" variant="surface">
-                    {map.subjectLabel}
-                  </Badge>
-                  <Badge color="blue" radius="full" variant="soft">
-                    {guidedStep === "done"
-                      ? messages.mapReadyBadge
-                      : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)}
-                  </Badge>
-                </Flex>
-                <Text color="gray" size="2" className="map-header-supporting">
-                  {guidedCopy.title}
-                </Text>
-              </Flex>
+            <div className="map-overlay-top">
+              <MapTopStrip
+                messages={messages}
+                mapId={map.id}
+                subjectLabel={map.subjectLabel}
+                availableMaps={availableMaps}
+                interactionMode={interactionMode}
+                linkingSourceConceptTitle={linkingSourceConceptTitle}
+                stepBadgeLabel={
+                  guidedStep === "done"
+                    ? messages.mapReadyBadge
+                    : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)
+                }
+                stepBadgeReady={guidedStep === "done"}
+                onCancelInteraction={cancelInteraction}
+                onSelectMap={(value) =>
+                  router.push(workspaceMapPath(workspaceSlug, value))
+                }
+              />
+            </div>
 
-              <Flex gap="2" wrap="wrap" align="center" className="map-header-actions">
-                <div className="map-inline-select">
-                  <Select.Root
+            <div className="map-overlay-bottom">
+              <MapBottomDock
+                messages={messages}
+                interactionMode={interactionMode}
+                selectionKind={selection.kind}
+                inspectorOpen={isInspectorPanelOpen}
+                scenarioOpen={isScenarioPanelOpen}
+                onOpenInspector={openInspectorPanel}
+                onOpenScenario={openScenarioPanel}
+                onStartCreateConcept={beginPlaceConcept}
+                onStartCreateLink={beginConnectLink}
+              />
+            </div>
+          </div>
+
+          <div ref={setDialogContainer} className="map-dialog-container" />
+        </div>
+
+        {dialogContainer ? (
+          <Dialog.Content
+            container={dialogContainer}
+            align="start"
+            size="1"
+            className={isMobileViewport ? "map-mobile-dialog" : "map-overlay-dialog"}
+          >
+            <div className="map-dialog-shell">
+              <Flex
+                align="start"
+                justify="between"
+                gap="3"
+                className="map-dialog-header"
+              >
+                <div className="map-dialog-heading">
+                  <Dialog.Title size="3" mb="1" className="map-dialog-title">
+                    {map.title}
+                  </Dialog.Title>
+                  <Dialog.Description
                     size="2"
-                    value={map.id}
-                    onValueChange={(value) =>
-                      router.push(workspaceMapPath(workspaceSlug, value))
-                    }
+                    className="map-dialog-description"
                   >
-                    <Select.Trigger />
-                    <Select.Content>
-                      {availableMaps.map((candidate) => (
-                        <Select.Item key={candidate.id} value={candidate.id}>
-                          {candidate.title}
-                        </Select.Item>
-                      ))}
-                    </Select.Content>
-                  </Select.Root>
+                    {dialogDescription}
+                  </Dialog.Description>
                 </div>
 
-                <StatusBadge
-                  status={workspaceRole}
-                  label={messages.labels.workspaceRoles[workspaceRole]}
-                />
+                <Flex
+                  align="center"
+                  gap="2"
+                  wrap="wrap"
+                  justify="end"
+                  className="map-dialog-header-actions"
+                >
+                  {panelTab === "inspector" ? (
+                    <Button
+                      type="button"
+                      size="1"
+                      variant={
+                        selection.kind === "map-settings" ? "solid" : "surface"
+                      }
+                      color={selection.kind === "map-settings" ? "gray" : "gray"}
+                      onClick={openMapSettings}
+                    >
+                      {messages.topBar.mapSettings}
+                    </Button>
+                  ) : null}
 
+                  <Dialog.Close>
+                    <IconButton
+                      type="button"
+                      size="1"
+                      radius="full"
+                      variant="surface"
+                      color="gray"
+                      className="map-dialog-close"
+                      aria-label={messages.inspector.cancel}
+                    >
+                      <Cross2Icon />
+                    </IconButton>
+                  </Dialog.Close>
+                </Flex>
+              </Flex>
+
+              <Flex gap="2" className="map-dialog-tabs" wrap="wrap">
                 <Button
                   type="button"
                   size="2"
-                  variant={interactionMode === "placeConcept" ? "solid" : "surface"}
-                  onClick={beginPlaceConcept}
+                  variant={panelTab === "inspector" ? "solid" : "surface"}
+                  onClick={openInspectorPanel}
                 >
-                  {messages.topBar.newConcept}
-                </Button>
-                <Button
-                  type="button"
-                  size="2"
-                  variant={interactionMode === "connectLink" ? "solid" : "surface"}
-                  onClick={beginConnectLink}
-                >
-                  {messages.topBar.createLink}
+                  {messages.topBar.inspector}
                 </Button>
                 <Button
                   type="button"
                   size="2"
                   variant={panelTab === "scenario" ? "solid" : "surface"}
-                  onClick={() => openPanel("scenario")}
+                  onClick={openScenarioPanel}
                 >
-                  {messages.topBar.runScenario}
+                  {messages.topBar.scenario}
                 </Button>
               </Flex>
-            </Flex>
 
-            <div className="map-overlay-body">
-              {!isMobileViewport ? (
-                <div
-                  className={
-                    panelVisibility === "collapsed"
-                      ? "map-panel is-collapsed"
-                      : "map-panel"
-                  }
-                >
-                  {panelVisibility === "collapsed" ? (
-                    <Flex direction="column" gap="2" align="center" className="map-panel-rail">
-                      <Button
-                        type="button"
-                        size="1"
-                        variant="soft"
-                        color="gray"
-                        title={messages.topBar.expandPanel}
-                        onClick={toggleDesktopPanel}
-                      >
-                        <ChevronRightIcon />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="1"
-                        variant={panelTab === "inspector" ? "solid" : "surface"}
-                        title={messages.topBar.openInspector}
-                        onClick={() => openPanel("inspector")}
-                      >
-                        <ReaderIcon />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="1"
-                        variant={panelTab === "scenario" ? "solid" : "surface"}
-                        title={messages.topBar.openScenario}
-                        onClick={() => openPanel("scenario")}
-                      >
-                        <RocketIcon />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="1"
-                        variant="surface"
-                        color="gray"
-                        title={messages.topBar.mapSettings}
-                        onClick={openMapSettings}
-                      >
-                        <GearIcon />
-                      </Button>
-                    </Flex>
-                  ) : (
-                    <Flex direction="column" gap="3" height="100%" className="map-panel-stack">
-                      <Flex align="center" justify="between" gap="2">
-                        <Flex gap="2" wrap="wrap">
-                          <Button
-                            type="button"
-                            size="2"
-                            variant={panelTab === "inspector" ? "solid" : "surface"}
-                            onClick={() => setPanelTab("inspector")}
-                          >
-                            {messages.topBar.inspector}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="2"
-                            variant={panelTab === "scenario" ? "solid" : "surface"}
-                            onClick={() => setPanelTab("scenario")}
-                          >
-                            {messages.topBar.scenario}
-                          </Button>
-                        </Flex>
-                        <Flex gap="1" wrap="nowrap">
-                          <Button
-                            type="button"
-                            size="1"
-                            variant="ghost"
-                            color="gray"
-                            title={messages.topBar.mapSettings}
-                            onClick={openMapSettings}
-                          >
-                            <GearIcon />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="1"
-                            variant="ghost"
-                            color="gray"
-                            title={messages.topBar.collapsePanel}
-                            onClick={toggleDesktopPanel}
-                          >
-                            <ChevronLeftIcon />
-                          </Button>
-                        </Flex>
-                      </Flex>
-                      <div className="panel-scroll-fill panel-native-scroll">
-                        <div className="panel-content">{renderPanelContent()}</div>
-                      </div>
-                    </Flex>
-                  )}
-                </div>
-              ) : (
-                <Flex gap="2" className="map-mobile-panel-bar">
-                  <Button
-                    type="button"
-                    size="2"
-                    variant="surface"
-                    onClick={() => {
-                      setPanelTab("inspector");
-                      setMobilePanelOpen(true);
-                    }}
-                  >
-                    {messages.topBar.inspector}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="2"
-                    variant="surface"
-                    onClick={() => {
-                      setPanelTab("scenario");
-                      setMobilePanelOpen(true);
-                    }}
-                  >
-                    {messages.topBar.scenario}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="2"
-                    variant="surface"
-                    color="gray"
-                    onClick={openMapSettings}
-                  >
-                    <GearIcon />
-                  </Button>
-                </Flex>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {isMobileViewport ? (
-          <Dialog.Content className="map-mobile-dialog">
-            <Dialog.Title>
-              {panelTab === "inspector"
-                ? messages.topBar.inspector
-                : messages.topBar.scenario}
-            </Dialog.Title>
-            <Dialog.Description className="map-mobile-dialog-description">
-              {panelTab === "inspector"
-                ? messages.scenario.mobileInspectorDescription
-                : messages.scenario.mobileScenarioDescription}
-            </Dialog.Description>
-            <Flex gap="2" mb="3">
-              <Button
-                type="button"
-                size="2"
-                variant={panelTab === "inspector" ? "solid" : "surface"}
-                onClick={() => setPanelTab("inspector")}
-              >
-                {messages.topBar.inspector}
-              </Button>
-              <Button
-                type="button"
-                size="2"
-                variant={panelTab === "scenario" ? "solid" : "surface"}
-                onClick={() => setPanelTab("scenario")}
-              >
-                {messages.topBar.scenario}
-              </Button>
-            </Flex>
-            <div className="map-mobile-dialog-body">
-              <div className="panel-content">{renderPanelContent()}</div>
+              <div className="map-dialog-body">
+                <div className="panel-content">{renderPanelContent()}</div>
+              </div>
             </div>
           </Dialog.Content>
         ) : null}
-      </Dialog.Root>
-    </div>
+      </div>
+    </Dialog.Root>
   );
 }
 
@@ -563,4 +404,235 @@ function useIsMobileViewport() {
   }, []);
 
   return isMobile;
+}
+
+type MapIconActionProps = {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  tooltipSide?: "top" | "right" | "bottom" | "left";
+  children: ReactNode;
+};
+
+function MapIconAction({
+  label,
+  active = false,
+  onClick,
+  tooltipSide = "top",
+  children,
+}: MapIconActionProps) {
+  return (
+    <Tooltip content={label} side={tooltipSide}>
+      <IconButton
+        type="button"
+        size="2"
+        radius="full"
+        variant={active ? "solid" : "surface"}
+        color={active ? "gray" : "gray"}
+        aria-label={label}
+        aria-pressed={active}
+        onClick={onClick}
+        className={active ? "map-icon-action is-active" : "map-icon-action"}
+      >
+        {children}
+      </IconButton>
+    </Tooltip>
+  );
+}
+
+type MapTopStripProps = {
+  messages: MapWorkspaceMessages;
+  mapId: string;
+  subjectLabel: string;
+  availableMaps: MapWorkspaceProps["availableMaps"];
+  interactionMode: CanvasInteractionMode;
+  linkingSourceConceptTitle: string | null;
+  stepBadgeLabel: string;
+  stepBadgeReady: boolean;
+  onCancelInteraction: () => void;
+  onSelectMap: (mapId: string) => void;
+};
+
+function MapTopStrip({
+  messages,
+  mapId,
+  subjectLabel,
+  availableMaps,
+  interactionMode,
+  linkingSourceConceptTitle,
+  stepBadgeLabel,
+  stepBadgeReady,
+  onCancelInteraction,
+  onSelectMap,
+}: MapTopStripProps) {
+  return (
+    <div className="map-top-strip">
+      <Flex
+        gap="2"
+        wrap="wrap"
+        align="center"
+        className="map-top-strip-badges"
+      >
+        <Badge
+          color={stepBadgeReady ? "green" : "gray"}
+          radius="full"
+          variant={stepBadgeReady ? "soft" : "surface"}
+        >
+          {stepBadgeLabel}
+        </Badge>
+
+        <MapModeIndicator
+          messages={messages}
+          interactionMode={interactionMode}
+          linkingSourceConceptTitle={linkingSourceConceptTitle}
+          onCancelInteraction={onCancelInteraction}
+        />
+
+        <Badge color="gray" radius="full" variant="surface">
+          {subjectLabel}
+        </Badge>
+      </Flex>
+
+      <div className="map-top-strip-switcher">
+        <div className="map-inline-select">
+          <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
+            <Select.Trigger />
+            <Select.Content>
+              {availableMaps.map((candidate) => (
+                <Select.Item key={candidate.id} value={candidate.id}>
+                  {candidate.title}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type MapModeIndicatorProps = {
+  messages: MapWorkspaceMessages;
+  interactionMode: CanvasInteractionMode;
+  linkingSourceConceptTitle: string | null;
+  onCancelInteraction: () => void;
+};
+
+function MapModeIndicator({
+  messages,
+  interactionMode,
+  linkingSourceConceptTitle,
+  onCancelInteraction,
+}: MapModeIndicatorProps) {
+  const label =
+    interactionMode === "placeConcept"
+      ? messages.canvas.placeConceptBadge
+      : interactionMode === "connectLink"
+        ? messages.canvas.createLinkBadge
+        : messages.topBar.inspector;
+
+  return (
+    <Flex gap="2" wrap="wrap" align="center" className="map-mode-indicator">
+      <Badge radius="full" variant="surface" color="gray" className="map-mode-indicator-badge">
+        <span className="map-mode-indicator-icon" aria-hidden="true">
+          {interactionMode === "placeConcept" ? (
+            <PlusIcon />
+          ) : interactionMode === "connectLink" ? (
+            <Link2Icon />
+          ) : (
+            <ReaderIcon />
+          )}
+        </span>
+        {label}
+      </Badge>
+
+      {interactionMode === "connectLink" && linkingSourceConceptTitle ? (
+        <Badge color="gray" radius="full" variant="surface" className="map-mode-context">
+          {linkingSourceConceptTitle}
+        </Badge>
+      ) : null}
+
+      {interactionMode !== "inspect" ? (
+        <Button
+          type="button"
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={onCancelInteraction}
+          className="map-mode-cancel"
+        >
+          {messages.inspector.cancel}
+        </Button>
+      ) : null}
+    </Flex>
+  );
+}
+
+type MapBottomDockProps = {
+  messages: MapWorkspaceMessages;
+  interactionMode: CanvasInteractionMode;
+  selectionKind: InspectorSelection["kind"];
+  inspectorOpen: boolean;
+  scenarioOpen: boolean;
+  onOpenInspector: () => void;
+  onOpenScenario: () => void;
+  onStartCreateConcept: () => void;
+  onStartCreateLink: () => void;
+};
+
+function MapBottomDock({
+  messages,
+  interactionMode,
+  selectionKind,
+  inspectorOpen,
+  scenarioOpen,
+  onOpenInspector,
+  onOpenScenario,
+  onStartCreateConcept,
+  onStartCreateLink,
+}: MapBottomDockProps) {
+  return (
+    <div className="map-bottom-dock">
+      <div className="map-bottom-dock-group">
+        <MapIconAction
+          label={messages.topBar.runScenario}
+          active={scenarioOpen}
+          onClick={onOpenScenario}
+        >
+          <RocketIcon />
+        </MapIconAction>
+      </div>
+
+      <div className="map-bottom-dock-group is-clustered">
+        <MapIconAction
+          label={messages.topBar.createLink}
+          active={
+            interactionMode === "connectLink" || selectionKind === "create-link"
+          }
+          onClick={onStartCreateLink}
+        >
+          <Link2Icon />
+        </MapIconAction>
+        <MapIconAction
+          label={messages.topBar.newConcept}
+          active={
+            interactionMode === "placeConcept" || selectionKind === "create-concept"
+          }
+          onClick={onStartCreateConcept}
+        >
+          <PlusIcon />
+        </MapIconAction>
+      </div>
+
+      <div className="map-bottom-dock-group">
+        <MapIconAction
+          label={messages.topBar.inspector}
+          active={inspectorOpen}
+          onClick={onOpenInspector}
+        >
+          <ReaderIcon />
+        </MapIconAction>
+      </div>
+    </div>
+  );
 }
