@@ -13,13 +13,6 @@ export function workspaceMapPath(workspaceSlug: string, mapId: string) {
   return `/app/${workspaceSlug}/maps/${mapId}`;
 }
 
-export function workspaceProjectsPath(workspaceSlug: string) {
-  return `/app/${workspaceSlug}/projects`;
-}
-
-export function workspaceProjectPath(workspaceSlug: string, projectId: string) {
-  return `/app/${workspaceSlug}/projects/${projectId}`;
-}
 
 export function workspaceMembersPath(workspaceSlug: string) {
   return `/app/${workspaceSlug}/settings/members`;

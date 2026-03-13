@@ -152,7 +152,6 @@ export function GraphCanvasRuntime({
     },
     [sendPositionsBatch, updateConceptPosition]
   );
-
   // --- Sigma Foundation Initializer ---
   useEffect(() => {
     if (!containerRef.current || !snapshot) return;
@@ -167,7 +166,11 @@ export function GraphCanvasRuntime({
     });
     sigmaRef.current = sigma;
 
-    // 3. Sigma interaction events forwarding to store and callbacks
+    if (typeof window !== "undefined") {
+      (window as any).__SIGMA__ = sigma;
+    }
+
+    // 3. Sigma interaction events
     sigma.on("clickNode", (e) => {
       const mode = interactionModeRef.current;
       const sourceId = connectLinkSourceIdRef.current;
