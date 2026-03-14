@@ -909,13 +909,34 @@ select {
 }
 
 .map-bottom-dock {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
   gap: 10px;
+  width: calc(100% - 24px);
   max-width: calc(100% - 24px);
   pointer-events: auto;
+}
+
+.map-bottom-dock-side {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.map-bottom-dock-side.is-left {
+  justify-content: flex-start;
+}
+
+.map-bottom-dock-side.is-right {
+  justify-content: flex-end;
+}
+
+.map-bottom-dock-center {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .map-bottom-dock-group {
@@ -931,10 +952,12 @@ select {
 }
 
 .map-bottom-dock-group.is-meta {
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
   gap: 8px;
   padding: 6px 10px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .map-bottom-map-select {
@@ -1672,13 +1695,21 @@ select {
   }
 
   .map-bottom-dock {
+    grid-template-columns: 1fr;
     gap: 8px;
     max-width: calc(100% - 12px);
+    width: calc(100% - 12px);
+  }
+
+  .map-bottom-dock-side,
+  .map-bottom-dock-center {
+    justify-content: center;
   }
 
   .map-bottom-dock-group.is-meta {
     width: 100%;
-    justify-content: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
   .map-bottom-map-select {
@@ -2002,6 +2033,7 @@ select {
   .map-bottom-dock {
     gap: 6px;
     max-width: calc(100% - 8px);
+    width: calc(100% - 8px);
   }
 
   .map-bottom-dock-group {

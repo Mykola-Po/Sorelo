@@ -615,83 +615,89 @@ function MapBottomDock({
 }: MapBottomDockProps) {
   return (
     <div className="map-bottom-dock">
-      <div className="map-bottom-dock-group is-meta">
-        <div className="map-bottom-map-select">
-          <div className="map-inline-select">
-            <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
-              <Select.Trigger />
-              <Select.Content>
-                {availableMaps.map((candidate) => (
-                  <Select.Item key={candidate.id} value={candidate.id}>
-                    {candidate.title}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
+      <div className="map-bottom-dock-side is-left">
+        <div className="map-bottom-dock-group is-meta">
+          <div className="map-bottom-map-select">
+            <div className="map-inline-select">
+              <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
+                <Select.Trigger />
+                <Select.Content>
+                  {availableMaps.map((candidate) => (
+                    <Select.Item key={candidate.id} value={candidate.id}>
+                      {candidate.title}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
           </div>
+
+          <MapModeIndicator
+            messages={messages}
+            interactionMode={interactionMode}
+            linkingSourceConceptTitle={linkingSourceConceptTitle}
+            onCancelInteraction={onCancelInteraction}
+          />
+
+          <Badge
+            color={stepBadgeReady ? "green" : "gray"}
+            radius="full"
+            variant={stepBadgeReady ? "soft" : "surface"}
+          >
+            {stepBadgeLabel}
+          </Badge>
+
+          <Badge color="gray" radius="full" variant="surface">
+            {subjectLabel}
+          </Badge>
+        </div>
+      </div>
+
+      <div className="map-bottom-dock-center">
+        <div className="map-bottom-dock-group">
+          <MapIconAction
+            label={messages.topBar.runScenario}
+            active={scenarioOpen}
+            onClick={onOpenScenario}
+          >
+            <RocketIcon />
+          </MapIconAction>
         </div>
 
-        <MapModeIndicator
-          messages={messages}
-          interactionMode={interactionMode}
-          linkingSourceConceptTitle={linkingSourceConceptTitle}
-          onCancelInteraction={onCancelInteraction}
-        />
+        <div className="map-bottom-dock-group is-clustered">
+          <MapIconAction
+            label={messages.topBar.createLink}
+            active={
+              interactionMode === "connectLink" || selectionKind === "create-link"
+            }
+            onClick={onStartCreateLink}
+          >
+            <Link2Icon />
+          </MapIconAction>
+          <MapIconAction
+            label={messages.topBar.newConcept}
+            active={
+              interactionMode === "placeConcept" || selectionKind === "create-concept"
+            }
+            onClick={onStartCreateConcept}
+          >
+            <PlusIcon />
+          </MapIconAction>
+        </div>
 
-        <Badge
-          color={stepBadgeReady ? "green" : "gray"}
-          radius="full"
-          variant={stepBadgeReady ? "soft" : "surface"}
-        >
-          {stepBadgeLabel}
-        </Badge>
+        <div className="map-bottom-dock-group">
+          <MapIconAction
+            label={messages.topBar.inspector}
+            active={inspectorOpen}
+            onClick={onOpenInspector}
+          >
+            <ReaderIcon />
+          </MapIconAction>
+        </div>
+      </div>
 
-        <Badge color="gray" radius="full" variant="surface">
-          {subjectLabel}
-        </Badge>
-
+      <div className="map-bottom-dock-side is-right">
         <MapScaleRuler zoomState={zoomState} />
-      </div>
-
-      <div className="map-bottom-dock-group">
-        <MapIconAction
-          label={messages.topBar.runScenario}
-          active={scenarioOpen}
-          onClick={onOpenScenario}
-        >
-          <RocketIcon />
-        </MapIconAction>
-      </div>
-
-      <div className="map-bottom-dock-group is-clustered">
-        <MapIconAction
-          label={messages.topBar.createLink}
-          active={
-            interactionMode === "connectLink" || selectionKind === "create-link"
-          }
-          onClick={onStartCreateLink}
-        >
-          <Link2Icon />
-        </MapIconAction>
-        <MapIconAction
-          label={messages.topBar.newConcept}
-          active={
-            interactionMode === "placeConcept" || selectionKind === "create-concept"
-          }
-          onClick={onStartCreateConcept}
-        >
-          <PlusIcon />
-        </MapIconAction>
-      </div>
-
-      <div className="map-bottom-dock-group">
-        <MapIconAction
-          label={messages.topBar.inspector}
-          active={inspectorOpen}
-          onClick={onOpenInspector}
-        >
-          <ReaderIcon />
-        </MapIconAction>
       </div>
     </div>
   );
