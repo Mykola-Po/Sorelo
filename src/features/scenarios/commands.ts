@@ -11,6 +11,8 @@ import { fallbackMapTitleFromSituation } from "@/features/maps/utils";
 import { runRuleBasedScenario } from "@/features/scenarios/engine";
 import { db } from "@/shared/db/client";
 import {
+  learningScenarioRunFeedback,
+  learningScenarioStepFeedback,
   concepts,
   links,
   scenarioRunSteps,
@@ -72,7 +74,9 @@ async function loadScenarioGraph(workspaceId: string, mapId: string) {
         description: concepts.description,
       })
       .from(concepts)
-      .where(and(eq(concepts.workspaceId, workspaceId), eq(concepts.mapId, mapId))),
+      .where(
+        and(eq(concepts.workspaceId, workspaceId), eq(concepts.mapId, mapId))
+      ),
     db
       .select({
         id: links.id,
@@ -117,7 +121,7 @@ export async function runScenarioCommand(input: {
   const seedConceptIds =
     input.seedConceptIds && input.seedConceptIds.length > 0
       ? input.seedConceptIds
-      : scenario?.seedConceptIds ?? [];
+      : (scenario?.seedConceptIds ?? []);
 
   if (!triggerText) {
     throw new Error("Scenario trigger text is required.");
@@ -200,4 +204,189 @@ export async function runScenarioCommand(input: {
 
     throw error;
   }
+}
+
+async function requireScenarioRunForMap(input: {
+  workspaceId: string;
+  mapId: string;
+  scenarioRunId: string;
+}) {
+  const [run] = await db
+    .select({
+      id: scenarioRuns.id,
+      status: scenarioRuns.status,
+    })
+    .from(scenarioRuns)
+    .where(
+      and(
+        eq(scenarioRuns.id, input.scenarioRunId),
+        eq(scenarioRuns.workspaceId, input.workspaceId),
+        eq(scenarioRuns.mapId, input.mapId)
+      )
+    )
+    .limit(1);
+
+  if (!run) {
+    throw new Error("Scenario run not found.");
+  }
+
+  if (run.status === "pending") {
+    throw new Error("Scenario run is still pending.");
+  }
+
+  return run;
+}
+
+async function requireScenarioStepForRun(input: {
+  scenarioRunId: string;
+  scenarioRunStepId: string;
+}) {
+  const [step] = await db
+    .select({
+      id: scenarioRunSteps.id,
+    })
+    .from(scenarioRunSteps)
+    .where(
+      and(
+        eq(scenarioRunSteps.id, input.scenarioRunStepId),
+        eq(scenarioRunSteps.scenarioRunId, input.scenarioRunId)
+      )
+    )
+    .limit(1);
+
+  if (!step) {
+    throw new Error("Scenario step not found.");
+  }
+
+  return step;
+}
+
+export async function upsertScenarioRunFeedbackCommand(input: {
+  workspaceId: string;
+  actorUserId: string;
+  mapId: string;
+  scenarioRunId: string;
+  overallScore: number;
+  verdict: (typeof learningScenarioRunFeedback.$inferInsert)["verdict"];
+  feedbackText?: string | null;
+}) {
+  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireActiveMap(input.workspaceId, input.mapId);
+  await requireScenarioRunForMap({
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    scenarioRunId: input.scenarioRunId,
+  });
+
+  const [feedback] = await db
+    .insert(learningScenarioRunFeedback)
+    .values({
+      scenarioRunId: input.scenarioRunId,
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      reviewerUserId: input.actorUserId,
+      overallScore: input.overallScore,
+      verdict: input.verdict,
+      feedbackText: input.feedbackText?.trim() || null,
+    })
+    .onConflictDoUpdate({
+      target: [
+        learningScenarioRunFeedback.scenarioRunId,
+        learningScenarioRunFeedback.reviewerUserId,
+      ],
+      set: {
+        overallScore: input.overallScore,
+        verdict: input.verdict,
+        feedbackText: input.feedbackText?.trim() || null,
+        createdAt: new Date(),
+      },
+    })
+    .returning();
+
+  if (!feedback) {
+    throw new Error("Scenario run feedback could not be saved.");
+  }
+
+  await db.transaction(async (tx) => {
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "scenario_run",
+      entityId: input.scenarioRunId,
+      action: "scenario.feedback.run",
+      payload: {
+        verdict: input.verdict,
+        overallScore: input.overallScore,
+      },
+    });
+  });
+
+  return feedback;
+}
+
+export async function upsertScenarioStepFeedbackCommand(input: {
+  workspaceId: string;
+  actorUserId: string;
+  mapId: string;
+  scenarioRunId: string;
+  scenarioRunStepId: string;
+  verdict: (typeof learningScenarioStepFeedback.$inferInsert)["verdict"];
+  correctedExplanation?: string | null;
+  correctedScore?: number | null;
+}) {
+  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireActiveMap(input.workspaceId, input.mapId);
+  await requireScenarioRunForMap({
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    scenarioRunId: input.scenarioRunId,
+  });
+  await requireScenarioStepForRun({
+    scenarioRunId: input.scenarioRunId,
+    scenarioRunStepId: input.scenarioRunStepId,
+  });
+
+  const [feedback] = await db
+    .insert(learningScenarioStepFeedback)
+    .values({
+      scenarioRunStepId: input.scenarioRunStepId,
+      scenarioRunId: input.scenarioRunId,
+      verdict: input.verdict,
+      correctedExplanation: input.correctedExplanation?.trim() || null,
+      correctedScore: input.correctedScore ?? null,
+      reviewerUserId: input.actorUserId,
+    })
+    .onConflictDoUpdate({
+      target: [
+        learningScenarioStepFeedback.scenarioRunStepId,
+        learningScenarioStepFeedback.reviewerUserId,
+      ],
+      set: {
+        verdict: input.verdict,
+        correctedExplanation: input.correctedExplanation?.trim() || null,
+        correctedScore: input.correctedScore ?? null,
+        createdAt: new Date(),
+      },
+    })
+    .returning();
+
+  if (!feedback) {
+    throw new Error("Scenario step feedback could not be saved.");
+  }
+
+  await db.transaction(async (tx) => {
+    await recordActivity(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      entityType: "scenario_run",
+      entityId: input.scenarioRunId,
+      action: "scenario.feedback.step",
+      payload: {
+        scenarioRunStepId: input.scenarioRunStepId,
+        verdict: input.verdict,
+      },
+    });
+  });
+
+  return feedback;
 }

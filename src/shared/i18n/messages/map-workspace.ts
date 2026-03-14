@@ -119,6 +119,25 @@ export type MapWorkspaceMessages = {
     score: (score: number) => string;
     seedConceptsLabel: string;
     seedConceptsEmpty: string;
+    runFeedbackTitle: string;
+    runFeedbackVerdictLabel: string;
+    runFeedbackScoreLabel: string;
+    runFeedbackCommentLabel: string;
+    runFeedbackCommentPlaceholder: string;
+    runFeedbackVerdictUseful: string;
+    runFeedbackVerdictPartlyUseful: string;
+    runFeedbackVerdictWrong: string;
+    stepFeedbackVerdictLabel: string;
+    stepFeedbackCorrectedScoreLabel: string;
+    stepFeedbackCorrectedExplanationLabel: string;
+    stepFeedbackCorrectedExplanationPlaceholder: string;
+    stepFeedbackVerdictCorrect: string;
+    stepFeedbackVerdictOverstated: string;
+    stepFeedbackVerdictWrongLink: string;
+    stepFeedbackVerdictMissingContext: string;
+    stepFeedbackVerdictWrongEffect: string;
+    saveFeedbackCta: string;
+    saveStepFeedbackCta: string;
     mobileInspectorDescription: string;
     mobileScenarioDescription: string;
   };
@@ -266,10 +285,14 @@ function buildGuidedMessages(locale: SupportedLocale) {
   } satisfies MapWorkspaceMessages["guided"];
 }
 
-export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages> = {
+export const mapWorkspaceMessages: Record<
+  SupportedLocale,
+  MapWorkspaceMessages
+> = {
   en: {
     mapReadyBadge: "Map ready",
-    stepLabel: (stepNumber, totalSteps) => `Step ${stepNumber} of ${totalSteps}`,
+    stepLabel: (stepNumber, totalSteps) =>
+      `Step ${stepNumber} of ${totalSteps}`,
     topBar: {
       newConcept: "New Concept",
       createLink: "Create Link",
@@ -284,18 +307,23 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
     },
     canvas: {
       placeConceptBadge: "Place Concept",
-      placeConceptTitle: "Click anywhere on the canvas to place the next Concept.",
-      placeConceptDescription: "The Inspector will open with the position already filled in.",
+      placeConceptTitle:
+        "Click anywhere on the canvas to place the next Concept.",
+      placeConceptDescription:
+        "The Inspector will open with the position already filled in.",
       createLinkBadge: "Create Link",
       createLinkSourceTitle: "Select the source Concept for the new Link.",
-      createLinkSourceDescription: "The first click chooses where the influence starts.",
-      createLinkTargetTitle: (conceptTitle) => `Select the target Concept for \"${conceptTitle}\".`,
+      createLinkSourceDescription:
+        "The first click chooses where the influence starts.",
+      createLinkTargetTitle: (conceptTitle) =>
+        `Select the target Concept for \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "The second click opens the Link form with source and target already filled in.",
       emptyOverlay:
         "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
       loadingSnapshot: "Loading graph snapshot...",
-      conceptSummaryFallback: "Open Inspector to define the meaning of this Concept.",
+      conceptSummaryFallback:
+        "Open Inspector to define the meaning of this Concept.",
       updatingPosition: "Updating canvas position...",
     },
     guided: buildGuidedMessages("en"),
@@ -304,8 +332,10 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       placeConceptDescription:
         "The next click sets the position, then the Inspector opens a short Concept form.",
       connectLinkSourceTitle: "Select the source Concept",
-      connectLinkSourceDescription: "The first click chooses where the influence starts.",
-      connectLinkTargetTitle: (conceptTitle) => `Choose a target for \"${conceptTitle}\"`,
+      connectLinkSourceDescription:
+        "The first click chooses where the influence starts.",
+      connectLinkTargetTitle: (conceptTitle) =>
+        `Choose a target for \"${conceptTitle}\"`,
       connectLinkTargetDescription:
         "Click a different Concept on the canvas. The Link form will open already filled in.",
       cancel: "Cancel",
@@ -381,9 +411,33 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       step: (stepOrder) => `Step ${stepOrder}`,
       score: (score) => `score ${score}`,
       seedConceptsLabel: "Seed Concepts",
-      seedConceptsEmpty: "Add Concepts to the canvas before selecting scenario seeds.",
-      mobileInspectorDescription: "Inspect Concepts, Links, and the current next step.",
-      mobileScenarioDescription: "Run Scenarios, save them, and inspect recent runs.",
+      seedConceptsEmpty:
+        "Add Concepts to the canvas before selecting scenario seeds.",
+      runFeedbackTitle: "Run feedback",
+      runFeedbackVerdictLabel: "Run verdict",
+      runFeedbackScoreLabel: "Overall score (1-5)",
+      runFeedbackCommentLabel: "Comment",
+      runFeedbackCommentPlaceholder:
+        "What was useful or misleading in this run?",
+      runFeedbackVerdictUseful: "Useful",
+      runFeedbackVerdictPartlyUseful: "Partly useful",
+      runFeedbackVerdictWrong: "Wrong",
+      stepFeedbackVerdictLabel: "Step verdict",
+      stepFeedbackCorrectedScoreLabel: "Corrected score",
+      stepFeedbackCorrectedExplanationLabel: "Corrected explanation",
+      stepFeedbackCorrectedExplanationPlaceholder:
+        "If needed, explain how this step should be interpreted.",
+      stepFeedbackVerdictCorrect: "Correct",
+      stepFeedbackVerdictOverstated: "Overstated",
+      stepFeedbackVerdictWrongLink: "Wrong link",
+      stepFeedbackVerdictMissingContext: "Missing context",
+      stepFeedbackVerdictWrongEffect: "Wrong effect",
+      saveFeedbackCta: "Save run feedback",
+      saveStepFeedbackCta: "Save step feedback",
+      mobileInspectorDescription:
+        "Inspect Concepts, Links, and the current next step.",
+      mobileScenarioDescription:
+        "Run Scenarios, save them, and inspect recent runs.",
     },
     labels: {
       conceptTypes: {
@@ -439,18 +493,23 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
     },
     canvas: {
       placeConceptBadge: "Поставити Концепт",
-      placeConceptTitle: "Клікніть будь-де на canvas, щоб поставити наступний Концепт.",
-      placeConceptDescription: "Інспектор відкриється з уже заповненою позицією.",
+      placeConceptTitle:
+        "Клікніть будь-де на canvas, щоб поставити наступний Концепт.",
+      placeConceptDescription:
+        "Інспектор відкриється з уже заповненою позицією.",
       createLinkBadge: "Створити Зв’язок",
       createLinkSourceTitle: "Оберіть вихідний Концепт для нового Зв’язку.",
-      createLinkSourceDescription: "Перший клік визначає, звідки починається вплив.",
-      createLinkTargetTitle: (conceptTitle) => `Оберіть цільовий Концепт для \"${conceptTitle}\".`,
+      createLinkSourceDescription:
+        "Перший клік визначає, звідки починається вплив.",
+      createLinkTargetTitle: (conceptTitle) =>
+        `Оберіть цільовий Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Другий клік відкриє форму Зв’язку з уже заповненими source і target.",
       emptyOverlay:
         "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
       loadingSnapshot: "Завантажуємо snapshot графа...",
-      conceptSummaryFallback: "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
+      conceptSummaryFallback:
+        "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
       updatingPosition: "Оновлюємо позицію на canvas...",
     },
     guided: buildGuidedMessages("uk"),
@@ -459,8 +518,10 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       placeConceptDescription:
         "Наступний клік задає позицію, після чого Інспектор відкриє коротку форму Концепту.",
       connectLinkSourceTitle: "Оберіть вихідний Концепт",
-      connectLinkSourceDescription: "Перший клік визначає, звідки починається вплив.",
-      connectLinkTargetTitle: (conceptTitle) => `Оберіть ціль для \"${conceptTitle}\"`,
+      connectLinkSourceDescription:
+        "Перший клік визначає, звідки починається вплив.",
+      connectLinkTargetTitle: (conceptTitle) =>
+        `Оберіть ціль для \"${conceptTitle}\"`,
       connectLinkTargetDescription:
         "Клікніть на інший Концепт на canvas. Форма Зв’язку відкриється вже заповненою.",
       cancel: "Скасувати",
@@ -538,8 +599,31 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       seedConceptsLabel: "Початкові Концепти",
       seedConceptsEmpty:
         "Додайте Концепти на canvas перед вибором початкових Концептів для Сценарію.",
-      mobileInspectorDescription: "Переглядайте Концепти, Зв’язки та поточний наступний крок.",
-      mobileScenarioDescription: "Запускайте Сценарії, зберігайте їх і переглядайте останні запуски.",
+      runFeedbackTitle: "Зворотний зв'язок по запуску",
+      runFeedbackVerdictLabel: "Вердикт запуску",
+      runFeedbackScoreLabel: "Загальна оцінка (1-5)",
+      runFeedbackCommentLabel: "Коментар",
+      runFeedbackCommentPlaceholder:
+        "Що в цьому запуску було корисним або хибним?",
+      runFeedbackVerdictUseful: "Корисно",
+      runFeedbackVerdictPartlyUseful: "Частково корисно",
+      runFeedbackVerdictWrong: "Хибно",
+      stepFeedbackVerdictLabel: "Вердикт кроку",
+      stepFeedbackCorrectedScoreLabel: "Скоригована оцінка",
+      stepFeedbackCorrectedExplanationLabel: "Скориговане пояснення",
+      stepFeedbackCorrectedExplanationPlaceholder:
+        "За потреби опишіть, як цей крок слід інтерпретувати.",
+      stepFeedbackVerdictCorrect: "Коректно",
+      stepFeedbackVerdictOverstated: "Перебільшено",
+      stepFeedbackVerdictWrongLink: "Хибний Зв’язок",
+      stepFeedbackVerdictMissingContext: "Бракує контексту",
+      stepFeedbackVerdictWrongEffect: "Хибний ефект",
+      saveFeedbackCta: "Зберегти feedback запуску",
+      saveStepFeedbackCta: "Зберегти feedback кроку",
+      mobileInspectorDescription:
+        "Переглядайте Концепти, Зв’язки та поточний наступний крок.",
+      mobileScenarioDescription:
+        "Запускайте Сценарії, зберігайте їх і переглядайте останні запуски.",
     },
     labels: {
       conceptTypes: {
@@ -595,18 +679,23 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
     },
     canvas: {
       placeConceptBadge: "Поставить Концепт",
-      placeConceptTitle: "Кликните в любом месте canvas, чтобы поставить следующий Концепт.",
-      placeConceptDescription: "Инспектор откроется с уже заполненной позицией.",
+      placeConceptTitle:
+        "Кликните в любом месте canvas, чтобы поставить следующий Концепт.",
+      placeConceptDescription:
+        "Инспектор откроется с уже заполненной позицией.",
       createLinkBadge: "Создать Связь",
       createLinkSourceTitle: "Выберите исходный Концепт для новой Связи.",
-      createLinkSourceDescription: "Первый клик определяет, откуда начинается влияние.",
-      createLinkTargetTitle: (conceptTitle) => `Выберите целевой Концепт для \"${conceptTitle}\".`,
+      createLinkSourceDescription:
+        "Первый клик определяет, откуда начинается влияние.",
+      createLinkTargetTitle: (conceptTitle) =>
+        `Выберите целевой Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Второй клик откроет форму Связи с уже заполненными source и target.",
       emptyOverlay:
         "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
       loadingSnapshot: "Загружаем snapshot графа...",
-      conceptSummaryFallback: "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
+      conceptSummaryFallback:
+        "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
       updatingPosition: "Обновляем позицию на canvas...",
     },
     guided: buildGuidedMessages("ru"),
@@ -615,8 +704,10 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       placeConceptDescription:
         "Следующий клик задаёт позицию, после чего Инспектор откроет короткую форму Концепта.",
       connectLinkSourceTitle: "Выберите исходный Концепт",
-      connectLinkSourceDescription: "Первый клик определяет, откуда начинается влияние.",
-      connectLinkTargetTitle: (conceptTitle) => `Выберите цель для \"${conceptTitle}\"`,
+      connectLinkSourceDescription:
+        "Первый клик определяет, откуда начинается влияние.",
+      connectLinkTargetTitle: (conceptTitle) =>
+        `Выберите цель для \"${conceptTitle}\"`,
       connectLinkTargetDescription:
         "Кликните по другому Концепту на canvas. Форма Связи откроется уже заполненной.",
       cancel: "Отменить",
@@ -630,7 +721,8 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       descriptionLabel: "Описание",
       createConceptCta: "Создать Концепт",
       createConceptTitlePlaceholder: "Страх быть неправильно понятым",
-      createConceptSummaryPlaceholder: "Что именно должно быть видно на canvas.",
+      createConceptSummaryPlaceholder:
+        "Что именно должно быть видно на canvas.",
       createConceptDescriptionPlaceholder:
         "Почему этот Концепт важен в структуре этого человека.",
       conceptSave: "Сохранить Концепт",
@@ -694,8 +786,31 @@ export const mapWorkspaceMessages: Record<SupportedLocale, MapWorkspaceMessages>
       seedConceptsLabel: "Начальные Концепты",
       seedConceptsEmpty:
         "Добавьте Концепты на canvas перед выбором начальных Концептов для Сценария.",
-      mobileInspectorDescription: "Проверяйте Концепты, Связи и текущий следующий шаг.",
-      mobileScenarioDescription: "Запускайте Сценарии, сохраняйте их и просматривайте последние запуски.",
+      runFeedbackTitle: "Обратная связь по запуску",
+      runFeedbackVerdictLabel: "Вердикт запуска",
+      runFeedbackScoreLabel: "Общая оценка (1-5)",
+      runFeedbackCommentLabel: "Комментарий",
+      runFeedbackCommentPlaceholder:
+        "Что в этом запуске было полезным или ошибочным?",
+      runFeedbackVerdictUseful: "Полезно",
+      runFeedbackVerdictPartlyUseful: "Частично полезно",
+      runFeedbackVerdictWrong: "Неверно",
+      stepFeedbackVerdictLabel: "Вердикт шага",
+      stepFeedbackCorrectedScoreLabel: "Скорректированная оценка",
+      stepFeedbackCorrectedExplanationLabel: "Скорректированное объяснение",
+      stepFeedbackCorrectedExplanationPlaceholder:
+        "При необходимости опишите, как этот шаг следует интерпретировать.",
+      stepFeedbackVerdictCorrect: "Корректно",
+      stepFeedbackVerdictOverstated: "Преувеличено",
+      stepFeedbackVerdictWrongLink: "Неверная Связь",
+      stepFeedbackVerdictMissingContext: "Не хватает контекста",
+      stepFeedbackVerdictWrongEffect: "Неверный эффект",
+      saveFeedbackCta: "Сохранить feedback запуска",
+      saveStepFeedbackCta: "Сохранить feedback шага",
+      mobileInspectorDescription:
+        "Проверяйте Концепты, Связи и текущий следующий шаг.",
+      mobileScenarioDescription:
+        "Запускайте Сценарии, сохраняйте их и просматривайте последние запуски.",
     },
     labels: {
       conceptTypes: {

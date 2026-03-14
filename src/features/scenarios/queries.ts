@@ -5,6 +5,8 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import {
   concepts,
+  learningScenarioRunFeedback,
+  learningScenarioStepFeedback,
   links,
   maps,
   scenarioRunSteps,
@@ -16,8 +18,12 @@ import {
 export async function listScenarioRunsForMap(
   mapId: string,
   workspaceId: string,
-  limit = 6
+  options?: {
+    limit?: number;
+    reviewerUserId?: string;
+  }
 ) {
+  const limit = options?.limit ?? 6;
   const runs = await db
     .select({
       id: scenarioRuns.id,
@@ -39,7 +45,12 @@ export async function listScenarioRunsForMap(
     .from(scenarioRuns)
     .innerJoin(users, eq(scenarioRuns.startedByUserId, users.id))
     .leftJoin(scenarios, eq(scenarioRuns.scenarioId, scenarios.id))
-    .where(and(eq(scenarioRuns.mapId, mapId), eq(scenarioRuns.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(scenarioRuns.mapId, mapId),
+        eq(scenarioRuns.workspaceId, workspaceId)
+      )
+    )
     .orderBy(desc(scenarioRuns.createdAt))
     .limit(limit);
 
@@ -95,7 +106,13 @@ export async function listScenarioRunsForMap(
             relationType: links.relationType,
           })
           .from(links)
-          .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId), inArray(links.id, linkIds)))
+          .where(
+            and(
+              eq(links.mapId, mapId),
+              eq(links.workspaceId, workspaceId),
+              inArray(links.id, linkIds)
+            )
+          )
       : [],
   ]);
 
@@ -109,7 +126,81 @@ export async function listScenarioRunsForMap(
   type EnrichedStep = (typeof steps)[number] & {
     conceptTitle: string;
     viaLinkRelationType: (typeof stepLinks)[number]["relationType"] | null;
+    feedback: {
+      id: string;
+      verdict: typeof learningScenarioStepFeedback.$inferSelect.verdict;
+      correctedExplanation: string | null;
+      correctedScore: number | null;
+      createdAt: string;
+    } | null;
   };
+
+  const runFeedbackRows = options?.reviewerUserId
+    ? await db
+        .select({
+          id: learningScenarioRunFeedback.id,
+          scenarioRunId: learningScenarioRunFeedback.scenarioRunId,
+          verdict: learningScenarioRunFeedback.verdict,
+          overallScore: learningScenarioRunFeedback.overallScore,
+          feedbackText: learningScenarioRunFeedback.feedbackText,
+          createdAt: learningScenarioRunFeedback.createdAt,
+        })
+        .from(learningScenarioRunFeedback)
+        .where(
+          and(
+            inArray(learningScenarioRunFeedback.scenarioRunId, runIds),
+            eq(
+              learningScenarioRunFeedback.reviewerUserId,
+              options.reviewerUserId
+            )
+          )
+        )
+    : [];
+
+  const stepIds = steps.map((step) => step.id);
+  const stepFeedbackRows =
+    options?.reviewerUserId && stepIds.length > 0
+      ? await db
+          .select({
+            id: learningScenarioStepFeedback.id,
+            scenarioRunStepId: learningScenarioStepFeedback.scenarioRunStepId,
+            verdict: learningScenarioStepFeedback.verdict,
+            correctedExplanation:
+              learningScenarioStepFeedback.correctedExplanation,
+            correctedScore: learningScenarioStepFeedback.correctedScore,
+            createdAt: learningScenarioStepFeedback.createdAt,
+          })
+          .from(learningScenarioStepFeedback)
+          .where(
+            and(
+              inArray(learningScenarioStepFeedback.scenarioRunStepId, stepIds),
+              eq(
+                learningScenarioStepFeedback.reviewerUserId,
+                options.reviewerUserId
+              )
+            )
+          )
+      : [];
+
+  const runFeedbackByRunId = new Map(
+    runFeedbackRows.map((feedback) => [
+      feedback.scenarioRunId,
+      {
+        ...feedback,
+        createdAt: feedback.createdAt.toISOString(),
+      },
+    ])
+  );
+
+  const stepFeedbackByStepId = new Map(
+    stepFeedbackRows.map((feedback) => [
+      feedback.scenarioRunStepId,
+      {
+        ...feedback,
+        createdAt: feedback.createdAt.toISOString(),
+      },
+    ])
+  );
 
   const stepsByRunId = new Map<string, EnrichedStep[]>();
   for (const step of steps) {
@@ -120,6 +211,7 @@ export async function listScenarioRunsForMap(
       viaLinkRelationType: step.viaLinkId
         ? (linkRelationById.get(step.viaLinkId) ?? null)
         : null,
+      feedback: stepFeedbackByStepId.get(step.id) ?? null,
     });
     stepsByRunId.set(step.scenarioRunId, bucket);
   }
@@ -127,10 +219,11 @@ export async function listScenarioRunsForMap(
   return runs.map((run) => ({
     ...run,
     createdAt: run.createdAt.toISOString(),
+    feedback: runFeedbackByRunId.get(run.id) ?? null,
     steps:
-      stepsByRunId.get(run.id)?.sort(
-        (left, right) => left.stepOrder - right.stepOrder
-      ) ?? [],
+      stepsByRunId
+        .get(run.id)
+        ?.sort((left, right) => left.stepOrder - right.stepOrder) ?? [],
   }));
 }
 

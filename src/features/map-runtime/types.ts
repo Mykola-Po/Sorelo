@@ -1,7 +1,9 @@
 import type {
   ConceptType,
   RelationType,
+  ScenarioRunFeedbackVerdict,
   ScenarioRunStatus,
+  ScenarioStepFeedbackVerdict,
 } from "@/shared/db/schema";
 
 export type GraphViewport = {
@@ -92,6 +94,13 @@ export type ScenarioRunStepPanelSummary = {
   effectType: string;
   explanation: string;
   score: number;
+  feedback: {
+    id: string;
+    verdict: ScenarioStepFeedbackVerdict;
+    correctedExplanation: string | null;
+    correctedScore: number | null;
+    createdAt: string;
+  } | null;
 };
 
 export type ScenarioRunPanelSummary = {
@@ -106,11 +115,16 @@ export type ScenarioRunPanelSummary = {
     fullName: string | null;
     email: string;
   };
-  scenario:
-    | {
-        id: string;
-        title: string;
-      }
-    | null;
+  scenario: {
+    id: string;
+    title: string;
+  } | null;
+  feedback: {
+    id: string;
+    overallScore: number;
+    verdict: ScenarioRunFeedbackVerdict;
+    feedbackText: string | null;
+    createdAt: string;
+  } | null;
   steps: ScenarioRunStepPanelSummary[];
 };

@@ -12,7 +12,10 @@ import {
   lte,
 } from "drizzle-orm";
 
-import { listScenarioRunsForMap, listScenarioRunsForWorkspace } from "@/features/scenarios/queries";
+import {
+  listScenarioRunsForMap,
+  listScenarioRunsForWorkspace,
+} from "@/features/scenarios/queries";
 import { listSuggestionFeedForMap } from "@/features/learning/queries";
 import { db } from "@/shared/db/client";
 import {
@@ -164,7 +167,9 @@ async function listScenarioSummariesForMap(mapId: string, workspaceId: string) {
       updatedAt: scenarios.updatedAt,
     })
     .from(scenarios)
-    .where(and(eq(scenarios.mapId, mapId), eq(scenarios.workspaceId, workspaceId)))
+    .where(
+      and(eq(scenarios.mapId, mapId), eq(scenarios.workspaceId, workspaceId))
+    )
     .orderBy(desc(scenarios.updatedAt));
 
   const uniqueSeedIds = Array.from(
@@ -216,7 +221,8 @@ async function listScenarioSummariesForMap(mapId: string, workspaceId: string) {
 
 export async function getMapWorkspaceChromeData(
   mapId: string,
-  workspaceId: string
+  workspaceId: string,
+  currentUserId?: string
 ) {
   const map = await getMapWorkspace(mapId, workspaceId);
 
@@ -229,7 +235,10 @@ export async function getMapWorkspaceChromeData(
       listMapsForWorkspace(workspaceId),
       getMapGraphMetrics(mapId, workspaceId),
       listScenarioSummariesForMap(mapId, workspaceId),
-      listScenarioRunsForMap(mapId, workspaceId, 8),
+      listScenarioRunsForMap(mapId, workspaceId, {
+        limit: 8,
+        ...(currentUserId ? { reviewerUserId: currentUserId } : {}),
+      }),
       listSuggestionFeedForMap(workspaceId, mapId, 80),
     ]);
 
@@ -442,9 +451,7 @@ export async function getInspectorPayload(
     ]);
 
     const relatedIds = Array.from(
-      new Set(
-        [...incoming, ...outgoing].map((link) => link.relatedConceptId)
-      )
+      new Set([...incoming, ...outgoing].map((link) => link.relatedConceptId))
     );
 
     const relatedConcepts =
