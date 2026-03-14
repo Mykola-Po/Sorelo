@@ -757,7 +757,7 @@ select {
 
 .map-overlay-layer {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
   padding: 0;
   position: relative;
@@ -909,8 +909,10 @@ select {
 }
 
 .map-bottom-dock {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 10px;
   max-width: calc(100% - 24px);
   pointer-events: auto;
@@ -926,6 +928,36 @@ select {
   background: rgba(250, 250, 250, 0.96);
   box-shadow: var(--map-dock-shadow);
   backdrop-filter: blur(18px);
+}
+
+.map-bottom-dock-group.is-meta {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.map-bottom-map-select {
+  width: min(220px, 48vw);
+  min-width: 160px;
+}
+
+.map-bottom-map-select .rt-SelectRoot,
+.map-bottom-map-select .rt-SelectTrigger {
+  width: 100%;
+}
+
+.map-bottom-map-select .rt-SelectTrigger {
+  min-height: 24px;
+  justify-content: space-between;
+  border: 1px solid var(--map-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.map-bottom-map-select .rt-SelectTrigger span {
+  font-size: 12px;
 }
 
 .map-icon-action {
@@ -985,7 +1017,7 @@ select {
   justify-content: flex-end;
   align-items: flex-start;
   margin: 0;
-  padding: calc(var(--map-top-strip-min-height) + 16px) 14px 90px;
+  padding: 16px 14px 90px;
 }
 
 .map-dialog-container .rt-BaseDialogContent {
@@ -1626,18 +1658,6 @@ select {
 }
 
 @media (max-width: 900px) {
-  .map-top-strip {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-    gap: 10px;
-    padding: 8px 10px;
-  }
-
-  .map-top-strip-switcher {
-    width: 100%;
-    justify-self: stretch;
-  }
-
   .map-scale-ruler {
     margin-left: 0;
     gap: 6px;
@@ -1653,12 +1673,22 @@ select {
 
   .map-bottom-dock {
     gap: 8px;
+    max-width: calc(100% - 12px);
+  }
+
+  .map-bottom-dock-group.is-meta {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .map-bottom-map-select {
+    width: min(100%, 260px);
   }
 
   .map-dialog-container .rt-BaseDialogScrollPadding {
     justify-content: center;
     align-items: flex-end;
-    padding: 72px 10px 10px;
+    padding: 10px 10px 10px;
   }
 
   .map-mobile-dialog {
@@ -1971,10 +2001,21 @@ select {
 
   .map-bottom-dock {
     gap: 6px;
+    max-width: calc(100% - 8px);
   }
 
   .map-bottom-dock-group {
     padding: 4px;
+  }
+
+  .map-bottom-dock-group.is-meta {
+    gap: 6px;
+    justify-content: center;
+    padding: 6px 8px;
+  }
+
+  .map-bottom-map-select {
+    width: min(100%, 210px);
   }
 
   .map-icon-action {
@@ -1983,7 +2024,7 @@ select {
   }
 
   .map-dialog-container .rt-BaseDialogScrollPadding {
-    padding-top: 64px;
+    padding-top: 10px;
   }
 
   .map-canvas {

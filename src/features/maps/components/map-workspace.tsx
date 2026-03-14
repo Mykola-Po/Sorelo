@@ -305,13 +305,12 @@ export function MapWorkspace({
           </MapStoreProvider>
 
           <div className="map-overlay-layer">
-            <div className="map-overlay-top">
-              <MapTopStrip
+            <div className="map-overlay-bottom">
+              <MapBottomDock
                 messages={messages}
                 mapId={map.id}
                 subjectLabel={map.subjectLabel}
                 availableMaps={availableMaps}
-                interactionMode={interactionMode}
                 linkingSourceConceptTitle={linkingSourceConceptTitle}
                 stepBadgeLabel={
                   guidedStep === "done"
@@ -319,17 +318,7 @@ export function MapWorkspace({
                     : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)
                 }
                 stepBadgeReady={guidedStep === "done"}
-                onCancelInteraction={cancelInteraction}
-                onSelectMap={(value) =>
-                  router.push(workspaceMapPath(workspaceSlug, value))
-                }
-              />
-              <MapScaleRuler zoomState={zoomState} />
-            </div>
-
-            <div className="map-overlay-bottom">
-              <MapBottomDock
-                messages={messages}
+                zoomState={zoomState}
                 interactionMode={interactionMode}
                 selectionKind={selection.kind}
                 inspectorOpen={isInspectorPanelOpen}
@@ -338,6 +327,10 @@ export function MapWorkspace({
                 onOpenScenario={openScenarioPanel}
                 onStartCreateConcept={beginPlaceConcept}
                 onStartCreateLink={beginConnectLink}
+                onCancelInteraction={cancelInteraction}
+                onSelectMap={(value) =>
+                  router.push(workspaceMapPath(workspaceSlug, value))
+                }
               />
             </div>
           </div>
@@ -490,77 +483,6 @@ function MapIconAction({
   );
 }
 
-type MapTopStripProps = {
-  messages: MapWorkspaceMessages;
-  mapId: string;
-  subjectLabel: string;
-  availableMaps: MapWorkspaceProps["availableMaps"];
-  interactionMode: CanvasInteractionMode;
-  linkingSourceConceptTitle: string | null;
-  stepBadgeLabel: string;
-  stepBadgeReady: boolean;
-  onCancelInteraction: () => void;
-  onSelectMap: (mapId: string) => void;
-};
-
-function MapTopStrip({
-  messages,
-  mapId,
-  subjectLabel,
-  availableMaps,
-  interactionMode,
-  linkingSourceConceptTitle,
-  stepBadgeLabel,
-  stepBadgeReady,
-  onCancelInteraction,
-  onSelectMap,
-}: MapTopStripProps) {
-  return (
-    <div className="map-top-strip">
-      <Flex
-        gap="2"
-        wrap="wrap"
-        align="center"
-        className="map-top-strip-badges"
-      >
-        <Badge
-          color={stepBadgeReady ? "green" : "gray"}
-          radius="full"
-          variant={stepBadgeReady ? "soft" : "surface"}
-        >
-          {stepBadgeLabel}
-        </Badge>
-
-        <MapModeIndicator
-          messages={messages}
-          interactionMode={interactionMode}
-          linkingSourceConceptTitle={linkingSourceConceptTitle}
-          onCancelInteraction={onCancelInteraction}
-        />
-
-        <Badge color="gray" radius="full" variant="surface">
-          {subjectLabel}
-        </Badge>
-      </Flex>
-
-      <div className="map-top-strip-switcher">
-        <div className="map-inline-select">
-          <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
-            <Select.Trigger />
-            <Select.Content>
-              {availableMaps.map((candidate) => (
-                <Select.Item key={candidate.id} value={candidate.id}>
-                  {candidate.title}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 type MapScaleRulerProps = {
   zoomState: CanvasZoomState;
 };
@@ -652,6 +574,13 @@ function MapModeIndicator({
 
 type MapBottomDockProps = {
   messages: MapWorkspaceMessages;
+  mapId: string;
+  subjectLabel: string;
+  availableMaps: MapWorkspaceProps["availableMaps"];
+  linkingSourceConceptTitle: string | null;
+  stepBadgeLabel: string;
+  stepBadgeReady: boolean;
+  zoomState: CanvasZoomState;
   interactionMode: CanvasInteractionMode;
   selectionKind: InspectorSelection["kind"];
   inspectorOpen: boolean;
@@ -660,10 +589,19 @@ type MapBottomDockProps = {
   onOpenScenario: () => void;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
+  onCancelInteraction: () => void;
+  onSelectMap: (mapId: string) => void;
 };
 
 function MapBottomDock({
   messages,
+  mapId,
+  subjectLabel,
+  availableMaps,
+  linkingSourceConceptTitle,
+  stepBadgeLabel,
+  stepBadgeReady,
+  zoomState,
   interactionMode,
   selectionKind,
   inspectorOpen,
@@ -672,9 +610,49 @@ function MapBottomDock({
   onOpenScenario,
   onStartCreateConcept,
   onStartCreateLink,
+  onCancelInteraction,
+  onSelectMap,
 }: MapBottomDockProps) {
   return (
     <div className="map-bottom-dock">
+      <div className="map-bottom-dock-group is-meta">
+        <div className="map-bottom-map-select">
+          <div className="map-inline-select">
+            <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
+              <Select.Trigger />
+              <Select.Content>
+                {availableMaps.map((candidate) => (
+                  <Select.Item key={candidate.id} value={candidate.id}>
+                    {candidate.title}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+
+        <MapModeIndicator
+          messages={messages}
+          interactionMode={interactionMode}
+          linkingSourceConceptTitle={linkingSourceConceptTitle}
+          onCancelInteraction={onCancelInteraction}
+        />
+
+        <Badge
+          color={stepBadgeReady ? "green" : "gray"}
+          radius="full"
+          variant={stepBadgeReady ? "soft" : "surface"}
+        >
+          {stepBadgeLabel}
+        </Badge>
+
+        <Badge color="gray" radius="full" variant="surface">
+          {subjectLabel}
+        </Badge>
+
+        <MapScaleRuler zoomState={zoomState} />
+      </div>
+
       <div className="map-bottom-dock-group">
         <MapIconAction
           label={messages.topBar.runScenario}
