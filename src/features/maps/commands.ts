@@ -17,7 +17,7 @@ export async function bumpMapGraphRevision(
     mapId: string;
   }
 ) {
-  await dbOrTx
+  const [map] = await dbOrTx
     .update(maps)
     .set({
       graphRevision: sql`${maps.graphRevision} + 1`,
@@ -29,7 +29,14 @@ export async function bumpMapGraphRevision(
         eq(maps.workspaceId, input.workspaceId),
         isNull(maps.archivedAt)
       )
-    );
+    )
+    .returning({ graphRevision: maps.graphRevision });
+
+  if (!map) {
+    throw new Error("Map not found.");
+  }
+
+  return map.graphRevision;
 }
 
 export async function createMapCommand(input: {
