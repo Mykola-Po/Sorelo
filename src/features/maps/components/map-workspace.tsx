@@ -34,6 +34,11 @@ const GraphCanvasRuntime = dynamic(
 import { MapStoreProvider } from "@/features/map-runtime/store/map-store-provider";
 import { useConceptCatalog } from "@/features/map-runtime/hooks/use-concept-catalog";
 import {
+  deriveLodThresholds,
+  deriveZoomBounds,
+  type CanvasZoomState,
+} from "@/features/map-runtime/renderers/zoom-policy";
+import {
   buildLinkDraftDefaults,
   deriveGuidedOnboardingStep,
   type CanvasInteractionMode,
@@ -71,7 +76,21 @@ export function MapWorkspace({
   const [connectLinkSourceId, setConnectLinkSourceId] = useState<string | null>(
     null
   );
-  const [zoomRatio, setZoomRatio] = useState(1);
+  const [zoomState, setZoomState] = useState<CanvasZoomState>(() => {
+    const { minRatio, maxRatio } = deriveZoomBounds(1);
+    const { dotEnterRatio, dotExitRatio } = deriveLodThresholds(
+      minRatio,
+      maxRatio
+    );
+
+    return {
+      ratio: 1,
+      minRatio,
+      maxRatio,
+      dotEnterRatio,
+      dotExitRatio,
+    };
+  });
   const [panelOpen, setPanelOpen] = useState(false);
   const {
     catalog: conceptCatalog,
@@ -95,14 +114,24 @@ export function MapWorkspace({
     : null;
   const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
   const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
-  const handleZoomRatioChange = useCallback((nextRatio: number) => {
-    if (!Number.isFinite(nextRatio)) {
+  const handleZoomStateChange = useCallback((nextState: CanvasZoomState) => {
+    if (!Number.isFinite(nextState.ratio)) {
       return;
     }
 
-    setZoomRatio((prevRatio) =>
-      Math.abs(prevRatio - nextRatio) < 0.01 ? prevRatio : nextRatio
-    );
+    setZoomState((prevState) => {
+      const sameRatio = Math.abs(prevState.ratio - nextState.ratio) < 0.01;
+      const sameMin = Math.abs(prevState.minRatio - nextState.minRatio) < 0.0001;
+      const sameMax = Math.abs(prevState.maxRatio - nextState.maxRatio) < 0.0001;
+      const sameEnter =
+        Math.abs(prevState.dotEnterRatio - nextState.dotEnterRatio) < 0.0001;
+      const sameExit =
+        Math.abs(prevState.dotExitRatio - nextState.dotExitRatio) < 0.0001;
+
+      return sameRatio && sameMin && sameMax && sameEnter && sameExit
+        ? prevState
+        : nextState;
+    });
   }, []);
 
   const openInspectorPanel = () => {
@@ -270,7 +299,7 @@ export function MapWorkspace({
                 setPanelTab("inspector");
               }}
               onCompleteConnectLink={openCreateLinkDraft}
-              onZoomRatioChange={handleZoomRatioChange}
+              onZoomStateChange={handleZoomStateChange}
             />
           </div>
           </MapStoreProvider>
@@ -295,7 +324,7 @@ export function MapWorkspace({
                   router.push(workspaceMapPath(workspaceSlug, value))
                 }
               />
-              <MapScaleRuler zoomRatio={zoomRatio} />
+              <MapScaleRuler zoomState={zoomState} />
             </div>
 
             <div className="map-overlay-bottom">
@@ -533,16 +562,17 @@ function MapTopStrip({
 }
 
 type MapScaleRulerProps = {
-  zoomRatio: number;
+  zoomState: CanvasZoomState;
 };
 
-function MapScaleRuler({ zoomRatio }: MapScaleRulerProps) {
-  const minRatio = 0.45;
-  const maxRatio = 2.8;
-  const safeRatio = Math.min(Math.max(zoomRatio, minRatio), maxRatio);
-  const minLog = Math.log(minRatio);
-  const maxLog = Math.log(maxRatio);
-  const thumbPositionPercent = ((Math.log(safeRatio) - minLog) / (maxLog - minLog)) * 100;
+function MapScaleRuler({ zoomState }: MapScaleRulerProps) {
+  const safeMinRatio = Math.max(zoomState.minRatio, 0.0001);
+  const safeMaxRatio = Math.max(zoomState.maxRatio, safeMinRatio + 0.0001);
+  const safeRatio = Math.min(Math.max(zoomState.ratio, safeMinRatio), safeMaxRatio);
+  const minLog = Math.log(safeMinRatio);
+  const maxLog = Math.log(safeMaxRatio);
+  const logRange = Math.max(maxLog - minLog, 0.0001);
+  const thumbPositionPercent = ((Math.log(safeRatio) - minLog) / logRange) * 100;
   const zoomPercent = Math.round((1 / safeRatio) * 100);
 
   return (

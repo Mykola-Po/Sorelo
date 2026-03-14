@@ -19,12 +19,18 @@ import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
 import { useMapStore } from "../store/map-store-provider";
 import { buildGraphologyInstance } from "../renderers/graph-builder";
-import { createSigmaInstance } from "../renderers/sigma-instance";
+import {
+  applySigmaZoomBounds,
+  createSigmaInstance,
+} from "../renderers/sigma-instance";
+import {
+  deriveLodThresholds,
+  deriveZoomBounds,
+  type CanvasZoomState,
+} from "../renderers/zoom-policy";
 import type { Sigma } from "sigma";
 
 const POSITION_FLUSH_DEBOUNCE_MS = 750;
-const DOT_MODE_ENTER_RATIO = 1.25;
-const DOT_MODE_EXIT_RATIO = 1.14;
 
 type ViewportNodePosition = {
   x: number;
@@ -51,7 +57,7 @@ type GraphCanvasRuntimeProps = {
   onOpenLinkInspector: (linkId: string) => void;
   onPickConnectSource: (conceptId: string) => void;
   onCompleteConnectLink: (sourceConceptId: string, targetConceptId: string) => void;
-  onZoomRatioChange?: (ratio: number) => void;
+  onZoomStateChange?: (state: CanvasZoomState) => void;
 };
 
 export function GraphCanvasRuntime({
@@ -67,7 +73,7 @@ export function GraphCanvasRuntime({
   onOpenLinkInspector,
   onPickConnectSource,
   onCompleteConnectLink,
-  onZoomRatioChange,
+  onZoomStateChange,
 }: GraphCanvasRuntimeProps) {
   const messages = getMapWorkspaceMessages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +85,7 @@ export function GraphCanvasRuntime({
   const suppressClickForConceptIdRef = useRef<string | null>(null);
   const teardownCardDragRef = useRef<(() => void) | null>(null);
   const conceptViewportPositionsRef = useRef<Map<string, ViewportNodePosition>>(new Map());
+  const zoomPolicyRef = useRef<Omit<CanvasZoomState, "ratio"> | null>(null);
 
   const [isZoomedOut, setIsZoomedOut] = useState(false);
   const isZoomedOutRef = useRef(isZoomedOut);
@@ -143,6 +150,7 @@ export function GraphCanvasRuntime({
 
   useEffect(() => {
     if (!isZoomedOut) {
+      hoveredConceptIdRef.current = null;
       setHoveredConceptId(null);
     }
   }, [isZoomedOut]);
@@ -238,19 +246,32 @@ export function GraphCanvasRuntime({
         return;
       }
 
-      onZoomRatioChange?.(ratio);
+      const zoomPolicy = zoomPolicyRef.current;
+      if (!zoomPolicy) {
+        return;
+      }
+
+      const boundedRatio = Math.min(
+        Math.max(ratio, zoomPolicy.minRatio),
+        zoomPolicy.maxRatio
+      );
+
+      onZoomStateChange?.({
+        ratio: boundedRatio,
+        ...zoomPolicy,
+      });
 
       const currentlyZoomedOut = isZoomedOutRef.current;
       const nextZoomedOut = currentlyZoomedOut
-        ? ratio > DOT_MODE_EXIT_RATIO
-        : ratio >= DOT_MODE_ENTER_RATIO;
+        ? boundedRatio > zoomPolicy.dotExitRatio
+        : boundedRatio >= zoomPolicy.dotEnterRatio;
 
       if (nextZoomedOut !== currentlyZoomedOut) {
         isZoomedOutRef.current = nextZoomedOut;
         setIsZoomedOut(nextZoomedOut);
       }
     },
-    [onZoomRatioChange]
+    [onZoomStateChange]
   );
 
   const syncConceptPresentation = useCallback(() => {
@@ -428,11 +449,16 @@ export function GraphCanvasRuntime({
   );
 
   const handleDotHoverStart = useCallback((conceptId: string) => {
+    hoveredConceptIdRef.current = conceptId;
     setHoveredConceptId(conceptId);
   }, []);
 
   const handleDotHoverEnd = useCallback((conceptId: string) => {
-    setHoveredConceptId((current) => (current === conceptId ? null : current));
+    setHoveredConceptId((current) => {
+      const nextHoverId = current === conceptId ? null : current;
+      hoveredConceptIdRef.current = nextHoverId;
+      return nextHoverId;
+    });
   }, []);
 
   const handleConceptCardPointerDown = useCallback(
@@ -546,8 +572,11 @@ export function GraphCanvasRuntime({
         deltaX: event.deltaX,
         deltaY: event.deltaY,
         deltaZ: event.deltaZ,
+        deltaMode: event.deltaMode,
         clientX: event.clientX,
         clientY: event.clientY,
+        button: event.button,
+        buttons: event.buttons,
         ctrlKey: event.ctrlKey,
         shiftKey: event.shiftKey,
         altKey: event.altKey,
@@ -578,6 +607,23 @@ export function GraphCanvasRuntime({
       graph,
     });
     sigmaRef.current = sigma;
+
+    const camera = sigma.getCamera();
+    const baseRatio = camera.getState().ratio;
+    const { minRatio, maxRatio } = deriveZoomBounds(baseRatio);
+    applySigmaZoomBounds(sigma, { minRatio, maxRatio });
+    const { dotEnterRatio, dotExitRatio } = deriveLodThresholds(minRatio, maxRatio);
+    zoomPolicyRef.current = {
+      minRatio,
+      maxRatio,
+      dotEnterRatio,
+      dotExitRatio,
+    };
+
+    const boundedBaseRatio = camera.getBoundedRatio(baseRatio);
+    if (Math.abs(baseRatio - boundedBaseRatio) > 0.0001) {
+      camera.setState({ ratio: boundedBaseRatio });
+    }
 
     if (typeof window !== "undefined") {
       window.__SIGMA__ = sigma;
@@ -646,6 +692,7 @@ export function GraphCanvasRuntime({
     handleCameraUpdated();
 
     return () => {
+      zoomPolicyRef.current = null;
       sigma.kill();
     };
   }, [

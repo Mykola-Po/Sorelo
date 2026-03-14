@@ -6,6 +6,11 @@ export type SigmaInstanceOptions = {
   graph: Graph;
 };
 
+export type SigmaZoomBounds = {
+  minRatio: number;
+  maxRatio: number;
+};
+
 export function createSigmaInstance({ container, graph }: SigmaInstanceOptions): Sigma {
   return new Sigma(graph, container, {
     renderLabels: false,
@@ -20,5 +25,19 @@ export function createSigmaInstance({ container, graph }: SigmaInstanceOptions):
     // Styling fallbacks
     defaultNodeColor: "#868e96",
     defaultEdgeColor: "#868e96",
+    minCameraRatio: null,
+    maxCameraRatio: null,
+  });
+}
+
+export function applySigmaZoomBounds(sigma: Sigma, bounds: SigmaZoomBounds): void {
+  const minRatio =
+    Number.isFinite(bounds.minRatio) && bounds.minRatio > 0 ? bounds.minRatio : null;
+  const maxRatio =
+    Number.isFinite(bounds.maxRatio) && bounds.maxRatio > 0 ? bounds.maxRatio : null;
+
+  sigma.setSettings({
+    minCameraRatio: minRatio,
+    maxCameraRatio: maxRatio,
   });
 }
