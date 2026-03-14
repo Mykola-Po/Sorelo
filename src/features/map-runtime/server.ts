@@ -4,13 +4,10 @@ import { NextResponse } from "next/server";
 import type { z } from "zod";
 
 import { requireMapMembershipById } from "@/features/maps/access";
-import { createServerSupabaseClient } from "@/shared/auth/supabase/server";
+import { getCurrentUser } from "@/shared/auth/session";
 
 export async function requireMapRuntimeAccess(mapId: string) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     throw new Error("Authentication required.");
@@ -21,7 +18,7 @@ export async function requireMapRuntimeAccess(mapId: string) {
   return {
     user: {
       id: user.id,
-      email: user.email ?? "",
+      email: user.email,
     },
     access,
   };

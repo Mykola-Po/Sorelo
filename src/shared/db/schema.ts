@@ -830,6 +830,7 @@ export const learningScenarioStepFeedback = learningSchema.table(
   ]
 );
 
+/** @deprecated Legacy compatibility table. Do not use for map-first product flows. */
 export const projects = pgTable(
   "projects",
   {
@@ -863,6 +864,7 @@ export const projects = pgTable(
   ]
 );
 
+/** @deprecated Legacy compatibility table. Do not use for map-first product flows. */
 export const tasks = pgTable(
   "tasks",
   {
@@ -966,7 +968,6 @@ export const workspaceRelations = relations(workspaces, ({ many, one }) => ({
   }),
   members: many(workspaceMembers),
   maps: many(maps),
-  projects: many(projects),
   activity: many(activityLog),
 }));
 
@@ -1289,6 +1290,7 @@ export const learningScenarioStepFeedbackRelations = relations(
   })
 );
 
+/** @deprecated Legacy compatibility relation. Do not use for map-first product flows. */
 export const projectRelations = relations(projects, ({ many, one }) => ({
   workspace: one(workspaces, {
     fields: [projects.workspaceId],
@@ -1301,6 +1303,7 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   tasks: many(tasks),
 }));
 
+/** @deprecated Legacy compatibility relation. Do not use for map-first product flows. */
 export const taskRelations = relations(tasks, ({ one }) => ({
   workspace: one(workspaces, {
     fields: [tasks.workspaceId],
@@ -1332,7 +1335,9 @@ export const activityRelations = relations(activityLog, ({ one }) => ({
 }));
 
 export type WorkspaceRole = (typeof workspaceRoleEnum.enumValues)[number];
+/** @deprecated Legacy compatibility type. Do not use for map-first product flows. */
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
+/** @deprecated Legacy compatibility type. Do not use for map-first product flows. */
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type ConceptType = (typeof conceptTypeEnum.enumValues)[number];
 export type RelationType = (typeof relationTypeEnum.enumValues)[number];

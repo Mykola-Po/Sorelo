@@ -1,12 +1,9 @@
 import "server-only";
 
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
-import { listRecentActivity } from "@/features/activity/queries";
 import { db } from "@/shared/db/client";
 import {
-  projects,
-  tasks,
   userPreferences,
   users,
   workspaceMembers,
@@ -61,42 +58,6 @@ export async function getWorkspaceBySlugForUser(
     .limit(1);
 
   return rows[0] ?? null;
-}
-
-export async function getWorkspaceDashboard(workspaceId: string) {
-  const [projectCountRow] = await db
-    .select({ value: count() })
-    .from(projects)
-    .where(eq(projects.workspaceId, workspaceId));
-
-  const [taskCountRow] = await db
-    .select({ value: count() })
-    .from(tasks)
-    .where(eq(tasks.workspaceId, workspaceId));
-
-  const recentProjects = await db
-    .select({
-      id: projects.id,
-      name: projects.name,
-      slug: projects.slug,
-      status: projects.status,
-      updatedAt: projects.updatedAt,
-    })
-    .from(projects)
-    .where(eq(projects.workspaceId, workspaceId))
-    .orderBy(desc(projects.updatedAt))
-    .limit(5);
-
-  const activity = await listRecentActivity(workspaceId, 6);
-
-  return {
-    counts: {
-      projects: projectCountRow?.value ?? 0,
-      tasks: taskCountRow?.value ?? 0,
-    },
-    recentProjects,
-    activity,
-  };
 }
 
 export async function getLastActiveWorkspaceForUser(userId: string) {

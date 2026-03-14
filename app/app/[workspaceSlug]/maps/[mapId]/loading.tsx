@@ -1,16 +1,16 @@
-import { Card, Flex, Skeleton } from "@radix-ui/themes";
+import { Flex, Skeleton } from "@radix-ui/themes";
 
 export default function MapWorkspaceLoading() {
   return (
     <div className="map-screen">
       <div className="page-stack map-screen-stack">
         <div className="map-canvas-layer">
-          <Card className="canvas-card">
+          <div className="canvas-card" style={{ width: "100%", height: "100%", padding: "var(--space-3)" }}>
             <Flex direction="column" gap="3" height="100%">
               <Skeleton width="280px" height="18px" />
               <Skeleton width="100%" height="100%" />
             </Flex>
-          </Card>
+          </div>
         </div>
 
         <div className="map-overlay-layer">

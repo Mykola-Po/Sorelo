@@ -1,8 +1,17 @@
 import "server-only";
 
+import { cookies } from "next/headers";
 import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
+import {
+  getE2EAuthProfile,
+  isE2EAuthBypassEnabled,
+  E2E_AUTH_COOKIE,
+  E2E_AUTH_USER_COOKIE,
+} from "@/shared/auth/e2e";
+import { env } from "@/shared/config/env";
 import { createServerSupabaseClient } from "@/shared/auth/supabase/server";
 import { db } from "@/shared/db/client";
 import {
@@ -177,12 +186,140 @@ export async function syncAuthenticatedUser() {
   return profile;
 }
 
+async function hasE2EAuthCookie() {
+  if (!isE2EAuthBypassEnabled()) {
+    return false;
+  }
+
+  const cookieStore = await cookies();
+  return cookieStore.get(E2E_AUTH_COOKIE)?.value === "1";
+}
+
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function getE2EAuthUserId() {
+  const cookieStore = await cookies();
+  const candidate = cookieStore.get(E2E_AUTH_USER_COOKIE)?.value ?? "";
+
+  if (UUID_V4_PATTERN.test(candidate)) {
+    return candidate;
+  }
+
+  return "11111111-1111-4111-8111-111111111111";
+}
+
+async function syncE2EAuthenticatedUser() {
+  const e2eUserId = await getE2EAuthUserId();
+  let profile = getE2EAuthProfile(e2eUserId) satisfies SyncedUserProfile;
+
+  const serviceKey = env.SUPABASE_SECRET_KEY;
+  if (serviceKey) {
+    const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    let resolvedAuthUserId = profile.id;
+    const created = await admin.auth.admin.createUser({
+      id: profile.id,
+      email: profile.email,
+      email_confirm: true,
+      user_metadata: {
+        full_name: profile.fullName,
+      },
+    });
+
+    if (created.data.user) {
+      resolvedAuthUserId = created.data.user.id;
+    } else {
+      const listedUsers = await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 200,
+      });
+      const availableUsers = listedUsers.data.users ?? [];
+      const userByEmail = availableUsers.find(
+        (user) => user.email?.toLowerCase() === profile.email.toLowerCase()
+      );
+      const fallbackUser = availableUsers[0];
+
+      if (userByEmail) {
+        resolvedAuthUserId = userByEmail.id;
+        profile = {
+          ...profile,
+          id: userByEmail.id,
+          email: userByEmail.email ?? profile.email,
+        };
+      } else if (fallbackUser) {
+        resolvedAuthUserId = fallbackUser.id;
+        profile = {
+          ...profile,
+          id: fallbackUser.id,
+          email: fallbackUser.email ?? profile.email,
+        };
+      } else {
+        throw new Error(created.error?.message ?? "Unable to create E2E user.");
+      }
+    }
+
+    if (resolvedAuthUserId !== profile.id) {
+      profile = { ...profile, id: resolvedAuthUserId };
+    }
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(users)
+      .values({
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.fullName,
+        avatarUrl: profile.avatarUrl,
+        emailVerifiedAt: profile.emailVerifiedAt,
+      })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: profile.email,
+          fullName: profile.fullName,
+          avatarUrl: profile.avatarUrl,
+          emailVerifiedAt: profile.emailVerifiedAt,
+          updatedAt: new Date(),
+        },
+      });
+
+    await tx
+      .insert(userPreferences)
+      .values({
+        userId: profile.id,
+      })
+      .onConflictDoNothing({
+        target: userPreferences.userId,
+      });
+  });
+
+  return profile;
+}
+
 export async function getCurrentSession() {
+  if (await hasE2EAuthCookie()) {
+    return {
+      data: {
+        session: {
+          access_token: "e2e-auth-token",
+        },
+      },
+      error: null,
+    };
+  }
+
   const supabase = await createServerSupabaseClient();
   return supabase.auth.getSession();
 }
 
 export async function getCurrentUser() {
+  if (await hasE2EAuthCookie()) {
+    return syncE2EAuthenticatedUser();
+  }
+
   return syncAuthenticatedUser();
 }
 

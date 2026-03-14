@@ -1,40 +1,49 @@
 :root {
   color-scheme: light;
-  --surface: #f7f4ed;
-  --surface-elevated: rgba(255, 255, 255, 0.9);
-  --surface-muted: #f1ece2;
-  --surface-canvas: rgba(255, 251, 245, 0.78);
-  --surface-floating: rgba(255, 255, 255, 0.88);
-  --ink: #151515;
-  --line: rgba(15, 15, 15, 0.08);
-  --line-strong: rgba(15, 15, 15, 0.18);
-  --shadow-soft: 0 24px 80px rgba(17, 24, 39, 0.08);
-  --shadow-node: 0 12px 32px rgba(17, 24, 39, 0.1);
-  --map-floating-radius: 22px;
-  --map-chrome-radius: 18px;
-  --map-chrome-padding-block: 8px;
-  --map-chrome-padding-inline: 14px;
-  --map-chrome-gap: 12px;
-  --map-overlay-body-padding: 12px;
-  --map-panel-safe-gap: 14px;
+  
+  --surface: var(--color-background);
+  --surface-elevated: var(--color-panel-translucent);
+  --surface-muted: var(--gray-2);
+  --surface-canvas: var(--color-background);
+  --surface-floating: var(--color-panel-translucent);
+  
+  --ink: var(--gray-12);
+  --line: var(--gray-a4);
+  --line-strong: var(--gray-a6);
+  
+  --shadow-soft: var(--shadow-5);
+  --shadow-node: var(--shadow-4);
+  
+  --map-floating-radius: var(--radius-5);
+  --map-chrome-radius: var(--radius-4);
+  --map-chrome-padding-block: var(--space-2);
+  --map-chrome-padding-inline: var(--space-3);
+  --map-chrome-gap: var(--space-3);
+  --map-overlay-body-padding: var(--space-3);
+  --map-panel-safe-gap: var(--space-3);
+  
   --map-panel-max-width: 360px;
   --map-panel-min-width: 320px;
   --map-panel-height-desktop: clamp(34rem, 72dvh, 48rem);
   --map-panel-height-mobile: clamp(26rem, 78dvh, 44rem);
   --map-panel-rail-width: 58px;
   --map-top-strip-min-height: 54px;
-  --map-surface: rgba(250, 250, 250, 0.94);
-  --map-surface-muted: rgba(244, 244, 244, 0.92);
-  --map-surface-strong: rgba(255, 255, 255, 0.96);
-  --map-border: rgba(15, 15, 15, 0.08);
-  --map-border-strong: rgba(15, 15, 15, 0.14);
-  --map-shadow: 0 18px 40px rgba(15, 15, 15, 0.08);
-  --map-shadow-soft: 0 10px 24px rgba(15, 15, 15, 0.06);
-  --map-dock-shadow:
-    0 8px 24px rgba(15, 15, 15, 0.08), 0 2px 8px rgba(15, 15, 15, 0.05);
-  --app-shell-padding: 8px;
-  --app-shell-gap: 8px;
-  --app-shell-radius: 18px;
+  
+  --map-surface: var(--color-panel-translucent);
+  --map-surface-muted: var(--gray-2);
+  --map-surface-strong: var(--color-panel-solid);
+  
+  --map-border: var(--gray-a4);
+  --map-border-strong: var(--gray-a6);
+  
+  --map-shadow: var(--shadow-5);
+  --map-shadow-soft: var(--shadow-4);
+  --map-dock-shadow: var(--shadow-3);
+  
+  --app-shell-padding: var(--space-2);
+  --app-shell-gap: var(--space-2);
+  --app-shell-radius: var(--radius-4);
+  
   --layer-base: 0;
   --layer-overlay: 1;
   --layer-dialog: 2;
@@ -51,10 +60,14 @@ body {
   padding: 0;
 }
 
+.radix-themes {
+  background: transparent !important;
+}
+
 body {
   background:
-    radial-gradient(circle at top, rgba(86, 127, 255, 0.1), transparent 30%),
-    linear-gradient(180deg, #faf7f1 0%, #f3efe7 100%);
+    radial-gradient(circle at top, var(--blue-a2), transparent 30%),
+    linear-gradient(180deg, var(--gray-1) 0%, var(--gray-2) 100%);
   color: var(--ink);
   font-family: var(--font-sans), sans-serif;
 }
@@ -312,6 +325,7 @@ select {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .marketing-preview-node .rt-Text {
@@ -319,6 +333,7 @@ select {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .marketing-preview-node-trigger {
@@ -436,7 +451,7 @@ select {
 .product-body {
   border: 1px solid var(--map-border);
   border-radius: var(--app-shell-radius);
-  background: rgba(250, 250, 250, 0.94);
+  background: transparent;
   box-shadow: 0 8px 24px rgba(15, 15, 15, 0.04);
 }
 
@@ -540,6 +555,8 @@ select {
 }
 
 .product-body {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
@@ -548,7 +565,7 @@ select {
 .product-page-surface {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: visible;
   padding: 12px;
@@ -756,6 +773,8 @@ select {
   grid-area: 1 / 1;
   min-height: 0;
   min-width: 0;
+  height: 100%;
+  width: 100%;
 }
 
 .map-canvas-layer {
@@ -764,9 +783,9 @@ select {
 }
 
 .map-overlay-layer {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   padding: 0;
   position: relative;
   z-index: var(--layer-overlay);
@@ -1243,7 +1262,7 @@ select {
   gap: 8px;
   border: 1px solid var(--map-border);
   border-top: 3px solid var(--sl-concept-card-accent);
-  border-radius: 16px;
+  border-radius: var(--radius-4);
   background: color-mix(
     in srgb,
     rgba(255, 255, 255, 0.96) 90%,
@@ -1302,6 +1321,7 @@ select {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .sl-concept-card-summary {
@@ -1310,6 +1330,7 @@ select {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .sl-concept-card-type {
@@ -1457,7 +1478,8 @@ select {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .scenario-step {
@@ -2158,6 +2180,7 @@ select {
 
   .sl-concept-card-summary {
     -webkit-line-clamp: 2;
+  line-clamp: 2;
     font-size: 12px;
   }
 

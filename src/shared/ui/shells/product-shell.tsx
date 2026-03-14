@@ -49,9 +49,9 @@ export function ProductShell({
   );
 
   return (
-    <Box className="viewport-shell app-shell">
+    <div className="viewport-shell app-shell">
       <Flex direction="column" className="product-shell">
-        <Box className="product-topbar">
+        <div className="product-topbar">
           <Flex
             align="center"
             justify="between"
@@ -149,12 +149,12 @@ export function ProductShell({
               </DropdownMenu.Root>
             </Flex>
           </Flex>
-        </Box>
+        </div>
 
-        <Box className="product-body">
+        <div className="product-body">
           <div className="product-page-surface">{children}</div>
-        </Box>
+        </div>
       </Flex>
-    </Box>
+    </div>
   );
 }
