@@ -36,7 +36,7 @@ When requirements conflict, use this priority order:
 
 - The canvas is the main working surface.
 - Inspector and Scenario remain secondary bounded surfaces.
-- Full-page scrolling should not exist in the authenticated shell.
+- Scrolling behavior should be chosen per surface for clarity and predictable interaction.
 - Radix primitives and vanilla CSS remain the active UI baseline.
 - Interactive islands should stay small and isolated.
 

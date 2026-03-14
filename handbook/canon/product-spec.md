@@ -111,7 +111,7 @@ Included in v1:
 - Links
 - Inspector editing
 - deterministic Scenario runs
-- bounded shell with local scroll only
+- predictable interaction surfaces with clear navigation context
 - access roles sufficient for shared usage
 
 ## Out Of Scope For V1
@@ -133,7 +133,7 @@ These can be added later, but they must not blur the core value of map building.
 - The Inspector is the main detail surface.
 - The product must expose structure, not hide it.
 - Primary actions must be direct and calm.
-- Full-page scrolling should not exist in the authenticated product shell.
+- Scrolling behavior should support clarity and preserve user context.
 - Terminology must stay stable across product, docs, help, and marketing.
 - A Scenario result must be explainable enough to inspect, not just plausible enough to accept blindly.
 

@@ -65,7 +65,7 @@
           "status": "existing",
           "owner": "engineering",
           "path": "handbook/rules/ui-engineering-playbook.md",
-          "summary": "UI system rules for Radix-first components, vanilla CSS, bounded scroll, and predictable shell behavior.",
+          "summary": "UI system rules for Radix-first components, vanilla CSS, and predictable shell behavior.",
           "tags": ["rules", "ui", "radix", "css"]
         },
         {

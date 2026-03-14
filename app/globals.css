@@ -74,7 +74,8 @@ select {
 
 .viewport-shell {
   height: 100dvh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .viewport-container,
@@ -543,7 +544,7 @@ select {
 .product-body {
   min-height: 0;
   flex: 1 1 auto;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .product-page-surface {
@@ -551,7 +552,7 @@ select {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 12px;
 }
 
@@ -561,7 +562,7 @@ select {
   flex: 1 1 auto;
   gap: 12px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .product-page-surface > .page-stack,
@@ -575,8 +576,8 @@ select {
 }
 
 .maps-home-page {
-  height: 100%;
-  overflow: hidden;
+  height: auto;
+  min-height: 100%;
 }
 
 .maps-home-grid {
@@ -1141,7 +1142,6 @@ select {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
   padding-right: 4px;
   padding-bottom: 2px;
 }
@@ -1548,7 +1548,6 @@ select {
 .docs-hub-main-scroll {
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
   padding-right: 8px;
 }
 
@@ -1661,7 +1660,6 @@ select {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
 }
 
 .docs-toc-section,
@@ -1944,7 +1942,6 @@ select {
   .maps-home-page {
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior: contain;
     padding-right: 2px;
   }
 

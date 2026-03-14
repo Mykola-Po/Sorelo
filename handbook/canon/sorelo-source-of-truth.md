@@ -94,8 +94,8 @@ Sorelo is not:
 - The canvas is the main surface.
 - The Inspector is the main detail surface.
 - The product must explain structure, not hide it.
-- Full-page scrolling should be avoided in the app shell.
-- Scrolling is allowed only inside bounded panels where density requires it.
+- Scrolling is a UX tool and should be used where it improves readability and flow.
+- Scroll behavior should preserve user context and avoid interaction conflicts.
 - Primary actions must be obvious and calm, not decorative.
 - Terminology must stay stable across product, onboarding, help, and marketing.
 

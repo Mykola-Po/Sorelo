@@ -11,7 +11,7 @@ Sorelo is a visual tool for building an explainable map of a person through Conc
 - Tenancy: workspace-first
 - Current infrastructure slice: workspaces, memberships, activity, and legacy project/task compatibility
 - UI baseline: Radix-only component system with tokenized styling
-- UX rule: no full-page scrolling in the product shell; long content scrolls inside bounded panels
+- UX baseline: interaction clarity over rigid layout rules; scrolling is used where it improves navigation and readability
 
 ## Handbook authority
 
@@ -111,6 +111,6 @@ tests/e2e/              Browser smoke coverage
 
 - Keep one stable shell for authenticated work.
 - Prefer obvious actions over decorative chrome.
-- Use local scroll regions for tables, task lists, and activity streams.
+- Use scrolling patterns that preserve context, keyboard usability, and readable content flow.
 - Keep route logic server-first and interactive state local.
 - Keep terminology stable across product, help, onboarding, and marketing.

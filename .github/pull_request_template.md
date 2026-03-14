@@ -13,7 +13,7 @@
 ## UI Checklist (if UI changed)
 
 - [ ] Radix-first components used
-- [ ] No full-page scrolling in authenticated shell
+- [ ] Scrolling behavior is intentional for the surface and does not break keyboard/focus/context
 - [ ] User-facing strings are in `src/shared/i18n/messages/`
 - [ ] Reused existing tokens from `app/globals.css`
 - [ ] `aria-label` and keyboard accessibility are preserved

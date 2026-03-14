@@ -296,7 +296,7 @@ Mobile must preserve the same conceptual workflow as desktop:
 
 - canvas remains primary
 - Inspector and Scenario open in a bounded sheet or drawer
-- long content scrolls only inside the panel
+- long content uses scrolling patterns that keep actions discoverable and context clear
 - primary actions stay visible and understandable
 
 The mobile version may be denser, but it must not become a different product model.

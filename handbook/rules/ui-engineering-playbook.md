@@ -9,7 +9,7 @@ Use it as the default reference for implementation, code review, and onboarding.
 - Component model: **Radix Themes first** (`@radix-ui/themes`), with Radix behavior contracts.
 - Styling stack: **vanilla global CSS** in `app/globals.css` + scoped class names.
 - Theme root: centralized in `app/layout.tsx` (`<Theme ...>`).
-- Authenticated shell rule: **no full-page scroll**; long content scrolls in bounded regions.
+- Scrolling should be intentional per surface, preserving context and interaction clarity.
 
 These choices are intentional for predictability and scale. Do not mix in Tailwind/CSS-in-JS/CSS Modules for shared UI architecture without an explicit architecture decision.
 
@@ -93,7 +93,7 @@ If these conditions are not true, do not use `asChild`.
 
 ## 9) Default UI Change Workflow
 
-1. Validate shell/overflow constraints first.
+1. Validate interaction and layout behavior for the target surface first.
 2. Compose with Radix + shared contracts.
 3. Add/extend semantic class names.
 4. Add/update i18n keys.
@@ -106,7 +106,7 @@ A UI task is complete only if:
 
 - `npm run lint` passes
 - `npm run typecheck` passes
-- no authenticated-shell full-page scroll regression
+- scrolling behavior is intentional and does not degrade focus/keyboard paths
 - keyboard path works for new interactive controls
 - i18n keys exist for all supported locales
 - repeated patterns are promoted to shared layer when needed
@@ -121,7 +121,7 @@ A UI task is complete only if:
 
 ## 12) Anti-Patterns (Reject in Review)
 
-- Full-page scrolling in authenticated product shell.
+- Scroll behavior that causes context loss or interaction conflicts.
 - Hardcoded labels outside i18n message files.
 - Unscoped global overrides that leak across pages.
 - Deep CSS selectors against internals of third-party components.
