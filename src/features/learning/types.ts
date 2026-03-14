@@ -75,6 +75,12 @@ export type SuggestionWithResolution = {
   resolution: SuggestionResolutionRecord | null;
 };
 
+export type SuggestionFeedRecord = {
+  suggestion: SuggestionRecord;
+  resolution: SuggestionResolutionRecord | null;
+  sourceFragment: SourceFragmentRecord | null;
+};
+
 export type AttachSuggestionOriginResult = {
   entityType: "concept" | "link" | "scenario";
   entityId: string;

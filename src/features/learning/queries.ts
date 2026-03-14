@@ -8,7 +8,7 @@ import {
   mapSuggestionRecord,
   mapSuggestionResolutionRecord,
 } from "@/features/learning/mappers";
-import type { SuggestionWithResolution } from "@/features/learning/types";
+import type { SuggestionFeedRecord, SuggestionWithResolution } from "@/features/learning/types";
 import { db } from "@/shared/db/client";
 import {
   learningSourceFragments,
@@ -104,4 +104,44 @@ export async function getSuggestionWithResolution(
       ? mapSuggestionResolutionRecord(row.resolution)
       : null,
   };
+}
+
+export async function listSuggestionFeedForMap(
+  workspaceId: string,
+  mapId: string,
+  limit = 100
+): Promise<SuggestionFeedRecord[]> {
+  const rows = await db
+    .select({
+      suggestion: learningSuggestions,
+      resolution: learningSuggestionResolutions,
+      sourceFragment: learningSourceFragments,
+    })
+    .from(learningSuggestions)
+    .leftJoin(
+      learningSuggestionResolutions,
+      eq(learningSuggestions.id, learningSuggestionResolutions.suggestionId)
+    )
+    .leftJoin(
+      learningSourceFragments,
+      eq(learningSuggestions.sourceFragmentId, learningSourceFragments.id)
+    )
+    .where(
+      and(
+        eq(learningSuggestions.workspaceId, workspaceId),
+        eq(learningSuggestions.mapId, mapId)
+      )
+    )
+    .orderBy(desc(learningSuggestions.createdAt))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    suggestion: mapSuggestionRecord(row.suggestion),
+    resolution: row.resolution
+      ? mapSuggestionResolutionRecord(row.resolution)
+      : null,
+    sourceFragment: row.sourceFragment
+      ? mapSourceFragmentRecord(row.sourceFragment)
+      : null,
+  }));
 }

@@ -3,6 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Cross2Icon,
+  LightningBoltIcon,
   Link2Icon,
   PlusIcon,
   ReaderIcon,
@@ -45,13 +46,14 @@ import {
 } from "@/features/maps/workspace-state";
 import type { MapWorkspaceProps } from "@/features/maps/types";
 import { ScenarioPanel } from "@/features/scenarios/components/scenario-panel";
+import { LearningPanel } from "@/features/learning/components/learning-panel";
 import { workspaceMapPath } from "@/shared/config/routes";
 import {
   getMapWorkspaceMessages,
   type MapWorkspaceMessages,
 } from "@/shared/i18n/messages/map-workspace";
 
-type PanelTab = "inspector" | "scenario";
+type PanelTab = "inspector" | "scenario" | "learning";
 
 export function MapWorkspace({
   locale,
@@ -62,6 +64,7 @@ export function MapWorkspace({
   graphMetrics,
   scenarios,
   runs,
+  learningSuggestions,
 }: MapWorkspaceProps) {
   const router = useRouter();
   const messages = getMapWorkspaceMessages(locale);
@@ -114,6 +117,7 @@ export function MapWorkspace({
     : null;
   const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
   const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
+  const isLearningPanelOpen = panelOpen && panelTab === "learning";
   const handleZoomStateChange = useCallback((nextState: CanvasZoomState) => {
     if (!Number.isFinite(nextState.ratio)) {
       return;
@@ -141,6 +145,13 @@ export function MapWorkspace({
 
   const openScenarioPanel = () => {
     setPanelTab("scenario");
+    setInteractionMode("inspect");
+    setConnectLinkSourceId(null);
+    setPanelOpen(true);
+  };
+
+  const openLearningPanel = () => {
+    setPanelTab("learning");
     setInteractionMode("inspect");
     setConnectLinkSourceId(null);
     setPanelOpen(true);
@@ -257,16 +268,27 @@ export function MapWorkspace({
       );
     }
 
+    if (panelTab === "scenario") {
+      return (
+        <ScenarioPanel
+          locale={locale}
+          workspaceSlug={workspaceSlug}
+          map={map}
+          conceptCatalog={conceptCatalog}
+          conceptCatalogError={conceptCatalogError}
+          conceptCatalogLoading={isConceptCatalogLoading}
+          scenarios={scenarios}
+          runs={runs}
+        />
+      );
+    }
+
     return (
-      <ScenarioPanel
+      <LearningPanel
         locale={locale}
         workspaceSlug={workspaceSlug}
-        map={map}
-        conceptCatalog={conceptCatalog}
-        conceptCatalogError={conceptCatalogError}
-        conceptCatalogLoading={isConceptCatalogLoading}
-        scenarios={scenarios}
-        runs={runs}
+        mapId={map.id}
+        suggestions={learningSuggestions}
       />
     );
   };
@@ -274,7 +296,9 @@ export function MapWorkspace({
   const dialogDescription =
     panelTab === "inspector"
       ? messages.scenario.mobileInspectorDescription
-      : messages.scenario.mobileScenarioDescription;
+      : panelTab === "scenario"
+        ? messages.scenario.mobileScenarioDescription
+        : getLearningDialogDescription(locale);
 
   return (
     <Dialog.Root open={panelOpen} onOpenChange={setPanelOpen}>
@@ -323,8 +347,11 @@ export function MapWorkspace({
                 selectionKind={selection.kind}
                 inspectorOpen={isInspectorPanelOpen}
                 scenarioOpen={isScenarioPanelOpen}
+                learningOpen={isLearningPanelOpen}
+                learningLabel={getLearningTabLabel()}
                 onOpenInspector={openInspectorPanel}
                 onOpenScenario={openScenarioPanel}
+                onOpenLearning={openLearningPanel}
                 onStartCreateConcept={beginPlaceConcept}
                 onStartCreateLink={beginConnectLink}
                 onCancelInteraction={cancelInteraction}
@@ -417,6 +444,14 @@ export function MapWorkspace({
                   onClick={openScenarioPanel}
                 >
                   {messages.topBar.scenario}
+                </Button>
+                <Button
+                  type="button"
+                  size="2"
+                  variant={panelTab === "learning" ? "solid" : "surface"}
+                  onClick={openLearningPanel}
+                >
+                  {getLearningTabLabel()}
                 </Button>
               </Flex>
 
@@ -585,8 +620,11 @@ type MapBottomDockProps = {
   selectionKind: InspectorSelection["kind"];
   inspectorOpen: boolean;
   scenarioOpen: boolean;
+  learningOpen: boolean;
+  learningLabel: string;
   onOpenInspector: () => void;
   onOpenScenario: () => void;
+  onOpenLearning: () => void;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
   onCancelInteraction: () => void;
@@ -606,8 +644,11 @@ function MapBottomDock({
   selectionKind,
   inspectorOpen,
   scenarioOpen,
+  learningOpen,
+  learningLabel,
   onOpenInspector,
   onOpenScenario,
+  onOpenLearning,
   onStartCreateConcept,
   onStartCreateLink,
   onCancelInteraction,
@@ -662,6 +703,13 @@ function MapBottomDock({
           >
             <RocketIcon />
           </MapIconAction>
+          <MapIconAction
+            label={learningLabel}
+            active={learningOpen}
+            onClick={onOpenLearning}
+          >
+            <LightningBoltIcon />
+          </MapIconAction>
         </div>
 
         <div className="map-bottom-dock-group is-clustered">
@@ -702,3 +750,13 @@ function MapBottomDock({
     </div>
   );
 }
+
+function getLearningTabLabel() {
+  return "Learning";
+}
+
+function getLearningDialogDescription(locale: MapWorkspaceProps["locale"]) {
+  void locale;
+  return "Review Suggestions and resolve them in the learning loop.";
+}
+

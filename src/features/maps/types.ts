@@ -69,6 +69,24 @@ export type GraphConceptSummary = GraphConceptNode;
 export type GraphLinkSummary = GraphLinkEdge;
 export type MapConceptCatalogEntry = ConceptCatalogEntry;
 
+export type LearningSuggestionSummary = {
+  id: string;
+  suggestionType: string;
+  targetEntityType: string;
+  proposedPayload: Record<string, unknown>;
+  rationale: string | null;
+  confidence: number | null;
+  createdAt: string;
+  sourceType: string | null;
+  sourceRawText: string | null;
+  resolution: {
+    id: string;
+    resolutionType: string;
+    reasonText: string | null;
+    resolvedAt: string;
+  } | null;
+};
+
 export type MapWorkspaceProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
@@ -78,4 +96,5 @@ export type MapWorkspaceProps = {
   graphMetrics: GraphMetrics;
   scenarios: ScenarioSummary[];
   runs: ScenarioRunSummary[];
+  learningSuggestions: LearningSuggestionSummary[];
 };

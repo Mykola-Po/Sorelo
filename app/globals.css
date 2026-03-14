@@ -1463,6 +1463,39 @@ select {
   padding: 12px !important;
 }
 
+.sl-learning-rationale,
+.sl-learning-source {
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.sl-learning-source {
+  color: var(--gray-11);
+}
+
+.sl-learning-payload {
+  border: 1px solid rgba(15, 15, 15, 0.09);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.sl-learning-payload summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--gray-11);
+}
+
+.sl-learning-payload pre {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(15, 15, 15, 0.04);
+  color: var(--gray-12);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
 .panel-field-half {
   flex: 1 1 140px;
   min-width: 0;

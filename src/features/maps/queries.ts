@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 
 import { listScenarioRunsForMap, listScenarioRunsForWorkspace } from "@/features/scenarios/queries";
+import { listSuggestionFeedForMap } from "@/features/learning/queries";
 import { db } from "@/shared/db/client";
 import {
   concepts,
@@ -223,12 +224,13 @@ export async function getMapWorkspaceChromeData(
     return null;
   }
 
-  const [availableMaps, graphMetrics, mapScenarios, mapRuns] =
+  const [availableMaps, graphMetrics, mapScenarios, mapRuns, learningFeed] =
     await Promise.all([
       listMapsForWorkspace(workspaceId),
       getMapGraphMetrics(mapId, workspaceId),
       listScenarioSummariesForMap(mapId, workspaceId),
       listScenarioRunsForMap(mapId, workspaceId, 8),
+      listSuggestionFeedForMap(workspaceId, mapId, 80),
     ]);
 
   if (!graphMetrics) {
@@ -241,6 +243,25 @@ export async function getMapWorkspaceChromeData(
     graphMetrics,
     scenarios: mapScenarios,
     runs: mapRuns,
+    learningSuggestions: learningFeed.map((item) => ({
+      id: item.suggestion.id,
+      suggestionType: item.suggestion.suggestionType,
+      targetEntityType: item.suggestion.targetEntityType,
+      proposedPayload: item.suggestion.proposedPayload,
+      rationale: item.suggestion.rationale,
+      confidence: item.suggestion.confidence,
+      createdAt: item.suggestion.createdAt.toISOString(),
+      sourceType: item.sourceFragment?.sourceType ?? null,
+      sourceRawText: item.sourceFragment?.rawText ?? null,
+      resolution: item.resolution
+        ? {
+            id: item.resolution.id,
+            resolutionType: item.resolution.resolutionType,
+            reasonText: item.resolution.reasonText,
+            resolvedAt: item.resolution.resolvedAt.toISOString(),
+          }
+        : null,
+    })),
   };
 }
 

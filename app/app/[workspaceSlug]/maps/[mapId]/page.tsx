@@ -39,6 +39,7 @@ export default async function MapWorkspacePage({
       graphMetrics={detail.graphMetrics}
       scenarios={detail.scenarios}
       runs={detail.runs}
+      learningSuggestions={detail.learningSuggestions}
     />
   );
 }
