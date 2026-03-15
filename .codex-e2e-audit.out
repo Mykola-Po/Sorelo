@@ -1,4 +1,0 @@
-
-> sorela@0.1.0 test:e2e
-> playwright test tests/e2e/app-shell.spec.ts --reporter=line
-

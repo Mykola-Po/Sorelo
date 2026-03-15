@@ -114,6 +114,12 @@ function SuggestionCard({
     initialResolutionState
   );
   const diffEntries = deriveLearningReviewDiff(item.proposedPayload);
+  const formatFieldPath = (fieldPath: string) =>
+    humanizeLearningFieldPath(
+      fieldPath,
+      messages.fieldLabels,
+      messages.genericFieldLabel
+    );
   const evidenceItems = [
     item.rationale
       ? {
@@ -182,7 +188,7 @@ function SuggestionCard({
               {diffEntries.map((entry) => (
                 <li key={entry.fieldPath} className="sl-learning-diff-item">
                   <Text size="1" color="gray" className="sl-learning-diff-label">
-                    {humanizeLearningFieldPath(entry.fieldPath)}
+                    {formatFieldPath(entry.fieldPath)}
                   </Text>
                   <Text size="2" className="sl-learning-diff-change">
                     {entry.changeKind === "update"
@@ -296,6 +302,17 @@ function SuggestionCard({
                   disabled={isPending}
                 >
                   {messages.rejectCta}
+                </Button>
+                <Button
+                  type="submit"
+                  size="2"
+                  name="resolutionType"
+                  value="context_limited"
+                  color="amber"
+                  variant="soft"
+                  disabled={isPending}
+                >
+                  {messages.contextLimitedCta}
                 </Button>
               </Flex>
             </Flex>

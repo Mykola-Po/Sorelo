@@ -158,8 +158,6 @@ export async function createSuggestionsCommand(input: SuggestionInput[]) {
   }
 
   const parsedSuggestions = input.map((item) => suggestionInputSchema.parse(item));
-
-  const batchIds = [...new Set(parsedSuggestions.map((item) => item.batchId))];
   const workspaceIds = [...new Set(parsedSuggestions.map((item) => item.workspaceId))];
   if (workspaceIds.length !== 1) {
     throw new Error("Suggestions in a single request must share one workspace.");
@@ -169,6 +167,22 @@ export async function createSuggestionsCommand(input: SuggestionInput[]) {
   if (!workspaceId) {
     throw new Error("Workspace is required for suggestions.");
   }
+
+  const explicitMapIds = [
+    ...new Set(
+      parsedSuggestions
+        .map((item) => item.mapId)
+        .filter((value): value is string => Boolean(value))
+    ),
+  ];
+
+  await requireActiveWorkspace(workspaceId);
+
+  if (explicitMapIds.length > 0) {
+    await assertMapIdsBelongToWorkspace(workspaceId, explicitMapIds);
+  }
+
+  const batchIds = [...new Set(parsedSuggestions.map((item) => item.batchId))];
 
   const rows = await db.transaction(async (tx) => {
     const batches = await tx
@@ -200,20 +214,6 @@ export async function createSuggestionsCommand(input: SuggestionInput[]) {
     const sourceFragmentById = new Map(
       sourceFragments.map((fragment) => [fragment.id, fragment])
     );
-
-    const explicitMapIds = [
-      ...new Set(
-        parsedSuggestions
-          .map((item) => item.mapId)
-          .filter((value): value is string => Boolean(value))
-      ),
-    ];
-
-    await requireActiveWorkspace(workspaceId);
-
-    if (explicitMapIds.length > 0) {
-      await assertMapIdsBelongToWorkspace(workspaceId, explicitMapIds);
-    }
 
     const suggestionsToInsert = parsedSuggestions.map((rawInput) => {
       const item = rawInput as SuggestionInput;

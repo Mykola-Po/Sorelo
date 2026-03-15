@@ -11,19 +11,7 @@ const changePairCandidates: readonly ChangePairKeys[] = [
   { before: "current", after: "proposed" },
 ];
 
-const knownFieldLabels: Record<string, string> = {
-  title: "Title",
-  summary: "Summary",
-  description: "Description",
-  conceptType: "Concept type",
-  relationType: "Relation type",
-  strength: "Strength",
-  sourceConceptId: "Source Concept",
-  targetConceptId: "Target Concept",
-  situation: "Situation",
-  seedConceptIds: "Seed Concepts",
-  targetEntityId: "Target entity",
-};
+export type LearningFieldLabelMap = Readonly<Record<string, string>>;
 
 export type LearningReviewDiffEntry = {
   fieldPath: string;
@@ -256,23 +244,27 @@ function humanizeToken(token: string) {
     .replace(/^./, (char) => char.toUpperCase());
 }
 
-export function humanizeLearningFieldPath(fieldPath: string) {
-  const byExactPath = knownFieldLabels[fieldPath];
+export function humanizeLearningFieldPath(
+  fieldPath: string,
+  fieldLabels: LearningFieldLabelMap,
+  genericFieldLabel: string
+) {
+  const byExactPath = fieldLabels[fieldPath];
   if (byExactPath) {
     return byExactPath;
   }
 
   const segments = fieldPath.split(".").filter(Boolean);
   if (segments.length === 0) {
-    return "Field";
+    return genericFieldLabel;
   }
 
   const lastSegment = segments[segments.length - 1];
   if (!lastSegment) {
-    return "Field";
+    return genericFieldLabel;
   }
 
-  const byLastSegment = knownFieldLabels[lastSegment];
+  const byLastSegment = fieldLabels[lastSegment];
   if (byLastSegment) {
     return byLastSegment;
   }

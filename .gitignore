@@ -10,6 +10,8 @@ test-results/
 backups/
 tmp/
 output/
+.codex-*.out
+.codex-*.err
 *.log
 *.tsbuildinfo
 .DS_Store

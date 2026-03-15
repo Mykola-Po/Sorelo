@@ -32,7 +32,10 @@ Required controls:
    - `backups/`
    - `tmp/`
    - `output/`
+   - `.codex-*.out`
+   - `.codex-*.err`
    - `tsconfig.tsbuildinfo`
+   - `next-env.d.ts` remains a generated Next.js file in its canonical generated form
 
 ## 3. Local + Offsite Backup
 

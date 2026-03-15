@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 type GraphSnapshot = {
@@ -20,6 +22,56 @@ type MapLayoutSnapshot = {
   mapScreen: ElementLayout;
   mapBottomDock: ElementLayout;
 };
+
+type ConceptCreateResponse = {
+  concept: {
+    id: string;
+    workspaceId: string;
+    createdByUserId: string;
+  };
+};
+
+type InternalLearningResponse<T> = {
+  data: T;
+};
+
+function readDotenvValue(name: string) {
+  const dotenvPath = join(process.cwd(), ".env.local");
+  if (!existsSync(dotenvPath)) {
+    return null;
+  }
+
+  const lines = readFileSync(dotenvPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    if (key !== name) {
+      continue;
+    }
+
+    const rawValue = trimmed.slice(separatorIndex + 1).trim();
+    return rawValue.replace(/^['"]|['"]$/g, "");
+  }
+
+  return null;
+}
+
+function getInternalLearningSecret() {
+  return (
+    process.env.SUPABASE_SECRET_KEY ??
+    readDotenvValue("SUPABASE_SECRET_KEY") ??
+    "secret-key"
+  );
+}
 
 function getCurrentMapId(page: Page) {
   const [, mapId = ""] = page.url().match(/\/maps\/([^/?#]+)/) ?? [];
@@ -88,13 +140,35 @@ async function readGraphSnapshot(page: Page) {
   return (await response.json()) as GraphSnapshot;
 }
 
+async function postInternalLearning<T>(
+  page: Page,
+  path: string,
+  payload: object
+) {
+  const response = await page.request.post(path, {
+    headers: {
+      authorization: `Bearer ${getInternalLearningSecret()}`,
+    },
+    data: payload,
+  });
+
+  if (!response.ok()) {
+    throw new Error(
+      `Internal learning request failed (${response.status()}): ${await response.text()}`
+    );
+  }
+
+  return (await response.json()) as InternalLearningResponse<T>;
+}
+
 test.describe("critical product cycle", () => {
   test("sign in -> workspace -> map -> concept/link -> scenario", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
 
     const suffix = `${Date.now()}`;
+    const e2eUserId = randomUUID();
     const workspaceName = `E2E Workspace ${suffix}`;
     const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
     const conceptSourceTitle = `Trigger ${suffix}`;
@@ -109,17 +183,18 @@ test.describe("critical product cycle", () => {
     await expect(
       page.getByRole("button", { name: "Continue with Google" })
     ).toBeVisible();
+    const appOrigin = new URL(page.url()).origin;
 
     await page.context().addCookies([
       {
         name: "sorela-e2e-auth",
         value: "1",
-        url: "http://127.0.0.1:3100",
+        url: appOrigin,
       },
       {
         name: "sorela-e2e-auth-user",
-        value: randomUUID(),
-        url: "http://127.0.0.1:3100",
+        value: e2eUserId,
+        url: appOrigin,
       },
     ]);
     await page.goto("/app");
@@ -179,6 +254,8 @@ test.describe("critical product cycle", () => {
       }
     );
     expect(firstConceptResponse.ok()).toBeTruthy();
+    const firstConceptBody =
+      (await firstConceptResponse.json()) as ConceptCreateResponse;
 
     const secondConceptResponse = await page.request.post(
       `/api/maps/${getCurrentMapId(page)}/concepts`,
@@ -225,6 +302,64 @@ test.describe("critical product cycle", () => {
       })
       .toBeGreaterThan(0);
 
+    const sourceFragment = await postInternalLearning<{ id: string }>(
+      page,
+      "/api/internal/learning/source-fragments",
+      {
+        workspaceId: firstConceptBody.concept.workspaceId,
+        mapId: getCurrentMapId(page),
+        authorUserId: firstConceptBody.concept.createdByUserId ?? e2eUserId,
+        sourceType: "manual_note",
+        rawText:
+          "Public criticism usually activates the trigger, but the evidence is still incomplete.",
+      }
+    );
+    const suggestionBatch = await postInternalLearning<{ id: string }>(
+      page,
+      "/api/internal/learning/suggestion-batches",
+      {
+        workspaceId: firstConceptBody.concept.workspaceId,
+        mapId: getCurrentMapId(page),
+        initiatedByUserId: firstConceptBody.concept.createdByUserId ?? e2eUserId,
+        batchType: "extract",
+        modelName: "e2e-learning-model",
+        modelVersion: "test-1",
+        promptVersion: "prompt-1",
+        inputHash: `learning-${suffix}`,
+        status: "completed",
+      }
+    );
+    await postInternalLearning<{ id: string }[]>(
+      page,
+      "/api/internal/learning/suggestions",
+      {
+        suggestions: [
+          {
+            batchId: suggestionBatch.data.id,
+            workspaceId: firstConceptBody.concept.workspaceId,
+            mapId: getCurrentMapId(page),
+            sourceFragmentId: sourceFragment.data.id,
+            suggestionType: "update_concept",
+            targetEntityType: "concept",
+            targetEntityId: sourceId,
+            proposedPayload: {
+              before: {
+                title: conceptSourceTitle,
+                summary: "Public criticism acts as a trigger.",
+              },
+              after: {
+                title: `${conceptSourceTitle} refined`,
+                summary: "Public criticism reliably activates the trigger.",
+              },
+            },
+            rationale:
+              "Existing evidence suggests the Concept needs refinement, but the context is still incomplete.",
+            confidence: 0.64,
+          },
+        ],
+      }
+    );
+
     const runResponse = await page.request.post(
       `/api/maps/${getCurrentMapId(page)}/scenario-runs`,
       {
@@ -238,5 +373,42 @@ test.describe("critical product cycle", () => {
 
     await page.reload();
     await expect(page.getByText("Map ready")).toBeVisible();
+    await page.getByRole("button", { name: "Learning" }).click();
+    const learningDialog = page.getByRole("dialog");
+    await expect(learningDialog.getByRole("button", { name: "Accept" })).toBeVisible();
+    await expect(learningDialog.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(learningDialog.getByRole("button", { name: "Reject" })).toBeVisible();
+    await expect(
+      learningDialog.getByRole("button", { name: "Needs context" })
+    ).toBeVisible();
+    await learningDialog
+      .locator('textarea[name="reasonText"]')
+      .fill("Need stronger evidence.");
+    await learningDialog.getByRole("button", { name: "Needs context" }).click();
+    await expect(learningDialog.getByText("Open: 0")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(learningDialog.getByText("Resolved: 1")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      learningDialog.getByRole("button", { name: "Needs context" })
+    ).toHaveCount(0, { timeout: 20_000 });
+
+    await page.reload();
+    await page.getByRole("button", { name: "Learning" }).click();
+    const reloadedLearningDialog = page.getByRole("dialog");
+    await expect(reloadedLearningDialog.getByText("Open: 0")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(reloadedLearningDialog.getByText("Resolved: 1")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      reloadedLearningDialog.getByRole("button", { name: "Needs context" })
+    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(reloadedLearningDialog.getByText("needs context")).toBeVisible({
+      timeout: 20_000,
+    });
   });
 });

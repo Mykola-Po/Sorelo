@@ -178,6 +178,9 @@ export type MapWorkspaceMessages = {
     acceptCta: string;
     editCta: string;
     rejectCta: string;
+    contextLimitedCta: string;
+    fieldLabels: Record<string, string>;
+    genericFieldLabel: string;
   };
   labels: {
     conceptTypes: Record<ConceptType, string>;
@@ -356,6 +359,21 @@ function buildLearningMessages(
       acceptCta: "Прийняти",
       editCta: "Редагувати",
       rejectCta: "Відхилити",
+      contextLimitedCta: "Бракує контексту",
+      fieldLabels: {
+        title: "Назва",
+        summary: "Коротко",
+        description: "Опис",
+        conceptType: "Тип Концепту",
+        relationType: "Тип Зв’язку",
+        strength: "Сила",
+        sourceConceptId: "Вихідний Концепт",
+        targetConceptId: "Цільовий Концепт",
+        situation: "Ситуація",
+        seedConceptIds: "Початкові Концепти",
+        targetEntityId: "Цільова сутність",
+      },
+      genericFieldLabel: "Поле",
       openCount: (count) => `Відкриті: ${count}`,
       resolvedCount: (count) => `Вирішені: ${count}`,
       confidence: (value) => `Впевненість: ${Math.round(value * 100)}%`,
@@ -410,6 +428,21 @@ function buildLearningMessages(
       acceptCta: "Принять",
       editCta: "Редактировать",
       rejectCta: "Отклонить",
+      contextLimitedCta: "Не хватает контекста",
+      fieldLabels: {
+        title: "Название",
+        summary: "Кратко",
+        description: "Описание",
+        conceptType: "Тип Концепта",
+        relationType: "Тип Связи",
+        strength: "Сила",
+        sourceConceptId: "Исходный Концепт",
+        targetConceptId: "Целевой Концепт",
+        situation: "Ситуация",
+        seedConceptIds: "Начальные Концепты",
+        targetEntityId: "Целевая сущность",
+      },
+      genericFieldLabel: "Поле",
       openCount: (count) => `Открытые: ${count}`,
       resolvedCount: (count) => `Решенные: ${count}`,
       confidence: (value) => `Уверенность: ${Math.round(value * 100)}%`,
@@ -462,13 +495,34 @@ function buildLearningMessages(
     acceptCta: "Accept",
     editCta: "Edit",
     rejectCta: "Reject",
+    contextLimitedCta: "Needs context",
+    fieldLabels: {
+      title: "Title",
+      summary: "Summary",
+      description: "Description",
+      conceptType: "Concept type",
+      relationType: "Relation type",
+      strength: "Strength",
+      sourceConceptId: "Source Concept",
+      targetConceptId: "Target Concept",
+      situation: "Situation",
+      seedConceptIds: "Seed Concepts",
+      targetEntityId: "Target entity",
+    },
+    genericFieldLabel: "Field",
     openCount: (count) => `Open: ${count}`,
     resolvedCount: (count) => `Resolved: ${count}`,
     confidence: (value) => `Confidence: ${Math.round(value * 100)}%`,
     suggestionType: formatSuggestionValue,
     targetEntity: (value) => `Target: ${humanizeSuggestionValue(value)}`,
     sourceType: (value) => `Source: ${humanizeSuggestionValue(value)}`,
-    resolutionType: (value) => humanizeSuggestionValue(value),
+    resolutionType: (value) => {
+      if (value === "context_limited") {
+        return "needs context";
+      }
+
+      return humanizeSuggestionValue(value);
+    },
   };
 }
 
