@@ -15,6 +15,7 @@ import {
 import { resolveSuggestionAction } from "@/features/learning/actions";
 import type { LearningSuggestionSummary } from "@/features/maps/types";
 import { getIntlLocale, type SupportedLocale } from "@/shared/i18n/config";
+import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 import { EmptyState } from "@/shared/ui/components/empty-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import type { ActionState } from "@/shared/validation/action-state";
@@ -36,7 +37,7 @@ export function LearningPanel({
   mapId,
   suggestions,
 }: LearningPanelProps) {
-  const messages = getLearningMessages(locale);
+  const messages = getMapWorkspaceMessages(locale).learning;
   const openSuggestions = suggestions.filter((item) => !item.resolution);
   const resolvedSuggestions = suggestions.filter((item) => item.resolution);
 
@@ -93,7 +94,7 @@ function SuggestionCard({
   mapId,
   item,
 }: SuggestionCardProps) {
-  const messages = getLearningMessages(locale);
+  const messages = getMapWorkspaceMessages(locale).learning;
   const intlLocale = getIntlLocale(locale);
   const [state, formAction, isPending] = useActionState(
     resolveSuggestionAction,
@@ -215,28 +216,5 @@ function SuggestionCard({
       </Flex>
     </Card>
   );
-}
-
-function getLearningMessages(locale: SupportedLocale) {
-  void locale;
-
-  return {
-    heading: "Learning",
-    emptyTitle: "No Suggestions yet",
-    emptyDescription:
-      "When new Suggestions arrive, you can review and resolve them here.",
-    pending: "Pending",
-    payload: "Proposed payload",
-    resolutionLabel: "Resolution type",
-    reasonLabel: "Reason",
-    resolveCta: "Resolve Suggestion",
-    openCount: (count: number) => `Open: ${count}`,
-    resolvedCount: (count: number) => `Resolved: ${count}`,
-    confidence: (value: number) => `Confidence: ${Math.round(value * 100)}%`,
-    suggestionType: (value: string) => value.replaceAll("_", " "),
-    targetEntity: (value: string) => `Target: ${value.replaceAll("_", " ")}`,
-    sourceType: (value: string) => `Source: ${value.replaceAll("_", " ")}`,
-    resolutionType: (value: string) => value.replaceAll("_", " "),
-  };
 }
 

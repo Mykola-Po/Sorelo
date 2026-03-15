@@ -117,7 +117,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
   uk: {
     shell: {
       brandNote: "Пояснювані карти людини",
-      workspaceSwitcherLabel: "Workspace",
+      workspaceSwitcherLabel: "Робочий простір",
       settings: "Налаштування",
       maps: "Карти",
       members: "Учасники",
@@ -147,14 +147,15 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
       recentRuns: {
         title: "Останні сценарні прогони",
         description:
-          "Останні перевірки в цьому workspace залишаються в межах обмеженої панелі.",
+          "Останні перевірки в цьому робочому просторі залишаються в межах обмеженої панелі.",
         emptyTitle: "Сценарних прогонів ще немає",
         emptyDescription:
           "Прогони з’являються після перевірки конкретної ситуації на карті. Кожен прогін зберігає впорядкований шлях пояснення.",
       },
       workspaceMaps: {
-        title: "Карти workspace",
-        description: "Відкрийте існуючу карту або створіть нову для цього workspace.",
+        title: "Карти робочого простору",
+        description:
+          "Відкрийте наявну карту або створіть нову для цього робочого простору.",
         emptyDescription:
           "Відкрийте карту, щоб почати визначати Концепти, Зв’язки та Сценарії.",
         openMap: "Відкрити карту",
@@ -178,7 +179,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
   ru: {
     shell: {
       brandNote: "Объяснимые карты человека",
-      workspaceSwitcherLabel: "Workspace",
+      workspaceSwitcherLabel: "Рабочее пространство",
       settings: "Настройки",
       maps: "Карты",
       members: "Участники",
@@ -206,17 +207,17 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
           "Начните с одного человека, одной карты и первого значимого Концепта.",
       },
       recentRuns: {
-        title: "Последние прогоны сценариев",
+        title: "Последние сценарные прогоны",
         description:
-          "Последние проверки по этому workspace остаются внутри ограниченной панели.",
-        emptyTitle: "Прогонов сценариев пока нет",
+          "Последние проверки в этом рабочем пространстве остаются в пределах ограниченной панели.",
+        emptyTitle: "Сценарных прогонов пока нет",
         emptyDescription:
           "Прогоны появляются после проверки конкретной ситуации на карте. Каждый прогон сохраняет упорядоченный путь объяснения.",
       },
       workspaceMaps: {
-        title: "Карты workspace",
+        title: "Карты рабочего пространства",
         description:
-          "Откройте существующую карту или создайте новую для этого workspace.",
+          "Откройте существующую карту или создайте новую для этого рабочего пространства.",
         emptyDescription:
           "Откройте карту, чтобы начать определять Концепты, Связи и Сценарии.",
         openMap: "Открыть карту",

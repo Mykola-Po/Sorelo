@@ -68,6 +68,7 @@ export function MapWorkspace({
 }: MapWorkspaceProps) {
   const router = useRouter();
   const messages = getMapWorkspaceMessages(locale);
+  const learningMessages = messages.learning;
   const isMobileViewport = useIsMobileViewport();
   const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(
     null
@@ -298,7 +299,7 @@ export function MapWorkspace({
       ? messages.scenario.mobileInspectorDescription
       : panelTab === "scenario"
         ? messages.scenario.mobileScenarioDescription
-        : getLearningDialogDescription(locale);
+        : learningMessages.mobileDescription;
 
   return (
     <Dialog.Root open={panelOpen} onOpenChange={setPanelOpen}>
@@ -348,7 +349,7 @@ export function MapWorkspace({
                 inspectorOpen={isInspectorPanelOpen}
                 scenarioOpen={isScenarioPanelOpen}
                 learningOpen={isLearningPanelOpen}
-                learningLabel={getLearningTabLabel()}
+                learningLabel={learningMessages.tabLabel}
                 onOpenInspector={openInspectorPanel}
                 onOpenScenario={openScenarioPanel}
                 onOpenLearning={openLearningPanel}
@@ -451,7 +452,7 @@ export function MapWorkspace({
                   variant={panelTab === "learning" ? "solid" : "surface"}
                   onClick={openLearningPanel}
                 >
-                  {getLearningTabLabel()}
+                  {learningMessages.tabLabel}
                 </Button>
               </Flex>
 
@@ -749,14 +750,5 @@ function MapBottomDock({
       </div>
     </div>
   );
-}
-
-function getLearningTabLabel() {
-  return "Learning";
-}
-
-function getLearningDialogDescription(locale: MapWorkspaceProps["locale"]) {
-  void locale;
-  return "Review Suggestions and resolve them in the learning loop.";
 }
 

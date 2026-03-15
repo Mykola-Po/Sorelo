@@ -141,6 +141,25 @@ export type MapWorkspaceMessages = {
     mobileInspectorDescription: string;
     mobileScenarioDescription: string;
   };
+  learning: {
+    tabLabel: string;
+    mobileDescription: string;
+    heading: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    pending: string;
+    payload: string;
+    resolutionLabel: string;
+    reasonLabel: string;
+    resolveCta: string;
+    openCount: (count: number) => string;
+    resolvedCount: (count: number) => string;
+    confidence: (value: number) => string;
+    suggestionType: (value: string) => string;
+    targetEntity: (value: string) => string;
+    sourceType: (value: string) => string;
+    resolutionType: (value: string) => string;
+  };
   labels: {
     conceptTypes: Record<ConceptType, string>;
     relationTypes: Record<RelationType, string>;
@@ -283,6 +302,125 @@ function buildGuidedMessages(locale: SupportedLocale) {
       totalSteps: 4,
     },
   } satisfies MapWorkspaceMessages["guided"];
+}
+
+function humanizeSuggestionValue(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function buildLearningMessages(
+  locale: SupportedLocale
+): MapWorkspaceMessages["learning"] {
+  const formatSuggestionValue = (value: string) => humanizeSuggestionValue(value);
+
+  if (locale === "uk") {
+    return {
+      tabLabel: "Навчання",
+      mobileDescription:
+        "Переглядайте Пропозиції та фіксуйте рішення в циклі навчання.",
+      heading: "Навчання",
+      emptyTitle: "Пропозицій поки немає",
+      emptyDescription:
+        "Коли з’являться нові Пропозиції, ви зможете переглянути та розв’язати їх тут.",
+      pending: "Очікує",
+      payload: "Запропонований payload",
+      resolutionLabel: "Тип рішення",
+      reasonLabel: "Причина",
+      resolveCta: "Зафіксувати рішення",
+      openCount: (count) => `Відкриті: ${count}`,
+      resolvedCount: (count) => `Вирішені: ${count}`,
+      confidence: (value) => `Впевненість: ${Math.round(value * 100)}%`,
+      suggestionType: formatSuggestionValue,
+      targetEntity: (value) =>
+        `Ціль: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) =>
+        `Джерело: ${humanizeSuggestionValue(value)}`,
+      resolutionType: (value) => {
+        if (value === "accepted") {
+          return "прийнято";
+        }
+
+        if (value === "edited") {
+          return "відредаговано";
+        }
+
+        if (value === "rejected") {
+          return "відхилено";
+        }
+
+        if (value === "context_limited") {
+          return "бракує контексту";
+        }
+
+        return humanizeSuggestionValue(value);
+      },
+    };
+  }
+
+  if (locale === "ru") {
+    return {
+      tabLabel: "Обучение",
+      mobileDescription:
+        "Просматривайте Предложения и фиксируйте решения в цикле обучения.",
+      heading: "Обучение",
+      emptyTitle: "Предложений пока нет",
+      emptyDescription:
+        "Когда появятся новые Предложения, вы сможете просмотреть и разобрать их здесь.",
+      pending: "В ожидании",
+      payload: "Предложенный payload",
+      resolutionLabel: "Тип решения",
+      reasonLabel: "Причина",
+      resolveCta: "Зафиксировать решение",
+      openCount: (count) => `Открытые: ${count}`,
+      resolvedCount: (count) => `Решенные: ${count}`,
+      confidence: (value) => `Уверенность: ${Math.round(value * 100)}%`,
+      suggestionType: formatSuggestionValue,
+      targetEntity: (value) =>
+        `Цель: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) =>
+        `Источник: ${humanizeSuggestionValue(value)}`,
+      resolutionType: (value) => {
+        if (value === "accepted") {
+          return "принято";
+        }
+
+        if (value === "edited") {
+          return "отредактировано";
+        }
+
+        if (value === "rejected") {
+          return "отклонено";
+        }
+
+        if (value === "context_limited") {
+          return "не хватает контекста";
+        }
+
+        return humanizeSuggestionValue(value);
+      },
+    };
+  }
+
+  return {
+    tabLabel: "Learning",
+    mobileDescription: "Review Suggestions and resolve them in the learning loop.",
+    heading: "Learning",
+    emptyTitle: "No Suggestions yet",
+    emptyDescription:
+      "When new Suggestions arrive, you can review and resolve them here.",
+    pending: "Pending",
+    payload: "Proposed payload",
+    resolutionLabel: "Resolution type",
+    reasonLabel: "Reason",
+    resolveCta: "Resolve Suggestion",
+    openCount: (count) => `Open: ${count}`,
+    resolvedCount: (count) => `Resolved: ${count}`,
+    confidence: (value) => `Confidence: ${Math.round(value * 100)}%`,
+    suggestionType: formatSuggestionValue,
+    targetEntity: (value) => `Target: ${humanizeSuggestionValue(value)}`,
+    sourceType: (value) => `Source: ${humanizeSuggestionValue(value)}`,
+    resolutionType: (value) => humanizeSuggestionValue(value),
+  };
 }
 
 export const mapWorkspaceMessages: Record<
@@ -439,6 +577,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Run Scenarios, save them, and inspect recent runs.",
     },
+    learning: buildLearningMessages("en"),
     labels: {
       conceptTypes: {
         thought: "thought",
@@ -625,6 +764,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Запускайте Сценарії, зберігайте їх і переглядайте останні запуски.",
     },
+    learning: buildLearningMessages("uk"),
     labels: {
       conceptTypes: {
         thought: "думка",
@@ -812,6 +952,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Запускайте Сценарии, сохраняйте их и просматривайте последние запуски.",
     },
+    learning: buildLearningMessages("ru"),
     labels: {
       conceptTypes: {
         thought: "мысль",
