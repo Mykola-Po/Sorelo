@@ -2,6 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronLeftIcon,
   Cross2Icon,
   LightningBoltIcon,
   Link2Icon,
@@ -19,6 +20,7 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { InspectorPanel } from "@/features/inspector/components/inspector-panel";
@@ -47,7 +49,7 @@ import {
 import type { MapWorkspaceProps } from "@/features/maps/types";
 import { ScenarioPanel } from "@/features/scenarios/components/scenario-panel";
 import { LearningPanel } from "@/features/learning/components/learning-panel";
-import { workspaceMapPath } from "@/shared/config/routes";
+import { workspaceMapPath, workspaceMapsPath } from "@/shared/config/routes";
 import {
   getMapWorkspaceMessages,
   type MapWorkspaceMessages,
@@ -354,6 +356,8 @@ export function MapWorkspace({
               <MapBottomDock
                 messages={messages}
                 mapId={map.id}
+                mapTitle={map.title}
+                mapsPath={workspaceMapsPath(workspaceSlug)}
                 subjectLabel={map.subjectLabel}
                 availableMaps={availableMaps}
                 linkingSourceConceptTitle={linkingSourceConceptTitle}
@@ -510,6 +514,7 @@ type MapIconActionProps = {
   active?: boolean;
   onClick: () => void;
   tooltipSide?: "top" | "right" | "bottom" | "left";
+  mobileHint?: string;
   children: ReactNode;
 };
 
@@ -518,24 +523,32 @@ function MapIconAction({
   active = false,
   onClick,
   tooltipSide = "top",
+  mobileHint,
   children,
 }: MapIconActionProps) {
   return (
-    <Tooltip content={label} side={tooltipSide}>
-      <IconButton
-        type="button"
-        size="2"
-        radius="full"
-        variant={active ? "solid" : "surface"}
-        color={active ? "gray" : "gray"}
-        aria-label={label}
-        aria-pressed={active}
-        onClick={onClick}
-        className={active ? "map-icon-action is-active" : "map-icon-action"}
-      >
-        {children}
-      </IconButton>
-    </Tooltip>
+    <div className="map-icon-action-shell">
+      <Tooltip content={label} side={tooltipSide}>
+        <IconButton
+          type="button"
+          size="2"
+          radius="full"
+          variant={active ? "solid" : "surface"}
+          color={active ? "gray" : "gray"}
+          aria-label={label}
+          aria-pressed={active}
+          onClick={onClick}
+          className={active ? "map-icon-action is-active" : "map-icon-action"}
+        >
+          {children}
+        </IconButton>
+      </Tooltip>
+      {mobileHint ? (
+        <Text as="span" size="1" className="map-icon-action-hint">
+          {mobileHint}
+        </Text>
+      ) : null}
+    </div>
   );
 }
 
@@ -631,6 +644,8 @@ function MapModeIndicator({
 type MapBottomDockProps = {
   messages: MapWorkspaceMessages;
   mapId: string;
+  mapTitle: string;
+  mapsPath: string;
   subjectLabel: string;
   availableMaps: MapWorkspaceProps["availableMaps"];
   linkingSourceConceptTitle: string | null;
@@ -655,6 +670,8 @@ type MapBottomDockProps = {
 function MapBottomDock({
   messages,
   mapId,
+  mapTitle,
+  mapsPath,
   subjectLabel,
   availableMaps,
   linkingSourceConceptTitle,
@@ -679,6 +696,31 @@ function MapBottomDock({
     <div className="map-bottom-dock">
       <div className="map-bottom-dock-side is-left">
         <div className="map-bottom-dock-group is-meta">
+          <div className="map-bottom-map-context">
+            <Button
+              asChild
+              size="1"
+              variant="surface"
+              color="gray"
+              className="map-bottom-map-back-link"
+            >
+              <Link href={mapsPath}>
+                <ChevronLeftIcon />
+                {messages.topBar.backToMaps}
+              </Link>
+            </Button>
+
+            <Text
+              as="p"
+              size="2"
+              weight="medium"
+              className="map-bottom-map-title"
+              title={mapTitle}
+            >
+              {mapTitle}
+            </Text>
+          </div>
+
           <div className="map-bottom-map-select">
             <div className="map-inline-select">
               <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
@@ -721,6 +763,7 @@ function MapBottomDock({
             label={messages.topBar.runScenario}
             active={scenarioOpen}
             onClick={onOpenScenario}
+            mobileHint={messages.topBar.scenario}
           >
             <RocketIcon />
           </MapIconAction>
@@ -728,6 +771,7 @@ function MapBottomDock({
             label={learningLabel}
             active={learningOpen}
             onClick={onOpenLearning}
+            mobileHint={learningLabel}
           >
             <LightningBoltIcon />
           </MapIconAction>
@@ -740,6 +784,7 @@ function MapBottomDock({
               interactionMode === "connectLink" || selectionKind === "create-link"
             }
             onClick={onStartCreateLink}
+            mobileHint={messages.topBar.createLink}
           >
             <Link2Icon />
           </MapIconAction>
@@ -749,6 +794,7 @@ function MapBottomDock({
               interactionMode === "placeConcept" || selectionKind === "create-concept"
             }
             onClick={onStartCreateConcept}
+            mobileHint={messages.topBar.newConcept}
           >
             <PlusIcon />
           </MapIconAction>
@@ -759,6 +805,7 @@ function MapBottomDock({
             label={messages.topBar.inspector}
             active={inspectorOpen}
             onClick={onOpenInspector}
+            mobileHint={messages.topBar.inspector}
           >
             <ReaderIcon />
           </MapIconAction>

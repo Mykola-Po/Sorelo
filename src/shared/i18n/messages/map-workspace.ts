@@ -21,6 +21,7 @@ export type MapWorkspaceMessages = {
     collapsePanel: string;
     openInspector: string;
     openScenario: string;
+    backToMaps: string;
   };
   canvas: {
     placeConceptBadge: string;
@@ -490,6 +491,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Collapse panel",
       openInspector: "Open Inspector",
       openScenario: "Open Scenario",
+      backToMaps: "Back to Maps",
     },
     canvas: {
       placeConceptBadge: "Place Concept",
@@ -688,6 +690,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Згорнути панель",
       openInspector: "Відкрити Інспектор",
       openScenario: "Відкрити Сценарій",
+      backToMaps: "До списку карт",
     },
     canvas: {
       placeConceptBadge: "Поставити Концепт",
@@ -886,6 +889,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Свернуть панель",
       openInspector: "Открыть Инспектор",
       openScenario: "Открыть Сценарий",
+      backToMaps: "К списку карт",
     },
     canvas: {
       placeConceptBadge: "Поставить Концепт",
