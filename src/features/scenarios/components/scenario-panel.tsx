@@ -75,12 +75,17 @@ export function ScenarioPanel({
   const [draftSeeds, setDraftSeeds] = useState<string[]>([]);
   const [triggerText, setTriggerText] = useState("");
   const [secondaryTab, setSecondaryTab] = useState<ScenarioSecondaryTab>(() =>
-    runs.length > 0 ? "runs" : scenarios.length > 0 ? "saved" : "save"
+    scenarios.length > 0 ? "saved" : "save"
   );
+  const [reviewingRunId, setReviewingRunId] = useState<string | null>(null);
 
   const latestRun = runs[0] ?? null;
   const canRunScenario =
     conceptCatalog.length > 0 && triggerText.trim().length >= 3;
+  const openRunReview = (runId: string) => {
+    setSecondaryTab("runs");
+    setReviewingRunId(runId);
+  };
 
   const toggleSeed = (conceptId: string) => {
     setDraftSeeds((current) =>
@@ -169,7 +174,7 @@ export function ScenarioPanel({
                   type="button"
                   size="2"
                   variant="soft"
-                  onClick={() => setSecondaryTab("runs")}
+                  onClick={() => openRunReview(latestRun.id)}
                 >
                   {messages.scenario.openRecentRuns}
                 </Button>
@@ -335,78 +340,106 @@ export function ScenarioPanel({
             />
           ) : (
             <Flex direction="column" gap="3">
-              {runs.map((run) => (
-                <Card key={run.id} className="panel-card">
-                  <Flex direction="column" gap="3">
-                    <Flex align="start" justify="between" gap="3">
-                      <Flex direction="column" gap="1">
-                        <Heading size="3">
-                          {run.scenario?.title ?? run.triggerText}
-                        </Heading>
-                        <Text color="gray" size="2">
-                          {run.summary ?? messages.scenario.noSummaryYet}
-                        </Text>
-                        <Text color="gray" size="1">
-                          {run.starter.fullName ?? run.starter.email} |{" "}
-                          {new Date(run.createdAt).toLocaleString(intlLocale)}
-                        </Text>
+              {runs.map((run) => {
+                const isReviewing = reviewingRunId === run.id;
+                return (
+                  <Card key={run.id} className="panel-card">
+                    <Flex direction="column" gap="3">
+                      <Flex align="start" justify="between" gap="3">
+                        <Flex direction="column" gap="1">
+                          <Heading size="3">
+                            {run.scenario?.title ?? run.triggerText}
+                          </Heading>
+                          <Text color="gray" size="2">
+                            {run.summary ?? messages.scenario.noSummaryYet}
+                          </Text>
+                          <Text color="gray" size="1">
+                            {run.starter.fullName ?? run.starter.email} |{" "}
+                            {new Date(run.createdAt).toLocaleString(intlLocale)}
+                          </Text>
+                        </Flex>
+                        <StatusBadge
+                          status={run.status}
+                          label={messages.labels.scenarioStatuses[run.status]}
+                        />
                       </Flex>
-                      <StatusBadge
-                        status={run.status}
-                        label={messages.labels.scenarioStatuses[run.status]}
-                      />
-                    </Flex>
-                    <Flex direction="column" gap="2">
-                      {run.steps.map((step) => (
-                        <Flex
-                          key={step.id}
-                          direction="column"
-                          gap="1"
-                          className="scenario-step"
-                        >
-                          <Flex align="center" gap="2" wrap="wrap">
-                            <Badge color="blue" radius="full" variant="soft">
-                              {messages.scenario.step(step.stepOrder)}
-                            </Badge>
-                            <Text weight="medium">{step.conceptTitle}</Text>
-                            <Badge color="gray" variant="surface">
-                              {messages.labels.effectTypes[step.effectType] ??
-                                step.effectType.replace(/_/g, " ")}
-                            </Badge>
-                            <Badge color="orange" variant="surface">
-                              {messages.scenario.score(step.score)}
-                            </Badge>
+                      <Flex gap="2" wrap="wrap">
+                        {run.steps.slice(0, 2).map((step) => (
+                          <Badge key={`${run.id}-${step.id}`} color="gray" variant="surface">
+                            {step.stepOrder}. {step.conceptTitle}
+                          </Badge>
+                        ))}
+                      </Flex>
+                      <Button
+                        type="button"
+                        size="2"
+                        variant={isReviewing ? "solid" : "soft"}
+                        onClick={() =>
+                          setReviewingRunId((current) =>
+                            current === run.id ? null : run.id
+                          )
+                        }
+                      >
+                        {isReviewing
+                          ? messages.scenario.hideReviewCta
+                          : messages.scenario.reviewRunCta}
+                      </Button>
+                      {isReviewing ? (
+                        <>
+                          <Flex direction="column" gap="2">
+                            {run.steps.map((step) => (
+                              <Flex
+                                key={step.id}
+                                direction="column"
+                                gap="1"
+                                className="scenario-step"
+                              >
+                                <Flex align="center" gap="2" wrap="wrap">
+                                  <Badge color="blue" radius="full" variant="soft">
+                                    {messages.scenario.step(step.stepOrder)}
+                                  </Badge>
+                                  <Text weight="medium">{step.conceptTitle}</Text>
+                                  <Badge color="gray" variant="surface">
+                                    {messages.labels.effectTypes[step.effectType] ??
+                                      step.effectType.replace(/_/g, " ")}
+                                  </Badge>
+                                  <Badge color="orange" variant="surface">
+                                    {messages.scenario.score(step.score)}
+                                  </Badge>
+                                </Flex>
+                                {step.viaLinkRelationType ? (
+                                  <Text color="gray" size="2">
+                                    {messages.scenario.viaLink}:{" "}
+                                    {
+                                      messages.labels.relationTypes[
+                                        step.viaLinkRelationType
+                                      ]
+                                    }
+                                  </Text>
+                                ) : null}
+                                <Text size="2">{step.explanation}</Text>
+                                <StepFeedbackForm
+                                  locale={locale}
+                                  workspaceSlug={workspaceSlug}
+                                  mapId={map.id}
+                                  run={run}
+                                  step={step}
+                                />
+                              </Flex>
+                            ))}
                           </Flex>
-                          {step.viaLinkRelationType ? (
-                            <Text color="gray" size="2">
-                              {messages.scenario.viaLink}:{" "}
-                              {
-                                messages.labels.relationTypes[
-                                  step.viaLinkRelationType
-                                ]
-                              }
-                            </Text>
-                          ) : null}
-                          <Text size="2">{step.explanation}</Text>
-                          <StepFeedbackForm
+                          <RunFeedbackForm
                             locale={locale}
                             workspaceSlug={workspaceSlug}
                             mapId={map.id}
                             run={run}
-                            step={step}
                           />
-                        </Flex>
-                      ))}
+                        </>
+                      ) : null}
                     </Flex>
-                    <RunFeedbackForm
-                      locale={locale}
-                      workspaceSlug={workspaceSlug}
-                      mapId={map.id}
-                      run={run}
-                    />
-                  </Flex>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </Flex>
           )
         ) : null}

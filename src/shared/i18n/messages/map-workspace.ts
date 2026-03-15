@@ -103,6 +103,8 @@ export type MapWorkspaceMessages = {
     situationLabel: string;
     situationPlaceholder: string;
     runCta: string;
+    reviewRunCta: string;
+    hideReviewCta: string;
     latestRun: string;
     noSummaryYet: string;
     openRecentRuns: string;
@@ -533,19 +535,21 @@ export const mapWorkspaceMessages: Record<
       strengthValue: (value) => `strength ${value}`,
     },
     scenario: {
-      runTitle: "Run scenario",
+      runTitle: "Run Scenario now",
       runDescription:
         "Test one situation against the map and inspect the ordered explanation path.",
       situationLabel: "Situation",
       situationPlaceholder:
         "A colleague questions the person's competence in a public meeting.",
-      runCta: "Run scenario",
+      runCta: "Run now",
+      reviewRunCta: "Review run",
+      hideReviewCta: "Hide review",
       latestRun: "Latest run",
       noSummaryYet: "No summary yet.",
-      openRecentRuns: "Open recent runs",
+      openRecentRuns: "Review runs",
       saveTab: "Save scenario",
       savedTab: "Saved scenarios",
-      runsTab: "Recent runs",
+      runsTab: "Review runs",
       saveTitle: "Save current scenario",
       saveCta: "Save scenario",
       saveTitlePlaceholder: "Public disagreement",
@@ -729,19 +733,21 @@ export const mapWorkspaceMessages: Record<
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {
-      runTitle: "Запустити Сценарій",
+      runTitle: "Запустити Сценарій зараз",
       runDescription:
         "Перевірте одну ситуацію на карті та перегляньте впорядкований шлях пояснення.",
       situationLabel: "Ситуація",
       situationPlaceholder:
         "Колега публічно ставить під сумнів компетентність цієї людини.",
-      runCta: "Запустити Сценарій",
+      runCta: "Запустити зараз",
+      reviewRunCta: "Переглянути запуск",
+      hideReviewCta: "Сховати перегляд",
       latestRun: "Останній запуск",
       noSummaryYet: "Підсумку ще немає.",
-      openRecentRuns: "Відкрити останні запуски",
+      openRecentRuns: "Переглянути запуски",
       saveTab: "Зберегти Сценарій",
       savedTab: "Збережені Сценарії",
-      runsTab: "Останні запуски",
+      runsTab: "Перегляд запусків",
       saveTitle: "Зберегти поточний Сценарій",
       saveCta: "Зберегти Сценарій",
       saveTitlePlaceholder: "Публічна незгода",
@@ -926,19 +932,21 @@ export const mapWorkspaceMessages: Record<
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {
-      runTitle: "Запустить Сценарий",
+      runTitle: "Запустить Сценарий сейчас",
       runDescription:
         "Проверьте одну ситуацию на карте и изучите упорядоченный путь объяснения.",
       situationLabel: "Ситуация",
       situationPlaceholder:
         "Коллега публично ставит под сомнение компетентность этого человека.",
-      runCta: "Запустить Сценарий",
+      runCta: "Запустить сейчас",
+      reviewRunCta: "Проверить запуск",
+      hideReviewCta: "Скрыть обзор",
       latestRun: "Последний запуск",
       noSummaryYet: "Пока нет краткого вывода.",
-      openRecentRuns: "Открыть последние запуски",
+      openRecentRuns: "Проверить запуски",
       saveTab: "Сохранить Сценарий",
       savedTab: "Сохранённые Сценарии",
-      runsTab: "Последние запуски",
+      runsTab: "Проверка запусков",
       saveTitle: "Сохранить текущий Сценарий",
       saveCta: "Сохранить Сценарий",
       saveTitlePlaceholder: "Публичное несогласие",
