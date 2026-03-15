@@ -26,6 +26,17 @@ function getCurrentMapId(page: Page) {
   return mapId;
 }
 
+function normalizeWorkspaceSlug(input: string) {
+  const normalized = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+
+  return normalized || "workspace";
+}
+
 async function readMapLayout(page: Page) {
   return page.evaluate((): MapLayoutSnapshot => {
     const getElement = (selector: string) => {
@@ -84,7 +95,8 @@ test.describe("critical product cycle", () => {
     test.setTimeout(90_000);
 
     const suffix = `${Date.now()}`;
-    const workspaceSlug = `e2e-cycle-${suffix}`;
+    const workspaceName = `E2E Workspace ${suffix}`;
+    const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
     const conceptSourceTitle = `Trigger ${suffix}`;
     const conceptTargetTitle = `Reaction ${suffix}`;
 
@@ -113,8 +125,7 @@ test.describe("critical product cycle", () => {
     await page.goto("/app");
     await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
-    await page.locator('input[name="name"]').fill(`E2E Workspace ${suffix}`);
-    await page.locator('input[name="slug"]').fill(workspaceSlug);
+    await page.locator('input[name="name"]').fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
       timeout: 30_000,
@@ -122,7 +133,6 @@ test.describe("critical product cycle", () => {
 
     await page.locator('input[name="title"]').fill(`Cycle Map ${suffix}`);
     await page.locator('input[name="subjectLabel"]').fill("Alex");
-    await page.locator('input[name="slug"]').fill(`cycle-map-${suffix}`);
     await page
       .locator('textarea[name="description"]')
       .fill("Map for the end-to-end product cycle.");

@@ -1,25 +1,31 @@
+import { cookies } from "next/headers";
 import { Flex, Text } from "@radix-ui/themes";
 
 import { CreateWorkspaceForm } from "@/features/workspace/components/create-workspace-form";
+import { LOCALE_COOKIE, resolveSupportedLocale } from "@/shared/i18n/config";
+import { getAppShellMessages } from "@/shared/i18n/messages/app-shell";
 import { PageHeader } from "@/shared/ui/components/page-header";
 import { SectionCard } from "@/shared/ui/components/section-card";
 
-export default function NewWorkspacePage() {
+export default async function NewWorkspacePage() {
+  const cookieStore = await cookies();
+  const locale = resolveSupportedLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const messages = getAppShellMessages(locale);
+
   return (
     <Flex direction="column" gap="5" className="page-stack">
       <PageHeader
-        title="Create your first workspace"
-        description="This is the only onboarding screen in the initial shell. Keep it fast, clear, and reversible."
+        title={messages.newWorkspace.title}
+        description={messages.newWorkspace.description}
       />
       <SectionCard
-        title="Workspace details"
-        description="Names stay human-readable. Slugs stay URL-safe."
+        title={messages.newWorkspace.detailsTitle}
+        description={messages.newWorkspace.detailsDescription}
       >
-        <CreateWorkspaceForm />
+        <CreateWorkspaceForm messages={messages.newWorkspace.form} />
       </SectionCard>
       <Text color="gray" size="2">
-        The app shell stays fixed to the viewport. Once created, the workspace
-        becomes the persistent operating context.
+        {messages.newWorkspace.helperText}
       </Text>
     </Flex>
   );
