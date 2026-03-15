@@ -42,6 +42,7 @@ import type { MapDetail } from "@/features/maps/types";
 import type { WorkspaceRole } from "@/shared/db/schema";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
+import { ConfirmDialog } from "@/shared/ui/components/confirm-dialog";
 import { EmptyState } from "@/shared/ui/components/empty-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
@@ -368,12 +369,19 @@ function ConceptInspectorCard({ locale, workspaceSlug, mapId, payload, onSelect 
             <Heading size="4">{payload.concept.title}</Heading>
             <StatusBadge status={payload.concept.conceptType} label={messages.labels.conceptTypes[payload.concept.conceptType]} />
           </Flex>
-          <form action={archiveConceptAction}>
+          <ConfirmDialog
+            triggerLabel={messages.inspector.conceptArchive}
+            triggerButtonProps={{ size: "2", variant: "soft", color: "gray" }}
+            title={messages.inspector.archiveConceptConfirmTitle}
+            description={messages.inspector.archiveConceptConfirmDescription}
+            confirmLabel={messages.inspector.conceptArchive}
+            cancelLabel={messages.inspector.cancel}
+            action={archiveConceptAction}
+          >
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={mapId} />
             <input type="hidden" name="conceptId" value={payload.concept.id} />
-            <Button type="submit" size="2" variant="soft" color="gray">{messages.inspector.conceptArchive}</Button>
-          </form>
+          </ConfirmDialog>
         </Flex>
 
         <form action={formAction}>
@@ -530,12 +538,19 @@ function LinkInspectorCard({ locale, workspaceSlug, mapId, conceptCatalog, conce
               <Badge color="orange" variant="surface">{messages.inspector.strengthValue(payload.link.strength)}</Badge>
             </Flex>
           </Flex>
-          <form action={deleteLinkAction}>
+          <ConfirmDialog
+            triggerLabel={messages.inspector.linkDelete}
+            triggerButtonProps={{ size: "2", variant: "soft", color: "gray" }}
+            title={messages.inspector.deleteLinkConfirmTitle}
+            description={messages.inspector.deleteLinkConfirmDescription}
+            confirmLabel={messages.inspector.linkDelete}
+            cancelLabel={messages.inspector.cancel}
+            action={deleteLinkAction}
+          >
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={mapId} />
             <input type="hidden" name="linkId" value={payload.link.id} />
-            <Button type="submit" size="2" variant="soft" color="gray">{messages.inspector.linkDelete}</Button>
-          </form>
+          </ConfirmDialog>
         </Flex>
 
         <Card variant="surface" className="panel-surface-card">
@@ -633,11 +648,18 @@ function MapSettingsCard({ locale, workspaceSlug, workspaceRole, map }: MapSetti
       {workspaceRole !== "member" ? (
         <>
           <Separator size="4" my="4" />
-          <form action={archiveMapAction}>
+          <ConfirmDialog
+            triggerLabel={messages.inspector.archiveMap}
+            triggerButtonProps={{ size: "2", variant: "soft", color: "gray" }}
+            title={messages.inspector.archiveMapConfirmTitle}
+            description={messages.inspector.archiveMapConfirmDescription}
+            confirmLabel={messages.inspector.archiveMap}
+            cancelLabel={messages.inspector.cancel}
+            action={archiveMapAction}
+          >
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={map.id} />
-            <Button type="submit" size="2" variant="soft" color="gray">{messages.inspector.archiveMap}</Button>
-          </form>
+          </ConfirmDialog>
         </>
       ) : null}
     </Card>

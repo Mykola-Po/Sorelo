@@ -68,6 +68,8 @@ export type MapWorkspaceMessages = {
     createConceptDescriptionPlaceholder: string;
     conceptSave: string;
     conceptArchive: string;
+    archiveConceptConfirmTitle: string;
+    archiveConceptConfirmDescription: string;
     connectedLinksTitle: string;
     connectedLinksEmpty: string;
     incoming: string;
@@ -82,11 +84,15 @@ export type MapWorkspaceMessages = {
     createLinkCta: string;
     linkTitle: string;
     linkDelete: string;
+    deleteLinkConfirmTitle: string;
+    deleteLinkConfirmDescription: string;
     currentDirection: string;
     unknownConcept: string;
     saveLink: string;
     saveMap: string;
     archiveMap: string;
+    archiveMapConfirmTitle: string;
+    archiveMapConfirmDescription: string;
     subjectLabel: string;
     openLink: string;
     strengthValue: (value: number) => string;
@@ -492,6 +498,9 @@ export const mapWorkspaceMessages: Record<
         "Why this Concept matters in the person's structure.",
       conceptSave: "Save Concept",
       conceptArchive: "Archive",
+      archiveConceptConfirmTitle: "Archive this Concept?",
+      archiveConceptConfirmDescription:
+        "This will remove the Concept from active map analysis and can change Link and Scenario explainability.",
       connectedLinksTitle: "Connected Links",
       connectedLinksEmpty:
         "This Concept is not linked yet. Add a Link so the structure becomes explainable.",
@@ -508,11 +517,17 @@ export const mapWorkspaceMessages: Record<
       createLinkCta: "Create Link",
       linkTitle: "Link",
       linkDelete: "Delete",
+      deleteLinkConfirmTitle: "Delete this Link?",
+      deleteLinkConfirmDescription:
+        "Deleting this Link removes an explicit explanation path from the map.",
       currentDirection: "Current direction",
       unknownConcept: "Unknown Concept",
       saveLink: "Save Link",
       saveMap: "Save map",
       archiveMap: "Archive map",
+      archiveMapConfirmTitle: "Archive this map?",
+      archiveMapConfirmDescription:
+        "This map will be moved out of active workspace lists.",
       subjectLabel: "Subject label",
       openLink: "Open Link",
       strengthValue: (value) => `strength ${value}`,
@@ -679,6 +694,9 @@ export const mapWorkspaceMessages: Record<
         "Чому цей Концепт важливий у структурі цієї людини.",
       conceptSave: "Зберегти Концепт",
       conceptArchive: "Архівувати",
+      archiveConceptConfirmTitle: "Архівувати цей Концепт?",
+      archiveConceptConfirmDescription:
+        "Це прибере Концепт з активного аналізу карти та може змінити пояснюваність Зв’язків і Сценаріїв.",
       connectedLinksTitle: "Пов’язані Зв’язки",
       connectedLinksEmpty:
         "Цей Концепт ще не пов’язаний. Додайте Зв’язок, щоб структура стала пояснюваною.",
@@ -695,11 +713,17 @@ export const mapWorkspaceMessages: Record<
       createLinkCta: "Створити Зв’язок",
       linkTitle: "Зв’язок",
       linkDelete: "Видалити",
+      deleteLinkConfirmTitle: "Видалити цей Зв’язок?",
+      deleteLinkConfirmDescription:
+        "Видалення цього Зв’язку прибирає явний шлях пояснення з карти.",
       currentDirection: "Поточний напрям",
       unknownConcept: "Невідомий Концепт",
       saveLink: "Зберегти Зв’язок",
       saveMap: "Зберегти карту",
       archiveMap: "Архівувати карту",
+      archiveMapConfirmTitle: "Архівувати цю карту?",
+      archiveMapConfirmDescription:
+        "Цю карту буде прибрано з активних списків workspace.",
       subjectLabel: "Мітка суб’єкта",
       openLink: "Відкрити Зв’язок",
       strengthValue: (value) => `сила ${value}`,
@@ -867,6 +891,9 @@ export const mapWorkspaceMessages: Record<
         "Почему этот Концепт важен в структуре этого человека.",
       conceptSave: "Сохранить Концепт",
       conceptArchive: "Архивировать",
+      archiveConceptConfirmTitle: "Архивировать этот Концепт?",
+      archiveConceptConfirmDescription:
+        "Это уберёт Концепт из активного анализа карты и может изменить объяснимость Связей и Сценариев.",
       connectedLinksTitle: "Связанные Связи",
       connectedLinksEmpty:
         "Этот Концепт пока не связан. Добавьте Связь, чтобы структура стала объяснимой.",
@@ -883,11 +910,17 @@ export const mapWorkspaceMessages: Record<
       createLinkCta: "Создать Связь",
       linkTitle: "Связь",
       linkDelete: "Удалить",
+      deleteLinkConfirmTitle: "Удалить эту Связь?",
+      deleteLinkConfirmDescription:
+        "Удаление этой Связи убирает явный путь объяснения из карты.",
       currentDirection: "Текущее направление",
       unknownConcept: "Неизвестный Концепт",
       saveLink: "Сохранить Связь",
       saveMap: "Сохранить карту",
       archiveMap: "Архивировать карту",
+      archiveMapConfirmTitle: "Архивировать эту карту?",
+      archiveMapConfirmDescription:
+        "Эта карта будет убрана из активных списков workspace.",
       subjectLabel: "Метка субъекта",
       openLink: "Открыть Связь",
       strengthValue: (value) => `сила ${value}`,
