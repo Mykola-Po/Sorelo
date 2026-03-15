@@ -1,49 +1,5 @@
 :root {
   color-scheme: light;
-  
-  --surface: var(--color-background);
-  --surface-elevated: var(--color-panel-translucent);
-  --surface-muted: var(--gray-2);
-  --surface-canvas: var(--color-background);
-  --surface-floating: var(--color-panel-translucent);
-  
-  --ink: var(--gray-12);
-  --line: var(--gray-a4);
-  --line-strong: var(--gray-a6);
-  
-  --shadow-soft: var(--shadow-5);
-  --shadow-node: var(--shadow-4);
-  
-  --map-floating-radius: var(--radius-5);
-  --map-chrome-radius: var(--radius-4);
-  --map-chrome-padding-block: var(--space-2);
-  --map-chrome-padding-inline: var(--space-3);
-  --map-chrome-gap: var(--space-3);
-  --map-overlay-body-padding: var(--space-3);
-  --map-panel-safe-gap: var(--space-3);
-  
-  --map-panel-max-width: 360px;
-  --map-panel-min-width: 320px;
-  --map-panel-height-desktop: clamp(34rem, 72dvh, 48rem);
-  --map-panel-height-mobile: clamp(26rem, 78dvh, 44rem);
-  --map-panel-rail-width: 58px;
-  --map-top-strip-min-height: 54px;
-  
-  --map-surface: var(--color-panel-translucent);
-  --map-surface-muted: var(--gray-2);
-  --map-surface-strong: var(--color-panel-solid);
-  
-  --map-border: var(--gray-a4);
-  --map-border-strong: var(--gray-a6);
-  
-  --map-shadow: var(--shadow-5);
-  --map-shadow-soft: var(--shadow-4);
-  --map-dock-shadow: var(--shadow-3);
-  
-  --app-shell-padding: var(--space-2);
-  --app-shell-gap: var(--space-2);
-  --app-shell-radius: var(--radius-4);
-  
   --layer-base: 0;
   --layer-overlay: 1;
   --layer-dialog: 2;
@@ -61,6 +17,40 @@ body {
 }
 
 .radix-themes {
+  --surface: var(--color-background);
+  --surface-elevated: var(--color-panel-translucent);
+  --surface-muted: var(--gray-2);
+  --surface-canvas: var(--color-background);
+  --surface-floating: var(--color-panel-translucent);
+  --ink: var(--gray-12);
+  --line: var(--gray-a4);
+  --line-strong: var(--gray-a6);
+  --shadow-soft: var(--shadow-5);
+  --shadow-node: var(--shadow-4);
+  --map-floating-radius: var(--radius-5);
+  --map-chrome-radius: var(--radius-4);
+  --map-chrome-padding-block: var(--space-2);
+  --map-chrome-padding-inline: var(--space-3);
+  --map-chrome-gap: var(--space-3);
+  --map-overlay-body-padding: var(--space-3);
+  --map-panel-safe-gap: var(--space-3);
+  --map-panel-max-width: 360px;
+  --map-panel-min-width: 320px;
+  --map-panel-height-desktop: clamp(34rem, 72dvh, 48rem);
+  --map-panel-height-mobile: clamp(26rem, 78dvh, 44rem);
+  --map-panel-rail-width: 58px;
+  --map-top-strip-min-height: 54px;
+  --map-surface: var(--color-panel-translucent);
+  --map-surface-muted: var(--gray-2);
+  --map-surface-strong: var(--color-panel-solid);
+  --map-border: var(--gray-a4);
+  --map-border-strong: var(--gray-a6);
+  --map-shadow: var(--shadow-5);
+  --map-shadow-soft: var(--shadow-4);
+  --map-dock-shadow: var(--shadow-3);
+  --app-shell-padding: var(--space-2);
+  --app-shell-gap: var(--space-2);
+  --app-shell-radius: var(--radius-4);
   background: transparent !important;
 }
 
@@ -68,7 +58,7 @@ body {
   background:
     radial-gradient(circle at top, var(--blue-a2), transparent 30%),
     linear-gradient(180deg, var(--gray-1) 0%, var(--gray-2) 100%);
-  color: var(--ink);
+  color: var(--gray-12);
   font-family: var(--font-sans), sans-serif;
 }
 
@@ -807,6 +797,7 @@ select {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  margin-top: auto;
   padding: 0 0 18px;
   min-width: 0;
   pointer-events: none;

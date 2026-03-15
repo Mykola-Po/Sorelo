@@ -6,9 +6,60 @@ type GraphSnapshot = {
   links: Array<{ id: string }>;
 };
 
+type ElementLayout = {
+  height: number;
+  top: number;
+  bottom: number;
+};
+
+type MapLayoutSnapshot = {
+  viewportHeight: number;
+  appShellPadding: number;
+  productShell: ElementLayout;
+  productBody: ElementLayout;
+  mapScreen: ElementLayout;
+  mapBottomDock: ElementLayout;
+};
+
 function getCurrentMapId(page: Page) {
   const [, mapId = ""] = page.url().match(/\/maps\/([^/?#]+)/) ?? [];
   return mapId;
+}
+
+async function readMapLayout(page: Page) {
+  return page.evaluate((): MapLayoutSnapshot => {
+    const getElement = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLElement)) {
+        throw new Error(`Missing layout element: ${selector}`);
+      }
+      return element;
+    };
+
+    const toLayout = (element: HTMLElement): ElementLayout => {
+      const rect = element.getBoundingClientRect();
+      return {
+        height: rect.height,
+        top: rect.top,
+        bottom: rect.bottom,
+      };
+    };
+
+    const appShell = getElement(".viewport-shell.app-shell");
+    const productShell = getElement(".product-shell");
+    const productBody = getElement(".product-body");
+    const mapScreen = getElement(".map-screen");
+    const mapBottomDock = getElement(".map-bottom-dock");
+
+    return {
+      viewportHeight: window.innerHeight,
+      appShellPadding: Number.parseFloat(getComputedStyle(appShell).paddingTop) || 0,
+      productShell: toLayout(productShell),
+      productBody: toLayout(productBody),
+      mapScreen: toLayout(mapScreen),
+      mapBottomDock: toLayout(mapBottomDock),
+    };
+  });
 }
 
 async function readGraphSnapshot(page: Page) {
@@ -88,6 +139,21 @@ test.describe("critical product cycle", () => {
         timeout: 30_000,
       });
     }
+
+    await expect(page.locator(".map-screen")).toBeVisible();
+
+    const layout = await readMapLayout(page);
+    const expectedShellHeight = layout.viewportHeight - layout.appShellPadding * 2;
+    const mapBodyHeightDelta = Math.abs(layout.productBody.height - layout.mapScreen.height);
+    const dockBottomGap = layout.mapScreen.bottom - layout.mapBottomDock.bottom;
+    const dockOffsetFromTop = layout.mapBottomDock.top - layout.mapScreen.top;
+
+    expect(layout.productShell.height).toBeGreaterThan(layout.viewportHeight * 0.8);
+    expect(Math.abs(layout.productShell.height - expectedShellHeight)).toBeLessThanOrEqual(4);
+    expect(layout.mapScreen.height).toBeGreaterThan(layout.mapBottomDock.height * 4);
+    expect(mapBodyHeightDelta).toBeLessThanOrEqual(6);
+    expect(dockBottomGap).toBeLessThanOrEqual(40);
+    expect(dockOffsetFromTop).toBeGreaterThan(layout.mapScreen.height * 0.5);
 
     const firstConceptResponse = await page.request.post(
       `/api/maps/${getCurrentMapId(page)}/concepts`,
