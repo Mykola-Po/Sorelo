@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -61,6 +61,31 @@ export async function createLinkCommand(input: {
   ]);
 
   return db.transaction(async (tx) => {
+    const [conceptCountRows, linkCountRows] = await Promise.all([
+      tx
+        .select({ value: count() })
+        .from(concepts)
+        .where(
+          and(
+            eq(concepts.mapId, input.mapId),
+            eq(concepts.workspaceId, input.workspaceId),
+            isNull(concepts.archivedAt)
+          )
+        ),
+      tx
+        .select({ value: count() })
+        .from(links)
+        .where(
+          and(
+            eq(links.mapId, input.mapId),
+            eq(links.workspaceId, input.workspaceId)
+          )
+        ),
+    ]);
+    const conceptCountAtMoment = Number(conceptCountRows[0]?.value ?? 0);
+    const linkCountBefore = Number(linkCountRows[0]?.value ?? 0);
+    const isFirstLink = linkCountBefore === 0;
+
     const [link] = await tx
       .insert(links)
       .values({
@@ -125,6 +150,25 @@ export async function createLinkCommand(input: {
         strength: link.strength,
       },
     });
+
+    if (isFirstLink) {
+      await recordActivity(tx, {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId,
+        entityType: "map",
+        entityId: input.mapId,
+        action: "core_loop.first_link_created",
+        payload: {
+          linkId: link.id,
+          sourceConceptId: link.sourceConceptId,
+          targetConceptId: link.targetConceptId,
+          relationType: link.relationType,
+          conceptCountAtMoment,
+          linkCountBefore,
+          linkCountAfter: linkCountBefore + 1,
+        },
+      });
+    }
 
     return link;
   });

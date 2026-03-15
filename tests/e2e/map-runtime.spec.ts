@@ -257,6 +257,23 @@ test.describe("Map Runtime WebGL Canvas", () => {
     page,
   }) => {
     const { minRatio, maxRatio } = await getCameraSnapshot(page);
+    const sigmaIdentityBeforeZoom = await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { __e2eStableId?: string };
+        }
+      ).__SIGMA__;
+
+      if (!sigma) {
+        throw new Error("Sigma instance is not available");
+      }
+
+      if (!sigma.__e2eStableId) {
+        sigma.__e2eStableId = `sigma-${Math.random().toString(36).slice(2)}`;
+      }
+
+      return sigma.__e2eStableId;
+    });
 
     await page.evaluate((ratio) => {
       const sigma = (
@@ -325,6 +342,20 @@ test.describe("Map Runtime WebGL Canvas", () => {
     expect(farState.cardPointerEvents).toBe("none");
     expect(farState.dotOpacity).toBeGreaterThan(0.8);
     expect(farState.dotPointerEvents).toBe("auto");
+
+    await page.waitForTimeout(320);
+    const sigmaIdentityAfterZoom = await page.evaluate(() => {
+      const sigma = (
+        window as Window & {
+          __SIGMA__?: { __e2eStableId?: string };
+        }
+      ).__SIGMA__;
+      if (!sigma?.__e2eStableId) {
+        throw new Error("Sigma identity marker is missing");
+      }
+      return sigma.__e2eStableId;
+    });
+    expect(sigmaIdentityAfterZoom).toBe(sigmaIdentityBeforeZoom);
 
     await page.locator(".sl-concept-dot").first().dispatchEvent("pointerover");
     await page.waitForTimeout(80);

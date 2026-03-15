@@ -24,7 +24,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { InspectorPanel } from "@/features/inspector/components/inspector-panel";
-import type { InspectorSelection } from "@/features/inspector/types";
+import type {
+  InspectorMutationFeedback,
+  InspectorSelection,
+} from "@/features/inspector/types";
 import dynamic from "next/dynamic";
 
 const GraphCanvasRuntime = dynamic(
@@ -34,13 +37,14 @@ const GraphCanvasRuntime = dynamic(
     ),
   { ssr: false }
 );
-import { MapStoreProvider } from "@/features/map-runtime/store/map-store-provider";
+import { MapStoreProvider, useMapStore } from "@/features/map-runtime/store/map-store-provider";
 import { useConceptCatalog } from "@/features/map-runtime/hooks/use-concept-catalog";
 import {
   deriveLodThresholds,
   deriveZoomBounds,
   type CanvasZoomState,
 } from "@/features/map-runtime/renderers/zoom-policy";
+import { useCoreLoopTelemetry } from "@/features/maps/hooks/use-core-loop-telemetry";
 import {
   buildLinkDraftDefaults,
   deriveGuidedOnboardingStep,
@@ -57,7 +61,15 @@ import {
 
 type PanelTab = "inspector" | "scenario" | "learning";
 
-export function MapWorkspace({
+export function MapWorkspace(props: MapWorkspaceProps) {
+  return (
+    <MapStoreProvider key={props.map.id} mapId={props.map.id}>
+      <MapWorkspaceContent {...props} />
+    </MapStoreProvider>
+  );
+}
+
+function MapWorkspaceContent({
   locale,
   workspaceSlug,
   workspaceRole,
@@ -76,11 +88,15 @@ export function MapWorkspace({
     null
   );
   const [panelTab, setPanelTab] = useState<PanelTab>("inspector");
-  const [selection, setSelection] = useState<InspectorSelection>({ kind: "none" });
-  const [interactionMode, setInteractionMode] =
-    useState<CanvasInteractionMode>("inspect");
-  const [connectLinkSourceId, setConnectLinkSourceId] = useState<string | null>(
-    null
+  const [mutationFeedback, setMutationFeedback] =
+    useState<InspectorMutationFeedback | null>(null);
+  const selection = useMapStore((state) => state.selection);
+  const setSelection = useMapStore((state) => state.setSelection);
+  const interactionMode = useMapStore((state) => state.interactionMode);
+  const setInteractionMode = useMapStore((state) => state.setInteractionMode);
+  const connectLinkSourceId = useMapStore((state) => state.connectLinkSourceId);
+  const setConnectLinkSourceId = useMapStore(
+    (state) => state.setConnectLinkSourceId
   );
   const [zoomState, setZoomState] = useState<CanvasZoomState>(() => {
     const { minRatio, maxRatio } = deriveZoomBounds(1);
@@ -120,6 +136,14 @@ export function MapWorkspace({
     scenarioRunCount: runs.length,
   });
   const guidedCopy = messages.guided[guidedStep];
+
+  useCoreLoopTelemetry({
+    mapId: map.id,
+    guidedStep,
+    conceptCount: graphMetrics.conceptCount,
+    linkCount: graphMetrics.linkCount,
+  });
+
   const linkingSourceConceptTitle = connectLinkSourceId
     ? conceptCatalogById.get(connectLinkSourceId)?.title ?? null
     : null;
@@ -283,6 +307,7 @@ export function MapWorkspace({
           interactionMode={interactionMode}
           linkingSourceConceptTitle={linkingSourceConceptTitle}
           onSelect={setSelection}
+          onMutationFeedback={setMutationFeedback}
           onStartCreateConcept={beginPlaceConcept}
           onStartCreateLink={beginConnectLink}
           onOpenScenario={openScenarioPanel}
@@ -327,7 +352,6 @@ export function MapWorkspace({
     <Dialog.Root open={dialogOpen} onOpenChange={handlePanelOpenChange}>
       <div className="map-screen">
         <div className="page-stack map-screen-stack">
-          <MapStoreProvider mapId={map.id}>
           <div className="map-canvas-layer">
             <GraphCanvasRuntime
               locale={locale}
@@ -336,6 +360,7 @@ export function MapWorkspace({
               selection={selection}
               interactionMode={interactionMode}
               connectLinkSourceId={connectLinkSourceId}
+              mutationFeedback={mutationFeedback}
               onClearSelection={clearCanvasSelection}
               onOpenCreateConcept={openCreateConceptAt}
               onOpenConceptInspector={openConceptInspector}
@@ -349,7 +374,6 @@ export function MapWorkspace({
               onZoomStateChange={handleZoomStateChange}
             />
           </div>
-          </MapStoreProvider>
 
           <div className="map-overlay-layer">
             <div className="map-overlay-bottom">

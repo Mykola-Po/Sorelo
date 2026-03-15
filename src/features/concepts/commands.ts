@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -14,7 +14,7 @@ import {
   requireWorkspaceMembership,
 } from "@/features/maps/access";
 import { db } from "@/shared/db/client";
-import { concepts } from "@/shared/db/schema";
+import { concepts, links } from "@/shared/db/schema";
 
 export async function createConceptCommand(input: {
   workspaceId: string;
@@ -38,6 +38,31 @@ export async function createConceptCommand(input: {
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction(async (tx) => {
+    const [conceptCountRows, linkCountRows] = await Promise.all([
+      tx
+        .select({ value: count() })
+        .from(concepts)
+        .where(
+          and(
+            eq(concepts.mapId, input.mapId),
+            eq(concepts.workspaceId, input.workspaceId),
+            isNull(concepts.archivedAt)
+          )
+        ),
+      tx
+        .select({ value: count() })
+        .from(links)
+        .where(
+          and(
+            eq(links.mapId, input.mapId),
+            eq(links.workspaceId, input.workspaceId)
+          )
+        ),
+    ]);
+    const conceptCountBefore = Number(conceptCountRows[0]?.value ?? 0);
+    const linkCountBefore = Number(linkCountRows[0]?.value ?? 0);
+    const isFirstConcept = conceptCountBefore === 0;
+
     const [concept] = await tx
       .insert(concepts)
       .values({
@@ -106,6 +131,23 @@ export async function createConceptCommand(input: {
         conceptType: concept.conceptType,
       },
     });
+
+    if (isFirstConcept) {
+      await recordActivity(tx, {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId,
+        entityType: "map",
+        entityId: input.mapId,
+        action: "core_loop.first_concept_created",
+        payload: {
+          conceptId: concept.id,
+          conceptType: concept.conceptType,
+          conceptCountBefore,
+          conceptCountAfter: conceptCountBefore + 1,
+          linkCountAtMoment: linkCountBefore,
+        },
+      });
+    }
 
     return concept;
   });

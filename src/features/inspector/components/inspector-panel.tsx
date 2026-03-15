@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
 import {
   archiveConceptAction,
   createConceptAction,
+  type ConceptActionState,
   updateConceptAction,
 } from "@/features/concepts/actions";
 import { useInspectorPayload } from "@/features/map-runtime/hooks/use-inspector-payload";
@@ -25,11 +26,13 @@ import type { ConceptCatalogEntry } from "@/features/map-runtime/types";
 import {
   createLinkAction,
   deleteLinkAction,
+  type LinkActionState,
   updateLinkAction,
 } from "@/features/links/actions";
 import type {
   InspectorConceptPayload,
   InspectorLinkPayload,
+  InspectorMutationFeedback,
   InspectorSelection,
 } from "@/features/inspector/types";
 import { archiveMapAction, renameMapAction } from "@/features/maps/actions";
@@ -52,8 +55,8 @@ const conceptTypeOptions = ["thought", "state", "belief", "experience", "fact", 
 const relationTypeOptions = ["causes", "strengthens", "weakens", "explains", "contradicts"] as const;
 const strengthOptions = [1, 2, 3, 4, 5] as const;
 
-const conceptFormState: ActionState<"title" | "conceptType" | "summary" | "description"> = { status: "idle" };
-const linkFormState: ActionState<"sourceConceptId" | "targetConceptId" | "relationType" | "strength" | "description"> = { status: "idle" };
+const conceptFormState: ConceptActionState = { status: "idle" };
+const linkFormState: LinkActionState = { status: "idle" };
 const mapFormState: ActionState<"title" | "subjectLabel" | "description"> = { status: "idle" };
 
 type InspectorPanelProps = {
@@ -70,6 +73,7 @@ type InspectorPanelProps = {
   interactionMode: CanvasInteractionMode;
   linkingSourceConceptTitle: string | null;
   onSelect: (selection: InspectorSelection) => void;
+  onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
   onOpenScenario: () => void;
@@ -90,6 +94,7 @@ export function InspectorPanel({
   interactionMode,
   linkingSourceConceptTitle,
   onSelect,
+  onMutationFeedback,
   onStartCreateConcept,
   onStartCreateLink,
   onOpenScenario,
@@ -120,6 +125,8 @@ export function InspectorPanel({
           conceptCount={conceptCount}
           initialX={selection.x}
           initialY={selection.y}
+          onSelect={onSelect}
+          onMutationFeedback={onMutationFeedback}
         />
       ) : null}
 
@@ -135,6 +142,8 @@ export function InspectorPanel({
           initialTargetConceptId={selection.targetConceptId}
           initialRelationType={selection.relationType}
           initialStrength={selection.strength}
+          onSelect={onSelect}
+          onMutationFeedback={onMutationFeedback}
         />
       ) : null}
 
@@ -151,11 +160,11 @@ export function InspectorPanel({
       {selection.kind !== "none" && selection.kind !== "create-concept" && selection.kind !== "create-link" && selection.kind !== "map-settings" && error ? <ErrorCard locale={locale} message={error} /> : null}
 
       {selection.kind === "concept" && payload?.kind === "concept" ? (
-        <ConceptInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} payload={payload} onSelect={onSelect} />
+        <ConceptInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} payload={payload} onSelect={onSelect} onMutationFeedback={onMutationFeedback} />
       ) : null}
 
       {selection.kind === "link" && payload?.kind === "link" ? (
-        <LinkInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} conceptCatalog={conceptCatalog} conceptCatalogLoading={conceptCatalogLoading} conceptCatalogError={conceptCatalogError} payload={payload} onSelect={onSelect} />
+        <LinkInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} conceptCatalog={conceptCatalog} conceptCatalogLoading={conceptCatalogLoading} conceptCatalogError={conceptCatalogError} payload={payload} onSelect={onSelect} onMutationFeedback={onMutationFeedback} />
       ) : null}
     </Flex>
   );
@@ -307,15 +316,47 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
   );
 }
 
-type CreateConceptCardProps = { locale: SupportedLocale; workspaceSlug: string; mapId: string; conceptCount: number; initialX: number | undefined; initialY: number | undefined; };
+type CreateConceptCardProps = {
+  locale: SupportedLocale;
+  workspaceSlug: string;
+  mapId: string;
+  conceptCount: number;
+  initialX: number | undefined;
+  initialY: number | undefined;
+  onSelect: (selection: InspectorSelection) => void;
+  onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
+};
 
-function CreateConceptCard({ locale, workspaceSlug, mapId, conceptCount, initialX, initialY }: CreateConceptCardProps) {
+function CreateConceptCard({
+  locale,
+  workspaceSlug,
+  mapId,
+  conceptCount,
+  initialX,
+  initialY,
+  onSelect,
+  onMutationFeedback,
+}: CreateConceptCardProps) {
   const messages = getMapWorkspaceMessages(locale);
   const [state, formAction, isPending] = useActionState(createConceptAction, conceptFormState);
   const [conceptType, setConceptType] = useState<(typeof conceptTypeOptions)[number]>("custom");
   const fallbackPosition = getDefaultConceptPosition(conceptCount);
   const x = initialX ?? fallbackPosition.x;
   const y = initialY ?? fallbackPosition.y;
+
+  useEffect(() => {
+    if (state.status !== "success" || !state.payload) {
+      return;
+    }
+
+    onSelect({ kind: "concept", id: state.payload.conceptId });
+    onMutationFeedback({
+      kind: "concept",
+      id: state.payload.conceptId,
+      eventId: state.payload.eventId,
+      message: messages.inspector.conceptCreatedFeedback,
+    });
+  }, [messages.inspector.conceptCreatedFeedback, onMutationFeedback, onSelect, state.payload, state.status]);
 
   return (
     <Card className="panel-card">
@@ -346,7 +387,7 @@ function CreateConceptCard({ locale, workspaceSlug, mapId, conceptCount, initial
           <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
             <TextArea name="description" placeholder={messages.inspector.createConceptDescriptionPlaceholder} rows={3} />
           </InlineFormField>
-          {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+          {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
           <Button type="submit" size="2" loading={isPending}>{messages.inspector.createConceptCta}</Button>
         </Flex>
       </form>
@@ -354,12 +395,39 @@ function CreateConceptCard({ locale, workspaceSlug, mapId, conceptCount, initial
   );
 }
 
-type ConceptInspectorCardProps = { locale: SupportedLocale; workspaceSlug: string; mapId: string; payload: InspectorConceptPayload; onSelect: (selection: InspectorSelection) => void; };
+type ConceptInspectorCardProps = {
+  locale: SupportedLocale;
+  workspaceSlug: string;
+  mapId: string;
+  payload: InspectorConceptPayload;
+  onSelect: (selection: InspectorSelection) => void;
+  onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
+};
 
-function ConceptInspectorCard({ locale, workspaceSlug, mapId, payload, onSelect }: ConceptInspectorCardProps) {
+function ConceptInspectorCard({
+  locale,
+  workspaceSlug,
+  mapId,
+  payload,
+  onSelect,
+  onMutationFeedback,
+}: ConceptInspectorCardProps) {
   const messages = getMapWorkspaceMessages(locale);
   const [state, formAction, isPending] = useActionState(updateConceptAction, conceptFormState);
   const [conceptType, setConceptType] = useState(payload.concept.conceptType);
+
+  useEffect(() => {
+    if (state.status !== "success" || !state.payload) {
+      return;
+    }
+
+    onMutationFeedback({
+      kind: "concept",
+      id: state.payload.conceptId,
+      eventId: state.payload.eventId,
+      message: messages.inspector.conceptUpdatedFeedback,
+    });
+  }, [messages.inspector.conceptUpdatedFeedback, onMutationFeedback, state.payload, state.status]);
 
   return (
     <Card className="panel-card">
@@ -408,7 +476,10 @@ function ConceptInspectorCard({ locale, workspaceSlug, mapId, payload, onSelect 
             <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
               <TextArea name="description" defaultValue={payload.concept.description ?? ""} rows={4} />
             </InlineFormField>
-            {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+            {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+            {state.status === "success" ? (
+              <Text color="green" size="2">{messages.inspector.conceptUpdatedFeedback}</Text>
+            ) : null}
             <Button type="submit" size="2" loading={isPending}>{messages.inspector.conceptSave}</Button>
           </Flex>
         </form>
@@ -431,15 +502,55 @@ function ConceptInspectorCard({ locale, workspaceSlug, mapId, payload, onSelect 
   );
 }
 
-type CreateLinkCardProps = { locale: SupportedLocale; workspaceSlug: string; mapId: string; conceptCatalog: ConceptCatalogEntry[]; conceptCatalogLoading: boolean; conceptCatalogError: string | null; initialSourceConceptId: string | undefined; initialTargetConceptId: string | undefined; initialRelationType: (typeof relationTypeOptions)[number] | undefined; initialStrength: number | undefined; };
+type CreateLinkCardProps = {
+  locale: SupportedLocale;
+  workspaceSlug: string;
+  mapId: string;
+  conceptCatalog: ConceptCatalogEntry[];
+  conceptCatalogLoading: boolean;
+  conceptCatalogError: string | null;
+  initialSourceConceptId: string | undefined;
+  initialTargetConceptId: string | undefined;
+  initialRelationType: (typeof relationTypeOptions)[number] | undefined;
+  initialStrength: number | undefined;
+  onSelect: (selection: InspectorSelection) => void;
+  onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
+};
 
-function CreateLinkCard({ locale, workspaceSlug, mapId, conceptCatalog, conceptCatalogLoading, conceptCatalogError, initialSourceConceptId, initialTargetConceptId, initialRelationType, initialStrength }: CreateLinkCardProps) {
+function CreateLinkCard({
+  locale,
+  workspaceSlug,
+  mapId,
+  conceptCatalog,
+  conceptCatalogLoading,
+  conceptCatalogError,
+  initialSourceConceptId,
+  initialTargetConceptId,
+  initialRelationType,
+  initialStrength,
+  onSelect,
+  onMutationFeedback,
+}: CreateLinkCardProps) {
   const messages = getMapWorkspaceMessages(locale);
   const [state, formAction, isPending] = useActionState(createLinkAction, linkFormState);
   const [sourceConceptId, setSourceConceptId] = useState(initialSourceConceptId ?? conceptCatalog[0]?.id ?? "");
   const [targetConceptId, setTargetConceptId] = useState(initialTargetConceptId ?? conceptCatalog.find((concept) => concept.id !== sourceConceptId)?.id ?? "");
   const [relationType, setRelationType] = useState<(typeof relationTypeOptions)[number]>(initialRelationType ?? "causes");
   const [strength, setStrength] = useState(String(initialStrength ?? 3));
+
+  useEffect(() => {
+    if (state.status !== "success" || !state.payload) {
+      return;
+    }
+
+    onSelect({ kind: "link", id: state.payload.linkId });
+    onMutationFeedback({
+      kind: "link",
+      id: state.payload.linkId,
+      eventId: state.payload.eventId,
+      message: messages.inspector.linkCreatedFeedback,
+    });
+  }, [messages.inspector.linkCreatedFeedback, onMutationFeedback, onSelect, state.payload, state.status]);
 
   if (conceptCatalogLoading) {
     return <LoadingCard locale={locale} />;
@@ -497,7 +608,7 @@ function CreateLinkCard({ locale, workspaceSlug, mapId, conceptCatalog, conceptC
           <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
             <TextArea name="description" placeholder={messages.inspector.linkDescriptionPlaceholder} rows={3} />
           </InlineFormField>
-          {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+          {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
           <Button type="submit" size="2" loading={isPending}>{messages.inspector.createLinkCta}</Button>
         </Flex>
       </form>
@@ -505,9 +616,29 @@ function CreateLinkCard({ locale, workspaceSlug, mapId, conceptCatalog, conceptC
   );
 }
 
-type LinkInspectorCardProps = { locale: SupportedLocale; workspaceSlug: string; mapId: string; conceptCatalog: ConceptCatalogEntry[]; conceptCatalogLoading: boolean; conceptCatalogError: string | null; payload: InspectorLinkPayload; onSelect: (selection: InspectorSelection) => void; };
+type LinkInspectorCardProps = {
+  locale: SupportedLocale;
+  workspaceSlug: string;
+  mapId: string;
+  conceptCatalog: ConceptCatalogEntry[];
+  conceptCatalogLoading: boolean;
+  conceptCatalogError: string | null;
+  payload: InspectorLinkPayload;
+  onSelect: (selection: InspectorSelection) => void;
+  onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
+};
 
-function LinkInspectorCard({ locale, workspaceSlug, mapId, conceptCatalog, conceptCatalogLoading, conceptCatalogError, payload, onSelect }: LinkInspectorCardProps) {
+function LinkInspectorCard({
+  locale,
+  workspaceSlug,
+  mapId,
+  conceptCatalog,
+  conceptCatalogLoading,
+  conceptCatalogError,
+  payload,
+  onSelect,
+  onMutationFeedback,
+}: LinkInspectorCardProps) {
   const messages = getMapWorkspaceMessages(locale);
   const [state, formAction, isPending] = useActionState(updateLinkAction, linkFormState);
   const [sourceConceptId, setSourceConceptId] = useState(payload.link.sourceConceptId);
@@ -515,6 +646,19 @@ function LinkInspectorCard({ locale, workspaceSlug, mapId, conceptCatalog, conce
   const [relationType, setRelationType] = useState(payload.link.relationType);
   const [strength, setStrength] = useState(String(payload.link.strength));
   const catalogById = useMemo(() => new Map(conceptCatalog.map((concept) => [concept.id, concept.title])), [conceptCatalog]);
+
+  useEffect(() => {
+    if (state.status !== "success" || !state.payload) {
+      return;
+    }
+
+    onMutationFeedback({
+      kind: "link",
+      id: state.payload.linkId,
+      eventId: state.payload.eventId,
+      message: messages.inspector.linkUpdatedFeedback,
+    });
+  }, [messages.inspector.linkUpdatedFeedback, onMutationFeedback, state.payload, state.status]);
 
   if (conceptCatalogLoading) {
     return <LoadingCard locale={locale} />;
@@ -604,7 +748,10 @@ function LinkInspectorCard({ locale, workspaceSlug, mapId, conceptCatalog, conce
             <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
               <TextArea name="description" defaultValue={payload.link.description ?? ""} rows={3} />
             </InlineFormField>
-            {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+            {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
+            {state.status === "success" ? (
+              <Text color="green" size="2">{messages.inspector.linkUpdatedFeedback}</Text>
+            ) : null}
             <Button type="submit" size="2" loading={isPending}>{messages.inspector.saveLink}</Button>
           </Flex>
         </form>

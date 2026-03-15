@@ -68,8 +68,22 @@ export function createMapStore(
 
     setSnapshot: (snapshot) => set({ snapshot }),
     
-    updateViewport: (partial) => 
-      set((state) => ({ viewport: { ...state.viewport, ...partial } })),
+    updateViewport: (partial) =>
+      set((state) => {
+        const nextViewport = { ...state.viewport, ...partial };
+        const isUnchanged =
+          nextViewport.x === state.viewport.x &&
+          nextViewport.y === state.viewport.y &&
+          nextViewport.width === state.viewport.width &&
+          nextViewport.height === state.viewport.height &&
+          nextViewport.overscan === state.viewport.overscan;
+
+        if (isUnchanged) {
+          return state;
+        }
+
+        return { viewport: nextViewport };
+      }),
       
     setPositions: (positions) => set({ positions }),
     

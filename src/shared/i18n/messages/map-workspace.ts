@@ -68,6 +68,8 @@ export type MapWorkspaceMessages = {
     createConceptSummaryPlaceholder: string;
     createConceptDescriptionPlaceholder: string;
     conceptSave: string;
+    conceptCreatedFeedback: string;
+    conceptUpdatedFeedback: string;
     conceptArchive: string;
     archiveConceptConfirmTitle: string;
     archiveConceptConfirmDescription: string;
@@ -83,6 +85,7 @@ export type MapWorkspaceMessages = {
     strengthLabel: string;
     linkDescriptionPlaceholder: string;
     createLinkCta: string;
+    linkCreatedFeedback: string;
     linkTitle: string;
     linkDelete: string;
     deleteLinkConfirmTitle: string;
@@ -90,6 +93,7 @@ export type MapWorkspaceMessages = {
     currentDirection: string;
     unknownConcept: string;
     saveLink: string;
+    linkUpdatedFeedback: string;
     saveMap: string;
     archiveMap: string;
     archiveMapConfirmTitle: string;
@@ -595,6 +599,8 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Why this Concept matters in the person's structure.",
       conceptSave: "Save Concept",
+      conceptCreatedFeedback: "Concept created. Highlighted on canvas.",
+      conceptUpdatedFeedback: "Concept saved. Highlighted on canvas.",
       conceptArchive: "Archive",
       archiveConceptConfirmTitle: "Archive this Concept?",
       archiveConceptConfirmDescription:
@@ -613,6 +619,7 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Strength",
       linkDescriptionPlaceholder: "Why does this influence exist?",
       createLinkCta: "Create Link",
+      linkCreatedFeedback: "Link created. Highlighted on canvas.",
       linkTitle: "Link",
       linkDelete: "Delete",
       deleteLinkConfirmTitle: "Delete this Link?",
@@ -621,6 +628,7 @@ export const mapWorkspaceMessages: Record<
       currentDirection: "Current direction",
       unknownConcept: "Unknown Concept",
       saveLink: "Save Link",
+      linkUpdatedFeedback: "Link saved. Highlighted on canvas.",
       saveMap: "Save map",
       archiveMap: "Archive map",
       archiveMapConfirmTitle: "Archive this map?",
@@ -794,6 +802,8 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Чому цей Концепт важливий у структурі цієї людини.",
       conceptSave: "Зберегти Концепт",
+      conceptCreatedFeedback: "Концепт створено. Підсвічено на canvas.",
+      conceptUpdatedFeedback: "Концепт збережено. Підсвічено на canvas.",
       conceptArchive: "Архівувати",
       archiveConceptConfirmTitle: "Архівувати цей Концепт?",
       archiveConceptConfirmDescription:
@@ -812,6 +822,7 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Сила",
       linkDescriptionPlaceholder: "Чому існує цей вплив?",
       createLinkCta: "Створити Зв’язок",
+      linkCreatedFeedback: "Зв’язок створено. Підсвічено на canvas.",
       linkTitle: "Зв’язок",
       linkDelete: "Видалити",
       deleteLinkConfirmTitle: "Видалити цей Зв’язок?",
@@ -820,6 +831,7 @@ export const mapWorkspaceMessages: Record<
       currentDirection: "Поточний напрям",
       unknownConcept: "Невідомий Концепт",
       saveLink: "Зберегти Зв’язок",
+      linkUpdatedFeedback: "Зв’язок збережено. Підсвічено на canvas.",
       saveMap: "Зберегти карту",
       archiveMap: "Архівувати карту",
       archiveMapConfirmTitle: "Архівувати цю карту?",
@@ -994,6 +1006,8 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Почему этот Концепт важен в структуре этого человека.",
       conceptSave: "Сохранить Концепт",
+      conceptCreatedFeedback: "Концепт создан. Подсвечен на canvas.",
+      conceptUpdatedFeedback: "Концепт сохранён. Подсвечен на canvas.",
       conceptArchive: "Архивировать",
       archiveConceptConfirmTitle: "Архивировать этот Концепт?",
       archiveConceptConfirmDescription:
@@ -1012,6 +1026,7 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Сила",
       linkDescriptionPlaceholder: "Почему существует это влияние?",
       createLinkCta: "Создать Связь",
+      linkCreatedFeedback: "Связь создана. Подсвечена на canvas.",
       linkTitle: "Связь",
       linkDelete: "Удалить",
       deleteLinkConfirmTitle: "Удалить эту Связь?",
@@ -1020,6 +1035,7 @@ export const mapWorkspaceMessages: Record<
       currentDirection: "Текущее направление",
       unknownConcept: "Неизвестный Концепт",
       saveLink: "Сохранить Связь",
+      linkUpdatedFeedback: "Связь сохранена. Подсвечена на canvas.",
       saveMap: "Сохранить карту",
       archiveMap: "Архивировать карту",
       archiveMapConfirmTitle: "Архивировать эту карту?",

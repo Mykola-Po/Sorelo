@@ -74,3 +74,10 @@ export type InspectorLinkPayload = {
 };
 
 export type InspectorPayload = InspectorConceptPayload | InspectorLinkPayload;
+
+export type InspectorMutationFeedback = {
+  kind: "concept" | "link";
+  id: string;
+  eventId: string;
+  message: string;
+};

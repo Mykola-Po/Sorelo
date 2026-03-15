@@ -10,10 +10,17 @@ import {
   useState,
 } from "react";
 import { Badge, Text } from "@radix-ui/themes";
-import type { InspectorSelection } from "@/features/inspector/types";
+import type {
+  InspectorMutationFeedback,
+  InspectorSelection,
+} from "@/features/inspector/types";
 import type { CanvasInteractionMode } from "@/features/maps/workspace-state";
 import type { GraphMetrics, MapDetail } from "@/features/maps/types";
-import type { GraphConceptNode, GraphSnapshot } from "@/features/map-runtime/types";
+import type {
+  GraphConceptNode,
+  GraphSnapshot,
+  GraphViewport,
+} from "@/features/map-runtime/types";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
@@ -28,9 +35,26 @@ import {
   deriveZoomBounds,
   type CanvasZoomState,
 } from "../renderers/zoom-policy";
+import {
+  deriveGraphViewportFromSigma,
+  type GraphViewportBounds,
+} from "../renderers/viewport-sync";
 import type { Sigma } from "sigma";
 
 const POSITION_FLUSH_DEBOUNCE_MS = 750;
+const MUTATION_FEEDBACK_DURATION_MS = 2400;
+const VIEWPORT_SYNC_INTERVAL_MS = 240;
+const VIEWPORT_FETCH_IDLE_MS = 180;
+
+const EMPTY_GRAPH_SNAPSHOT: GraphSnapshot = {
+  revision: 0,
+  counts: {
+    conceptCount: 0,
+    linkCount: 0,
+  },
+  concepts: [],
+  links: [],
+};
 
 type ViewportNodePosition = {
   x: number;
@@ -51,6 +75,7 @@ type GraphCanvasRuntimeProps = {
   selection: InspectorSelection;
   interactionMode: CanvasInteractionMode;
   connectLinkSourceId: string | null;
+  mutationFeedback: InspectorMutationFeedback | null;
   onClearSelection: () => void;
   onOpenCreateConcept: (x: number, y: number) => void;
   onOpenConceptInspector: (conceptId: string) => void;
@@ -67,6 +92,7 @@ export function GraphCanvasRuntime({
   selection,
   interactionMode,
   connectLinkSourceId,
+  mutationFeedback,
   onClearSelection,
   onOpenCreateConcept,
   onOpenConceptInspector,
@@ -96,7 +122,25 @@ export function GraphCanvasRuntime({
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
   const viewport = useMapStore((s) => s.viewport);
+  const updateViewport = useMapStore((s) => s.updateViewport);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
+  const snapshotRef = useRef(snapshot);
+  const viewportRef = useRef(viewport);
+  const pendingViewportSyncRef = useRef<GraphViewportBounds | null>(null);
+  const viewportSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewportFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotRequestControllerRef = useRef<AbortController | null>(null);
+  const snapshotRequestIdRef = useRef(0);
+  const lastViewportSyncAtRef = useRef(0);
+  const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoreEdgeStyleRef = useRef<(() => void) | null>(null);
+  const appliedFeedbackEventIdRef = useRef<string | null>(null);
+  const [activeMutationFeedback, setActiveMutationFeedback] =
+    useState<InspectorMutationFeedback | null>(null);
+  const [feedbackConceptId, setFeedbackConceptId] = useState<string | null>(null);
+  const [mutationStatusMessage, setMutationStatusMessage] = useState<string | null>(null);
 
   // Store refs for stable Sigma closures
   const interactionModeRef = useRef(interactionMode);
@@ -145,8 +189,16 @@ export function GraphCanvasRuntime({
   }, [hoveredConceptId]);
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
     isZoomedOutRef.current = isZoomedOut;
   }, [isZoomedOut]);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
 
   useEffect(() => {
     if (!isZoomedOut) {
@@ -155,62 +207,123 @@ export function GraphCanvasRuntime({
     }
   }, [isZoomedOut]);
 
+  useEffect(() => {
+    return () => {
+      if (viewportSyncTimerRef.current !== null) {
+        clearTimeout(viewportSyncTimerRef.current);
+      }
+      if (viewportFetchTimerRef.current !== null) {
+        clearTimeout(viewportFetchTimerRef.current);
+      }
+      snapshotRequestControllerRef.current?.abort();
+      if (feedbackMessageTimerRef.current !== null) {
+        clearTimeout(feedbackMessageTimerRef.current);
+      }
+      if (feedbackConceptTimerRef.current !== null) {
+        clearTimeout(feedbackConceptTimerRef.current);
+      }
+      if (feedbackEdgeTimerRef.current !== null) {
+        clearTimeout(feedbackEdgeTimerRef.current);
+      }
+      restoreEdgeStyleRef.current?.();
+      viewportSyncTimerRef.current = null;
+      feedbackMessageTimerRef.current = null;
+      feedbackConceptTimerRef.current = null;
+      feedbackEdgeTimerRef.current = null;
+      restoreEdgeStyleRef.current = null;
+      pendingViewportSyncRef.current = null;
+      viewportFetchTimerRef.current = null;
+      snapshotRequestControllerRef.current = null;
+    };
+  }, []);
+
   // Local fetch states
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [isSavingPosition, setIsSavingPosition] = useState(false);
 
-  // --- Network Fetching ---
-  useEffect(() => {
-    const controller = new AbortController();
+  const fetchSnapshotForViewport = useCallback(
+    async (targetViewport: GraphViewport) => {
+      const requestId = snapshotRequestIdRef.current + 1;
+      snapshotRequestIdRef.current = requestId;
 
-    async function loadSnapshot() {
+      snapshotRequestControllerRef.current?.abort();
+      const controller = new AbortController();
+      snapshotRequestControllerRef.current = controller;
+
       setIsSnapshotLoading(true);
       setSnapshotError(null);
 
       try {
         const searchParams = new URLSearchParams({
-          x: String(viewport.x),
-          y: String(viewport.y),
-          width: String(viewport.width),
-          height: String(viewport.height),
-          overscan: String(viewport.overscan),
+          x: String(targetViewport.x),
+          y: String(targetViewport.y),
+          width: String(targetViewport.width),
+          height: String(targetViewport.height),
+          overscan: String(targetViewport.overscan),
         });
 
-        const response = await fetch(`/api/maps/${map.id}/graph?${searchParams.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          `/api/maps/${map.id}/graph?${searchParams.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
 
         if (!response.ok) {
           throw new Error("Unable to load graph snapshot.");
         }
 
         const nextSnapshot = (await response.json()) as GraphSnapshot;
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || requestId !== snapshotRequestIdRef.current) {
           return;
         }
 
         setSnapshot(nextSnapshot);
       } catch (fetchError) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || requestId !== snapshotRequestIdRef.current) {
+          return;
+        }
+
         setSnapshotError(
           fetchError instanceof Error ? fetchError.message : "Unable to load graph snapshot."
         );
       } finally {
-        if (!controller.signal.aborted) {
+        if (requestId === snapshotRequestIdRef.current) {
           setIsSnapshotLoading(false);
         }
       }
-    }
+    },
+    [map.id, setSnapshot]
+  );
 
-    void loadSnapshot();
+  const scheduleViewportSnapshotFetch = useCallback(
+    (targetViewport: GraphViewport, options?: { immediate?: boolean }) => {
+      if (viewportFetchTimerRef.current !== null) {
+        clearTimeout(viewportFetchTimerRef.current);
+        viewportFetchTimerRef.current = null;
+      }
 
-    return () => {
-      controller.abort();
-    };
-  }, [map.id, setSnapshot, viewport]);
+      if (options?.immediate) {
+        void fetchSnapshotForViewport(targetViewport);
+        return;
+      }
+
+      viewportFetchTimerRef.current = setTimeout(() => {
+        viewportFetchTimerRef.current = null;
+        void fetchSnapshotForViewport(targetViewport);
+      }, VIEWPORT_FETCH_IDLE_MS);
+    },
+    [fetchSnapshotForViewport]
+  );
+
+  // --- Network Fetching ---
+  useEffect(() => {
+    const shouldLoadImmediately = snapshotRef.current === null;
+    scheduleViewportSnapshotFetch(viewport, { immediate: shouldLoadImmediately });
+  }, [scheduleViewportSnapshotFetch, viewport]);
 
   // --- Map Coordinates Save Logic ---
   const sendPositionsBatch = useCallback(
@@ -274,10 +387,88 @@ export function GraphCanvasRuntime({
     [onZoomStateChange]
   );
 
+  const syncViewportWithCamera = useCallback(
+    (options?: { immediate?: boolean }) => {
+      const sigma = sigmaRef.current;
+      const container = containerRef.current;
+      if (!sigma || !container) {
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const projectedViewport = deriveGraphViewportFromSigma(sigma, {
+        width: containerRect.width,
+        height: containerRect.height,
+      });
+
+      if (!projectedViewport) {
+        return;
+      }
+
+      const commitViewport = (nextViewport: GraphViewportBounds) => {
+        const currentViewport = viewportRef.current;
+        const isUnchanged =
+          currentViewport.x === nextViewport.x &&
+          currentViewport.y === nextViewport.y &&
+          currentViewport.width === nextViewport.width &&
+          currentViewport.height === nextViewport.height;
+
+        if (isUnchanged) {
+          return;
+        }
+
+        viewportRef.current = { ...currentViewport, ...nextViewport };
+        updateViewport(nextViewport);
+      };
+
+      if (options?.immediate) {
+        pendingViewportSyncRef.current = null;
+        if (viewportSyncTimerRef.current !== null) {
+          clearTimeout(viewportSyncTimerRef.current);
+          viewportSyncTimerRef.current = null;
+        }
+
+        lastViewportSyncAtRef.current = Date.now();
+        commitViewport(projectedViewport);
+        return;
+      }
+
+      pendingViewportSyncRef.current = projectedViewport;
+      const now = Date.now();
+      const elapsed = now - lastViewportSyncAtRef.current;
+
+      if (elapsed >= VIEWPORT_SYNC_INTERVAL_MS) {
+        pendingViewportSyncRef.current = null;
+        lastViewportSyncAtRef.current = now;
+        commitViewport(projectedViewport);
+        return;
+      }
+
+      if (viewportSyncTimerRef.current !== null) {
+        return;
+      }
+
+      viewportSyncTimerRef.current = setTimeout(() => {
+        viewportSyncTimerRef.current = null;
+        const pendingViewport = pendingViewportSyncRef.current;
+        pendingViewportSyncRef.current = null;
+
+        if (!pendingViewport) {
+          return;
+        }
+
+        lastViewportSyncAtRef.current = Date.now();
+        commitViewport(pendingViewport);
+      }, VIEWPORT_SYNC_INTERVAL_MS - elapsed);
+    },
+    [updateViewport]
+  );
+
   const syncConceptPresentation = useCallback(() => {
     const sigma = sigmaRef.current;
     const layer = cardsLayerRef.current;
-    if (!sigma || !snapshot || !layer) {
+    const activeSnapshot = snapshotRef.current;
+    if (!sigma || !activeSnapshot || !layer) {
       return;
     }
 
@@ -286,7 +477,7 @@ export function GraphCanvasRuntime({
     const zoomedOut = isZoomedOutRef.current;
     const nextViewportMap = new Map<string, ViewportNodePosition>();
 
-    for (const concept of snapshot.concepts) {
+    for (const concept of activeSnapshot.concepts) {
       const cardElement = cardRefs.current.get(concept.id);
       const dotElement = dotRefs.current.get(concept.id);
 
@@ -382,7 +573,7 @@ export function GraphCanvasRuntime({
     hoverCardElement.style.opacity = "1";
     hoverCardElement.style.pointerEvents = "none";
     hoverCardElement.style.setProperty("--sl-concept-card-accent", accentColor);
-  }, [snapshot]);
+  }, []);
 
   const handleConceptActivation = useCallback(
     (conceptId: string) => {
@@ -435,6 +626,146 @@ export function GraphCanvasRuntime({
       messages.canvas.conceptSummaryFallback,
     [messages.canvas.conceptSummaryFallback]
   );
+
+  const applyMutationFeedback = useCallback(
+    (feedback: InspectorMutationFeedback) => {
+      const sigma = sigmaRef.current;
+      if (!sigma) {
+        return false;
+      }
+
+      const graph = sigma.getGraph();
+      const camera = sigma.getCamera();
+
+      if (feedback.kind === "concept") {
+        if (!graph.hasNode(feedback.id)) {
+          return false;
+        }
+
+        const focusX = Number(graph.getNodeAttribute(feedback.id, "x"));
+        const focusY = Number(graph.getNodeAttribute(feedback.id, "y"));
+        if (Number.isFinite(focusX) && Number.isFinite(focusY)) {
+          camera.animate({ x: focusX, y: focusY }, { duration: 220 });
+        }
+
+        setFeedbackConceptId(feedback.id);
+        if (feedbackConceptTimerRef.current !== null) {
+          clearTimeout(feedbackConceptTimerRef.current);
+        }
+        feedbackConceptTimerRef.current = setTimeout(() => {
+          setFeedbackConceptId((current) =>
+            current === feedback.id ? null : current
+          );
+          feedbackConceptTimerRef.current = null;
+        }, MUTATION_FEEDBACK_DURATION_MS);
+
+        return true;
+      }
+
+      if (!graph.hasEdge(feedback.id)) {
+        return false;
+      }
+
+      const linkSnapshot = snapshotRef.current?.links.find((link) => link.id === feedback.id);
+      if (linkSnapshot) {
+        const sourceExists = graph.hasNode(linkSnapshot.sourceConceptId);
+        const targetExists = graph.hasNode(linkSnapshot.targetConceptId);
+
+        if (sourceExists && targetExists) {
+          const sourceX = Number(graph.getNodeAttribute(linkSnapshot.sourceConceptId, "x"));
+          const sourceY = Number(graph.getNodeAttribute(linkSnapshot.sourceConceptId, "y"));
+          const targetX = Number(graph.getNodeAttribute(linkSnapshot.targetConceptId, "x"));
+          const targetY = Number(graph.getNodeAttribute(linkSnapshot.targetConceptId, "y"));
+
+          if (
+            Number.isFinite(sourceX) &&
+            Number.isFinite(sourceY) &&
+            Number.isFinite(targetX) &&
+            Number.isFinite(targetY)
+          ) {
+            camera.animate(
+              {
+                x: (sourceX + targetX) / 2,
+                y: (sourceY + targetY) / 2,
+              },
+              { duration: 220 }
+            );
+          }
+        }
+      }
+
+      restoreEdgeStyleRef.current?.();
+      if (feedbackEdgeTimerRef.current !== null) {
+        clearTimeout(feedbackEdgeTimerRef.current);
+      }
+
+      const baseSize = Number(graph.getEdgeAttribute(feedback.id, "size")) || 2;
+      const baseColor =
+        (graph.getEdgeAttribute(feedback.id, "color") as string | undefined) ??
+        "#868e96";
+
+      graph.setEdgeAttribute(feedback.id, "size", Math.max(baseSize * 1.9, 3.75));
+      graph.setEdgeAttribute(feedback.id, "color", "#111827");
+      sigma.refresh();
+
+      restoreEdgeStyleRef.current = () => {
+        if (!graph.hasEdge(feedback.id)) {
+          return;
+        }
+
+        graph.setEdgeAttribute(feedback.id, "size", baseSize);
+        graph.setEdgeAttribute(feedback.id, "color", baseColor);
+        sigma.refresh();
+      };
+
+      feedbackEdgeTimerRef.current = setTimeout(() => {
+        restoreEdgeStyleRef.current?.();
+        restoreEdgeStyleRef.current = null;
+        feedbackEdgeTimerRef.current = null;
+      }, MUTATION_FEEDBACK_DURATION_MS);
+
+      return true;
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!mutationFeedback) {
+      return;
+    }
+
+    setActiveMutationFeedback(mutationFeedback);
+    setMutationStatusMessage(mutationFeedback.message);
+
+    if (feedbackMessageTimerRef.current !== null) {
+      clearTimeout(feedbackMessageTimerRef.current);
+    }
+
+    feedbackMessageTimerRef.current = setTimeout(() => {
+      setMutationStatusMessage(null);
+      feedbackMessageTimerRef.current = null;
+    }, MUTATION_FEEDBACK_DURATION_MS);
+
+    void fetchSnapshotForViewport(viewportRef.current);
+  }, [fetchSnapshotForViewport, mutationFeedback]);
+
+  useEffect(() => {
+    if (!activeMutationFeedback) {
+      return;
+    }
+
+    if (appliedFeedbackEventIdRef.current === activeMutationFeedback.eventId) {
+      return;
+    }
+
+    const applied = applyMutationFeedback(activeMutationFeedback);
+    if (!applied) {
+      return;
+    }
+
+    appliedFeedbackEventIdRef.current = activeMutationFeedback.eventId;
+    setActiveMutationFeedback(null);
+  }, [activeMutationFeedback, applyMutationFeedback]);
 
   const handleConceptCardClick = useCallback(
     (conceptId: string) => {
@@ -598,9 +929,9 @@ export function GraphCanvasRuntime({
 
   // --- Sigma Foundation Initializer ---
   useEffect(() => {
-    if (!containerRef.current || !snapshot) return;
+    if (!containerRef.current) return;
 
-    const graph = buildGraphologyInstance(snapshot);
+    const graph = buildGraphologyInstance(EMPTY_GRAPH_SNAPSHOT);
 
     const sigma = createSigmaInstance({
       container: containerRef.current,
@@ -682,27 +1013,74 @@ export function GraphCanvasRuntime({
     });
 
     const handleCameraUpdated = () => {
+      syncViewportWithCamera();
       const ratio = sigma.getCamera().getState().ratio;
       updateZoomMode(ratio);
       syncConceptPresentation();
     };
 
+    const observedContainer = containerRef.current;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" && observedContainer
+        ? new ResizeObserver(() => {
+            syncViewportWithCamera({ immediate: true });
+            syncConceptPresentation();
+          })
+        : null;
+
+    if (resizeObserver && observedContainer) {
+      resizeObserver.observe(observedContainer);
+    }
+
     sigma.on("afterRender", syncConceptPresentation);
     sigma.getCamera().on("updated", handleCameraUpdated);
+    syncViewportWithCamera({ immediate: true });
     handleCameraUpdated();
 
     return () => {
       zoomPolicyRef.current = null;
+      resizeObserver?.disconnect();
+      if (typeof window !== "undefined" && window.__SIGMA__ === sigma) {
+        delete window.__SIGMA__;
+      }
       sigma.kill();
+      sigmaRef.current = null;
     };
   }, [
-    snapshot,
     handleConceptActivation,
     saveNodePosition,
     syncConceptPresentation,
+    syncViewportWithCamera,
     updateConceptPosition,
     updateZoomMode,
   ]);
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+
+    const sigma = sigmaRef.current;
+    if (!sigma) {
+      return;
+    }
+
+    const camera = sigma.getCamera();
+    const previousCameraState = camera.getState();
+    const nextGraph = buildGraphologyInstance(snapshot);
+    sigma.setGraph(nextGraph);
+
+    const boundedRatio = camera.getBoundedRatio(previousCameraState.ratio);
+    camera.setState({
+      x: previousCameraState.x,
+      y: previousCameraState.y,
+      angle: previousCameraState.angle,
+      ratio: boundedRatio,
+    });
+
+    updateZoomMode(boundedRatio);
+    syncConceptPresentation();
+  }, [snapshot, syncConceptPresentation, updateZoomMode]);
 
   useEffect(() => {
     if (!snapshot || !cardsLayerRef.current) {
@@ -734,7 +1112,9 @@ export function GraphCanvasRuntime({
   ]);
 
   const runtimeStatusMessage =
-    isSnapshotLoading && !snapshot
+    mutationStatusMessage
+      ? mutationStatusMessage
+      : isSnapshotLoading && !snapshot
       ? messages.canvas.loadingSnapshot
       : isSavingPosition
         ? messages.canvas.updatingPosition
@@ -764,8 +1144,14 @@ export function GraphCanvasRuntime({
       ) : null}
 
       {runtimeStatusMessage && (
-        <div className="canvas-runtime-status">
-          <Text size="1" color="gray">
+        <div
+          className={
+            mutationStatusMessage
+              ? "canvas-runtime-status is-success"
+              : "canvas-runtime-status"
+          }
+        >
+          <Text size="1" color={mutationStatusMessage ? "green" : "gray"}>
             {runtimeStatusMessage}
           </Text>
         </div>
@@ -788,11 +1174,13 @@ export function GraphCanvasRuntime({
           const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
           const isConnectionSource =
             interactionMode === "connectLink" && connectLinkSourceId === concept.id;
+          const isMutationFeedbackTarget = feedbackConceptId === concept.id;
 
           const cardClassName = [
             "sl-concept-card",
             isSelectedConcept ? "is-selected" : "",
             isConnectionSource ? "is-connection-source" : "",
+            isMutationFeedbackTarget ? "is-feedback-highlight" : "",
           ]
             .filter(Boolean)
             .join(" ");
@@ -835,10 +1223,12 @@ export function GraphCanvasRuntime({
           const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
           const isConnectionSource =
             interactionMode === "connectLink" && connectLinkSourceId === concept.id;
+          const isMutationFeedbackTarget = feedbackConceptId === concept.id;
           const dotClassName = [
             "sl-concept-dot",
             isSelectedConcept ? "is-selected" : "",
             isConnectionSource ? "is-connection-source" : "",
+            isMutationFeedbackTarget ? "is-feedback-highlight" : "",
           ]
             .filter(Boolean)
             .join(" ");

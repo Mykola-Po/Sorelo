@@ -25,6 +25,24 @@ describe("MapStore (Zustand)", () => {
     expect(viewport.width).toBe(INITIAL_VIEWPORT.width);
   });
 
+  it("should avoid viewport writes when values are unchanged", () => {
+    const store = createMapStore({ mapId: "map-1" });
+    const beforeState = store.getState();
+    const beforeViewport = beforeState.viewport;
+
+    store.getState().updateViewport({
+      x: beforeViewport.x,
+      y: beforeViewport.y,
+      width: beforeViewport.width,
+      height: beforeViewport.height,
+      overscan: beforeViewport.overscan,
+    });
+
+    const afterState = store.getState();
+    expect(afterState).toBe(beforeState);
+    expect(afterState.viewport).toBe(beforeViewport);
+  });
+
   it("should manage node positions", () => {
     const store = createMapStore({ mapId: "map-1" });
     
