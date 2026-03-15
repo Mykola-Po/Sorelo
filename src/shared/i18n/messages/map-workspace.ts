@@ -167,6 +167,16 @@ export type MapWorkspaceMessages = {
     targetEntity: (value: string) => string;
     sourceType: (value: string) => string;
     resolutionType: (value: string) => string;
+    reviewChangesHeading: string;
+    reviewNoChanges: string;
+    reviewEvidenceHeading: string;
+    evidenceRationaleLabel: string;
+    evidenceSourceLabel: string;
+    reviewNoEvidence: string;
+    reasonPlaceholder: string;
+    acceptCta: string;
+    editCta: string;
+    rejectCta: string;
   };
   labels: {
     conceptTypes: Record<ConceptType, string>;
@@ -335,6 +345,16 @@ function buildLearningMessages(
       resolutionLabel: "Тип рішення",
       reasonLabel: "Причина",
       resolveCta: "Зафіксувати рішення",
+      reviewChangesHeading: "Що зміниться",
+      reviewNoChanges: "Запропоновані зміни не деталізовані.",
+      reviewEvidenceHeading: "Підсумок підтверджень",
+      evidenceRationaleLabel: "Чому запропоновано",
+      evidenceSourceLabel: "Підтвердження з джерела",
+      reviewNoEvidence: "Додаткових підтверджень не надано.",
+      reasonPlaceholder: "За потреби додайте короткий коментар до рішення.",
+      acceptCta: "Прийняти",
+      editCta: "Редагувати",
+      rejectCta: "Відхилити",
       openCount: (count) => `Відкриті: ${count}`,
       resolvedCount: (count) => `Вирішені: ${count}`,
       confidence: (value) => `Впевненість: ${Math.round(value * 100)}%`,
@@ -379,6 +399,16 @@ function buildLearningMessages(
       resolutionLabel: "Тип решения",
       reasonLabel: "Причина",
       resolveCta: "Зафиксировать решение",
+      reviewChangesHeading: "Что изменится",
+      reviewNoChanges: "Предложенные изменения не детализированы.",
+      reviewEvidenceHeading: "Сводка подтверждений",
+      evidenceRationaleLabel: "Почему это предложено",
+      evidenceSourceLabel: "Подтверждение из источника",
+      reviewNoEvidence: "Дополнительные подтверждения не приложены.",
+      reasonPlaceholder: "При необходимости добавьте короткий комментарий к решению.",
+      acceptCta: "Принять",
+      editCta: "Редактировать",
+      rejectCta: "Отклонить",
       openCount: (count) => `Открытые: ${count}`,
       resolvedCount: (count) => `Решенные: ${count}`,
       confidence: (value) => `Уверенность: ${Math.round(value * 100)}%`,
@@ -421,6 +451,16 @@ function buildLearningMessages(
     resolutionLabel: "Resolution type",
     reasonLabel: "Reason",
     resolveCta: "Resolve Suggestion",
+    reviewChangesHeading: "What will change",
+    reviewNoChanges: "The proposed change payload has no detailed fields.",
+    reviewEvidenceHeading: "Evidence summary",
+    evidenceRationaleLabel: "Why this was suggested",
+    evidenceSourceLabel: "Source evidence",
+    reviewNoEvidence: "No additional evidence was attached.",
+    reasonPlaceholder: "Add a short note for this decision (optional).",
+    acceptCta: "Accept",
+    editCta: "Edit",
+    rejectCta: "Reject",
     openCount: (count) => `Open: ${count}`,
     resolvedCount: (count) => `Resolved: ${count}`,
     confidence: (value) => `Confidence: ${Math.round(value * 100)}%`,
