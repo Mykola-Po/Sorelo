@@ -95,7 +95,12 @@ export function MapWorkspace({
       dotExitRatio,
     };
   });
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(
+    () =>
+      graphMetrics.conceptCount === 0 &&
+      graphMetrics.linkCount === 0 &&
+      runs.length === 0
+  );
   const {
     catalog: conceptCatalog,
     isLoading: isConceptCatalogLoading,
@@ -139,6 +144,21 @@ export function MapWorkspace({
     });
   }, []);
 
+  const isInteractionGuidanceActive =
+    panelTab === "inspector" && interactionMode !== "inspect";
+  const dialogOpen = panelOpen || isInteractionGuidanceActive;
+
+  const handlePanelOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen && isInteractionGuidanceActive) {
+        return;
+      }
+
+      setPanelOpen(nextOpen);
+    },
+    [isInteractionGuidanceActive]
+  );
+
   const openInspectorPanel = () => {
     setPanelTab("inspector");
     setPanelOpen(true);
@@ -171,7 +191,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
     setPanelTab("inspector");
-    setPanelOpen(false);
+    setPanelOpen(true);
   };
 
   const beginConnectLink = () => {
@@ -188,7 +208,7 @@ export function MapWorkspace({
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
     setPanelTab("inspector");
-    setPanelOpen(false);
+    setPanelOpen(true);
   };
 
   const openConceptInspector = (conceptId: string) => {
@@ -302,7 +322,7 @@ export function MapWorkspace({
         : learningMessages.mobileDescription;
 
   return (
-    <Dialog.Root open={panelOpen} onOpenChange={setPanelOpen}>
+    <Dialog.Root open={dialogOpen} onOpenChange={handlePanelOpenChange}>
       <div className="map-screen">
         <div className="page-stack map-screen-stack">
           <MapStoreProvider mapId={map.id}>
