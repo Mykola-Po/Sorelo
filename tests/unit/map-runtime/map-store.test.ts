@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { createMapStore, INITIAL_VIEWPORT } from "@/features/map-runtime/store/map-store";
+import {
+  createMapStore,
+  IDLE_DRAG_STATE,
+  INITIAL_VIEWPORT,
+} from "@/features/map-runtime/store/map-store";
 
 describe("MapStore (Zustand)", () => {
   it("should initialize with default states and custom mapId", () => {
@@ -10,7 +14,7 @@ describe("MapStore (Zustand)", () => {
     expect(state.viewport).toEqual(INITIAL_VIEWPORT);
     expect(state.interactionMode).toBe("inspect");
     expect(state.selection).toEqual({ kind: "none" });
-    expect(state.dragState).toBeNull();
+    expect(state.dragState).toEqual(IDLE_DRAG_STATE);
   });
 
   it("should update viewport correctly", () => {
@@ -76,17 +80,25 @@ describe("MapStore (Zustand)", () => {
     const store = createMapStore({ mapId: "map-1" });
     
     const dragPayload = {
-      id: "concept-3",
-      pointerX: 100,
-      pointerY: 100,
-      startX: 0,
-      startY: 0
+      phase: "dragging" as const,
+      conceptId: "concept-3",
+      pointerType: "mouse" as const,
+      startGraphPosition: { x: 0, y: 0 },
+      currentGraphPosition: { x: 24, y: 18 },
+      pointerViewportPosition: { x: 100, y: 100 },
+      snap: {
+        x: null,
+        y: null,
+      },
+      pendingLongPress: false,
+      retryCount: 0,
+      errorMessage: null,
     };
 
     store.getState().setDragState(dragPayload);
     expect(store.getState().dragState).toEqual(dragPayload);
 
-    store.getState().setDragState(null);
-    expect(store.getState().dragState).toBeNull();
+    store.getState().resetDragState();
+    expect(store.getState().dragState).toEqual(IDLE_DRAG_STATE);
   });
 });

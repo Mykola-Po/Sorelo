@@ -36,6 +36,8 @@ export type MapWorkspaceMessages = {
     loadingSnapshot: string;
     conceptSummaryFallback: string;
     updatingPosition: string;
+    positionSaveFailed: string;
+    zoomInToMoveConcepts: string;
   };
   guided: Record<
     GuidedOnboardingStep,
@@ -565,13 +567,15 @@ export const mapWorkspaceMessages: Record<
         `Select the target Concept for \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "The second click opens the Link form with source and target already filled in.",
-      emptyOverlay:
-        "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
-      loadingSnapshot: "Loading graph snapshot...",
-      conceptSummaryFallback:
-        "Open Inspector to define the meaning of this Concept.",
-      updatingPosition: "Updating canvas position...",
-    },
+        emptyOverlay:
+          "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
+        loadingSnapshot: "Loading graph snapshot...",
+        conceptSummaryFallback:
+          "Open Inspector to define the meaning of this Concept.",
+        updatingPosition: "Updating canvas position...",
+        positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
+        zoomInToMoveConcepts: "Zoom in to move Concepts.",
+      },
     guided: buildGuidedMessages("en"),
     inspector: {
       placeConceptTitle: "Click on the canvas to place the Concept",
@@ -768,13 +772,15 @@ export const mapWorkspaceMessages: Record<
         `Оберіть цільовий Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Другий клік відкриє форму Зв’язку з уже заповненими source і target.",
-      emptyOverlay:
-        "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
-      loadingSnapshot: "Завантажуємо snapshot графа...",
-      conceptSummaryFallback:
-        "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
-      updatingPosition: "Оновлюємо позицію на canvas...",
-    },
+        emptyOverlay:
+          "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
+        loadingSnapshot: "Завантажуємо snapshot графа...",
+        conceptSummaryFallback:
+          "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
+        updatingPosition: "Оновлюємо позицію на canvas...",
+        positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
+        zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
+      },
     guided: buildGuidedMessages("uk"),
     inspector: {
       placeConceptTitle: "Клікніть на canvas, щоб поставити Концепт",
@@ -971,13 +977,15 @@ export const mapWorkspaceMessages: Record<
         `Выберите целевой Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Второй клик откроет форму Связи с уже заполненными source и target.",
-      emptyOverlay:
-        "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
-      loadingSnapshot: "Загружаем snapshot графа...",
-      conceptSummaryFallback:
-        "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
-      updatingPosition: "Обновляем позицию на canvas...",
-    },
+        emptyOverlay:
+          "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
+        loadingSnapshot: "Загружаем snapshot графа...",
+        conceptSummaryFallback:
+          "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
+        updatingPosition: "Обновляем позицию на canvas...",
+        positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
+        zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
+      },
     guided: buildGuidedMessages("ru"),
     inspector: {
       placeConceptTitle: "Кликните по canvas, чтобы поставить Концепт",

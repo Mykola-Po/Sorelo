@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useDrag } from "@use-gesture/react";
 import { Badge, Text } from "@radix-ui/themes";
 import type {
   InspectorMutationFeedback,
@@ -39,12 +40,28 @@ import {
   deriveGraphViewportFromSigma,
   type GraphViewportBounds,
 } from "../renderers/viewport-sync";
+import {
+  EDGE_AUTO_PAN_HOT_ZONE_PX,
+  INITIAL_POSITION_PERSISTENCE_STATE,
+  POSITION_SAVE_RETRY_DELAY_MS,
+  TOUCH_LONG_PRESS_MS,
+  deriveEdgeAutoPanIntent,
+  deriveStableSigmaBBox,
+  getPointerTravelDistance,
+  reducePositionPersistenceState,
+  resolveConceptSoftSnap,
+  shouldCancelTouchLongPress,
+  shouldStartPointerDrag,
+  type DragPointerType,
+  type StableSigmaBBox,
+  type DragViewportPoint,
+} from "../renderers/concept-drag";
 import type { Sigma } from "sigma";
-
-const POSITION_FLUSH_DEBOUNCE_MS = 750;
+import { IDLE_DRAG_STATE } from "../store/map-store";
 const MUTATION_FEEDBACK_DURATION_MS = 2400;
 const VIEWPORT_SYNC_INTERVAL_MS = 240;
 const VIEWPORT_FETCH_IDLE_MS = 180;
+const EDGE_AUTO_PAN_START_DELAY_MS = 220;
 
 const EMPTY_GRAPH_SNAPSHOT: GraphSnapshot = {
   revision: 0,
@@ -61,6 +78,66 @@ type ViewportNodePosition = {
   y: number;
   isOutside: boolean;
 };
+
+type ConceptPositionPatchResponse = {
+  ok?: boolean;
+  revision?: number;
+  concepts?: Array<{
+    id: string;
+    x: number;
+    y: number;
+  }>;
+  error?: string;
+};
+
+type ConceptDragSession = {
+  conceptId: string;
+  pointerType: DragPointerType;
+  pressedAt: number;
+  startPointerViewport: DragViewportPoint;
+  currentPointerViewport: DragViewportPoint;
+  startGraphPosition: DragViewportPoint;
+  currentGraphPosition: DragViewportPoint;
+  grabOffsetViewport: DragViewportPoint;
+  autoPanIntentStartedAt: number | null;
+  pendingLongPress: boolean;
+  isDragging: boolean;
+};
+
+function areStableSigmaBoundsEqual(
+  left: StableSigmaBBox | null,
+  right: StableSigmaBBox | null
+): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return (
+    Math.abs(left.x[0] - right.x[0]) < 0.0001 &&
+    Math.abs(left.x[1] - right.x[1]) < 0.0001 &&
+    Math.abs(left.y[0] - right.y[0]) < 0.0001 &&
+    Math.abs(left.y[1] - right.y[1]) < 0.0001
+  );
+}
+
+function deriveGesturePointerType(event: Event): DragPointerType {
+  if ("pointerType" in event && typeof event.pointerType === "string") {
+    const pointerType = event.pointerType;
+    if (pointerType === "mouse" || pointerType === "touch" || pointerType === "pen") {
+      return pointerType;
+    }
+  }
+
+  if ("touches" in event) {
+    return "touch";
+  }
+
+  return "mouse";
+}
 
 declare global {
   interface Window {
@@ -109,7 +186,8 @@ export function GraphCanvasRuntime({
   const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const dotRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const suppressClickForConceptIdRef = useRef<string | null>(null);
-  const teardownCardDragRef = useRef<(() => void) | null>(null);
+  const teardownTouchDragRef = useRef<(() => void) | null>(null);
+  const dragSessionRef = useRef<ConceptDragSession | null>(null);
   const conceptViewportPositionsRef = useRef<Map<string, ViewportNodePosition>>(new Map());
   const zoomPolicyRef = useRef<Omit<CanvasZoomState, "ratio"> | null>(null);
 
@@ -123,18 +201,29 @@ export function GraphCanvasRuntime({
   const setSnapshot = useMapStore((s) => s.setSnapshot);
   const viewport = useMapStore((s) => s.viewport);
   const updateViewport = useMapStore((s) => s.updateViewport);
+  const positions = useMapStore((s) => s.positions);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
+  const dragState = useMapStore((s) => s.dragState);
+  const setDragState = useMapStore((s) => s.setDragState);
+  const resetDragState = useMapStore((s) => s.resetDragState);
   const snapshotRef = useRef(snapshot);
   const viewportRef = useRef(viewport);
+  const positionsRef = useRef(positions);
+  const dragStateRef = useRef(dragState);
   const pendingViewportSyncRef = useRef<GraphViewportBounds | null>(null);
   const viewportSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapshotRequestControllerRef = useRef<AbortController | null>(null);
   const snapshotRequestIdRef = useRef(0);
+  const positionSaveRequestIdRef = useRef(0);
+  const hasHydratedSigmaGraphRef = useRef(false);
   const lastViewportSyncAtRef = useRef(0);
   const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const positionRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPanDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPanFrameRef = useRef<number | null>(null);
   const restoreEdgeStyleRef = useRef<(() => void) | null>(null);
   const appliedFeedbackEventIdRef = useRef<string | null>(null);
   const [activeMutationFeedback, setActiveMutationFeedback] =
@@ -193,12 +282,20 @@ export function GraphCanvasRuntime({
   }, [snapshot]);
 
   useEffect(() => {
+    positionsRef.current = positions;
+  }, [positions]);
+
+  useEffect(() => {
     isZoomedOutRef.current = isZoomedOut;
   }, [isZoomedOut]);
 
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
+
+  useEffect(() => {
+    dragStateRef.current = dragState;
+  }, [dragState]);
 
   useEffect(() => {
     if (!isZoomedOut) {
@@ -225,22 +322,36 @@ export function GraphCanvasRuntime({
       if (feedbackEdgeTimerRef.current !== null) {
         clearTimeout(feedbackEdgeTimerRef.current);
       }
+      if (positionRetryTimerRef.current !== null) {
+        clearTimeout(positionRetryTimerRef.current);
+      }
+      if (autoPanDelayTimerRef.current !== null) {
+        clearTimeout(autoPanDelayTimerRef.current);
+      }
+      if (autoPanFrameRef.current !== null) {
+        window.cancelAnimationFrame(autoPanFrameRef.current);
+      }
+      teardownTouchDragRef.current?.();
       restoreEdgeStyleRef.current?.();
       viewportSyncTimerRef.current = null;
       feedbackMessageTimerRef.current = null;
       feedbackConceptTimerRef.current = null;
       feedbackEdgeTimerRef.current = null;
+      positionRetryTimerRef.current = null;
+      autoPanDelayTimerRef.current = null;
+      autoPanFrameRef.current = null;
       restoreEdgeStyleRef.current = null;
       pendingViewportSyncRef.current = null;
       viewportFetchTimerRef.current = null;
       snapshotRequestControllerRef.current = null;
+      teardownTouchDragRef.current = null;
+      dragSessionRef.current = null;
     };
   }, []);
 
   // Local fetch states
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
-  const [isSavingPosition, setIsSavingPosition] = useState(false);
 
   const fetchSnapshotForViewport = useCallback(
     async (targetViewport: GraphViewport) => {
@@ -321,36 +432,215 @@ export function GraphCanvasRuntime({
 
   // --- Network Fetching ---
   useEffect(() => {
+    if (dragSessionRef.current?.isDragging || dragState.phase === "saving") {
+      return;
+    }
+
     const shouldLoadImmediately = snapshotRef.current === null;
     scheduleViewportSnapshotFetch(viewport, { immediate: shouldLoadImmediately });
-  }, [scheduleViewportSnapshotFetch, viewport]);
+  }, [dragState.phase, scheduleViewportSnapshotFetch, viewport]);
 
   // --- Map Coordinates Save Logic ---
+  const clearPositionRetryTimer = useCallback(() => {
+    if (positionRetryTimerRef.current !== null) {
+      clearTimeout(positionRetryTimerRef.current);
+      positionRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const stopAutoPan = useCallback(() => {
+    if (autoPanFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoPanFrameRef.current);
+      autoPanFrameRef.current = null;
+    }
+  }, []);
+
+  const clearAutoPanDelayTimer = useCallback(() => {
+    if (autoPanDelayTimerRef.current !== null) {
+      clearTimeout(autoPanDelayTimerRef.current);
+      autoPanDelayTimerRef.current = null;
+    }
+  }, []);
+
+  const toViewportPoint = useCallback((clientX: number, clientY: number) => {
+    const container = containerRef.current;
+    if (!container) {
+      return null;
+    }
+
+    const bounds = container.getBoundingClientRect();
+    return {
+      x: clientX - bounds.left,
+      y: clientY - bounds.top,
+    };
+  }, []);
+
   const sendPositionsBatch = useCallback(
     async (updates: { conceptId: string; x: number; y: number }[]) => {
-      const payload = JSON.stringify({ positions: updates });
-      await fetch(`/api/maps/${map.id}/concepts/positions`, {
+      const normalizedUpdates = updates.map((update) => ({
+        conceptId: update.conceptId,
+        x: Math.round(update.x),
+        y: Math.round(update.y),
+      }));
+      const payload = JSON.stringify({ positions: normalizedUpdates });
+      const response = await fetch(`/api/maps/${map.id}/concepts/positions`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: payload,
       });
+
+      const body = (await response.json().catch(() => null)) as
+        | ConceptPositionPatchResponse
+        | null;
+
+      if (!response.ok || !body?.ok) {
+        throw new Error(body?.error ?? "Unable to update concept positions.");
+      }
+
+      return body;
     },
     [map.id]
   );
 
-  const saveNodePosition = useCallback(
-    (conceptId: string, x: number, y: number) => {
-      setIsSavingPosition(true);
+  const syncSnapshotWithSavedPositions = useCallback(
+    (result: ConceptPositionPatchResponse | null | undefined) => {
+      const activeSnapshot = snapshotRef.current;
+      const updatedConcepts = result?.concepts ?? [];
+      if (!activeSnapshot || updatedConcepts.length === 0) {
+        return;
+      }
 
-      updateConceptPosition(conceptId, { x, y });
+      const nextConceptPositions = new Map(
+        updatedConcepts.map((concept) => [
+          concept.id,
+          {
+            x: concept.x,
+            y: concept.y,
+          },
+        ])
+      );
 
-      setTimeout(() => {
-        sendPositionsBatch([{ conceptId, x, y }])
-          .catch((err) => console.error("Failed to save position", err))
-          .finally(() => setIsSavingPosition(false));
-      }, POSITION_FLUSH_DEBOUNCE_MS);
+      setSnapshot({
+        ...activeSnapshot,
+        revision:
+          typeof result?.revision === "number"
+            ? result.revision
+            : activeSnapshot.revision,
+        concepts: activeSnapshot.concepts.map((concept) => {
+          const savedPosition = nextConceptPositions.get(concept.id);
+          if (!savedPosition) {
+            return concept;
+          }
+
+          return {
+            ...concept,
+            x: savedPosition.x,
+            y: savedPosition.y,
+          };
+        }),
+      });
     },
-    [sendPositionsBatch, updateConceptPosition]
+    [setSnapshot]
+  );
+
+  const persistConceptPosition = useCallback(
+    async (
+      conceptId: string,
+      x: number,
+      y: number,
+      options?: {
+        requestId?: number;
+        retryCount?: number;
+      }
+    ) => {
+      const requestId = options?.requestId ?? positionSaveRequestIdRef.current;
+      const retryCount = options?.retryCount ?? 0;
+      const nextPersistenceState = reducePositionPersistenceState(
+        retryCount > 0
+          ? {
+              phase: "saving",
+              retryCount: retryCount - 1,
+              errorMessage: null,
+            }
+          : INITIAL_POSITION_PERSISTENCE_STATE,
+        retryCount > 0 ? { type: "retry" } : { type: "saving" }
+      );
+
+      setDragState({
+        ...dragStateRef.current,
+        phase: nextPersistenceState.phase,
+        conceptId,
+        currentGraphPosition: { x, y },
+        pendingLongPress: false,
+        retryCount: nextPersistenceState.retryCount,
+        errorMessage: null,
+      });
+
+      try {
+        const result = await sendPositionsBatch([{ conceptId, x, y }]);
+        if (requestId !== positionSaveRequestIdRef.current) {
+          return;
+        }
+
+        syncSnapshotWithSavedPositions(result);
+
+        if (dragSessionRef.current === null) {
+          resetDragState();
+        }
+      } catch (error) {
+        if (requestId !== positionSaveRequestIdRef.current) {
+          return;
+        }
+
+        if (retryCount < 1) {
+          clearPositionRetryTimer();
+          positionRetryTimerRef.current = setTimeout(() => {
+            positionRetryTimerRef.current = null;
+            void persistConceptPosition(conceptId, x, y, {
+              requestId,
+              retryCount: retryCount + 1,
+            });
+          }, POSITION_SAVE_RETRY_DELAY_MS);
+          return;
+        }
+
+        const failureMessage =
+          error instanceof Error
+            ? error.message
+            : messages.canvas.positionSaveFailed;
+        const errorState = reducePositionPersistenceState(
+          {
+            phase: "saving",
+            retryCount,
+            errorMessage: null,
+          },
+          {
+            type: "error",
+            message: failureMessage,
+          }
+        );
+
+        if (dragSessionRef.current === null) {
+          setDragState({
+            ...dragStateRef.current,
+            phase: errorState.phase,
+            conceptId,
+            currentGraphPosition: { x, y },
+            pendingLongPress: false,
+            retryCount: errorState.retryCount,
+            errorMessage: errorState.errorMessage,
+          });
+        }
+      }
+    },
+    [
+      clearPositionRetryTimer,
+      messages.canvas.positionSaveFailed,
+      resetDragState,
+      sendPositionsBatch,
+      setDragState,
+      syncSnapshotWithSavedPositions,
+    ]
   );
 
   const updateZoomMode = useCallback(
@@ -392,6 +682,10 @@ export function GraphCanvasRuntime({
       const sigma = sigmaRef.current;
       const container = containerRef.current;
       if (!sigma || !container) {
+        return;
+      }
+
+      if (!hasHydratedSigmaGraphRef.current) {
         return;
       }
 
@@ -573,6 +867,53 @@ export function GraphCanvasRuntime({
     hoverCardElement.style.opacity = "1";
     hoverCardElement.style.pointerEvents = "none";
     hoverCardElement.style.setProperty("--sl-concept-card-accent", accentColor);
+  }, []);
+
+  const syncStableSigmaBounds = useCallback(
+    (activeViewport: GraphViewport = viewportRef.current) => {
+      const sigma = sigmaRef.current;
+      if (!sigma) {
+        return;
+      }
+
+      const nextBounds = deriveStableSigmaBBox({
+        x: activeViewport.x,
+        y: activeViewport.y,
+        width: activeViewport.width,
+        height: activeViewport.height,
+      });
+      if (!nextBounds) {
+        return;
+      }
+
+      const currentBounds = sigma.getCustomBBox();
+      if (areStableSigmaBoundsEqual(currentBounds, nextBounds)) {
+        return;
+      }
+
+      sigma.setCustomBBox(nextBounds);
+    },
+    []
+  );
+
+  const refreshDraggedConceptScene = useCallback((conceptId: string) => {
+    const sigma = sigmaRef.current;
+    if (!sigma) {
+      return;
+    }
+
+    const graph = sigma.getGraph();
+    if (!graph.hasNode(conceptId)) {
+      return;
+    }
+
+    sigma.refresh({
+      partialGraph: {
+        nodes: [conceptId],
+        edges: graph.edges(conceptId),
+      },
+      skipIndexation: true,
+    });
   }, []);
 
   const handleConceptActivation = useCallback(
@@ -792,97 +1133,515 @@ export function GraphCanvasRuntime({
     });
   }, []);
 
-  const handleConceptCardPointerDown = useCallback(
-    (conceptId: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+  const updateDraggedConceptPosition = useCallback(
+    (session: ConceptDragSession, pointerViewport: DragViewportPoint) => {
+      const sigma = sigmaRef.current;
+      if (!sigma || !sigma.getGraph().hasNode(session.conceptId)) {
+        return null;
+      }
+
+      const targetCenterViewport = {
+        x: pointerViewport.x - session.grabOffsetViewport.x,
+        y: pointerViewport.y - session.grabOffsetViewport.y,
+      };
+      const snapResult = resolveConceptSoftSnap({
+        activeConceptId: session.conceptId,
+        center: targetCenterViewport,
+        candidates: Array.from(
+          conceptViewportPositionsRef.current.entries(),
+          ([conceptId, position]) => ({
+            conceptId,
+            x: position.x,
+            y: position.y,
+            isOutside: position.isOutside,
+          })
+        ),
+      });
+      const nextGraphPosition = sigma.viewportToGraph(snapResult.center);
       if (
-        event.button !== 0 ||
-        interactionModeRef.current !== "inspect" ||
-        isZoomedOutRef.current
+        !Number.isFinite(nextGraphPosition.x) ||
+        !Number.isFinite(nextGraphPosition.y)
       ) {
+        return null;
+      }
+
+      sigma.getGraph().setNodeAttribute(session.conceptId, "x", nextGraphPosition.x);
+      sigma.getGraph().setNodeAttribute(session.conceptId, "y", nextGraphPosition.y);
+      updateConceptPosition(session.conceptId, nextGraphPosition);
+      refreshDraggedConceptScene(session.conceptId);
+      syncConceptPresentation();
+
+      session.currentPointerViewport = pointerViewport;
+      session.currentGraphPosition = nextGraphPosition;
+      setDragState({
+        phase: "dragging",
+        conceptId: session.conceptId,
+        pointerType: session.pointerType,
+        startGraphPosition: session.startGraphPosition,
+        currentGraphPosition: nextGraphPosition,
+        pointerViewportPosition: pointerViewport,
+        snap: snapResult.snap,
+        pendingLongPress: false,
+        retryCount: 0,
+        errorMessage: null,
+      });
+
+      return nextGraphPosition;
+    },
+    [
+      refreshDraggedConceptScene,
+      setDragState,
+      syncConceptPresentation,
+      updateConceptPosition,
+    ]
+  );
+
+  const scheduleAutoPan = useCallback(() => {
+    if (autoPanFrameRef.current !== null) {
+      return;
+    }
+
+    autoPanFrameRef.current = window.requestAnimationFrame(() => {
+      autoPanFrameRef.current = null;
+
+      const session = dragSessionRef.current;
+      const sigma = sigmaRef.current;
+      const container = containerRef.current;
+      const interactionLayer = cardsLayerRef.current;
+      if (!session || !session.isDragging || !sigma || !container || !interactionLayer) {
+        return;
+      }
+
+      const bounds = interactionLayer.getBoundingClientRect();
+      const intent = deriveEdgeAutoPanIntent({
+        pointer: session.currentPointerViewport,
+        width: bounds.width,
+        height: bounds.height,
+        hotZonePx: EDGE_AUTO_PAN_HOT_ZONE_PX,
+      });
+
+      if (!intent.isActive) {
+        session.autoPanIntentStartedAt = null;
+        clearAutoPanDelayTimer();
+        return;
+      }
+
+      const camera = sigma.getCamera();
+      const cameraState = camera.getState();
+      const stepX = intent.x * (0.0025 + Math.abs(intent.x) * 0.005);
+      const stepY = intent.y * (0.0025 + Math.abs(intent.y) * 0.005);
+
+      camera.setState({
+        ...cameraState,
+        x: cameraState.x + stepX,
+        y: cameraState.y + stepY,
+      });
+
+      updateDraggedConceptPosition(session, session.currentPointerViewport);
+      scheduleAutoPan();
+    });
+  }, [updateDraggedConceptPosition]);
+
+  const startConceptDrag = useCallback(
+    (session: ConceptDragSession) => {
+      const sigma = sigmaRef.current;
+      if (!sigma || session.isDragging) {
+        return;
+      }
+
+      session.isDragging = true;
+      session.pendingLongPress = false;
+      clearPositionRetryTimer();
+      clearAutoPanDelayTimer();
+
+      const inspectorIsAlreadyOpen = selection.kind !== "none";
+      const isActiveConceptSelection =
+        selection.kind === "concept" && selection.id === session.conceptId;
+
+      if (inspectorIsAlreadyOpen && !isActiveConceptSelection) {
+        onOpenConceptInspectorRef.current(session.conceptId);
+      }
+
+      sigma.getMouseCaptor().enabled = false;
+      sigma.getTouchCaptor().enabled = false;
+
+      const nextPersistenceState = reducePositionPersistenceState(
+        INITIAL_POSITION_PERSISTENCE_STATE,
+        { type: "dragging" }
+      );
+
+      setDragState({
+        phase: nextPersistenceState.phase,
+        conceptId: session.conceptId,
+        pointerType: session.pointerType,
+        startGraphPosition: session.startGraphPosition,
+        currentGraphPosition: session.startGraphPosition,
+        pointerViewportPosition: session.currentPointerViewport,
+        snap: IDLE_DRAG_STATE.snap,
+        pendingLongPress: false,
+        retryCount: nextPersistenceState.retryCount,
+        errorMessage: nextPersistenceState.errorMessage,
+      });
+
+      updateDraggedConceptPosition(session, session.currentPointerViewport);
+    },
+    [
+      clearPositionRetryTimer,
+      clearAutoPanDelayTimer,
+      selection,
+      setDragState,
+      updateDraggedConceptPosition,
+    ]
+  );
+
+  const completeConceptDrag = useCallback(
+    (session: ConceptDragSession) => {
+      const sigma = sigmaRef.current;
+      clearAutoPanDelayTimer();
+      stopAutoPan();
+      session.autoPanIntentStartedAt = null;
+      dragSessionRef.current = null;
+
+      if (sigma) {
+        sigma.getMouseCaptor().enabled = true;
+        sigma.getTouchCaptor().enabled = true;
+      }
+
+      if (session.isDragging && sigma) {
+        const currentGraphPosition = {
+          x: Number(sigma.getGraph().getNodeAttribute(session.conceptId, "x")),
+          y: Number(sigma.getGraph().getNodeAttribute(session.conceptId, "y")),
+        };
+        const hasMoved =
+          Math.hypot(
+            currentGraphPosition.x - session.startGraphPosition.x,
+            currentGraphPosition.y - session.startGraphPosition.y
+          ) > 0.01;
+
+        if (hasMoved) {
+          const persistedGraphPosition = {
+            x: Math.round(currentGraphPosition.x),
+            y: Math.round(currentGraphPosition.y),
+          };
+
+          sigma
+            .getGraph()
+            .setNodeAttribute(session.conceptId, "x", persistedGraphPosition.x);
+          sigma
+            .getGraph()
+            .setNodeAttribute(session.conceptId, "y", persistedGraphPosition.y);
+          updateConceptPosition(session.conceptId, persistedGraphPosition);
+          refreshDraggedConceptScene(session.conceptId);
+          syncConceptPresentation();
+
+          suppressClickForConceptIdRef.current = session.conceptId;
+          void persistConceptPosition(
+            session.conceptId,
+            persistedGraphPosition.x,
+            persistedGraphPosition.y,
+            {
+              requestId: positionSaveRequestIdRef.current,
+            }
+          );
+          return;
+        }
+      }
+
+      resetDragState();
+    },
+    [
+      clearAutoPanDelayTimer,
+      persistConceptPosition,
+      refreshDraggedConceptScene,
+      resetDragState,
+      syncConceptPresentation,
+      stopAutoPan,
+      updateConceptPosition,
+    ]
+  );
+
+  const prepareConceptDragSession = useCallback(
+    (conceptId: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+      const pointerType = deriveGesturePointerType(event.nativeEvent);
+
+      if (interactionModeRef.current !== "inspect" || isZoomedOutRef.current) {
+        return;
+      }
+
+      if ((pointerType === "mouse" || pointerType === "pen") && event.button !== 0) {
         return;
       }
 
       const sigma = sigmaRef.current;
-      const container = containerRef.current;
-      if (!sigma || !container) {
+      if (!sigma || !sigma.getGraph().hasNode(conceptId)) {
         return;
       }
 
-      teardownCardDragRef.current?.();
-      event.preventDefault();
-      event.stopPropagation();
+      teardownTouchDragRef.current?.();
+      clearPositionRetryTimer();
+      clearAutoPanDelayTimer();
+      stopAutoPan();
+      if (viewportFetchTimerRef.current !== null) {
+        clearTimeout(viewportFetchTimerRef.current);
+        viewportFetchTimerRef.current = null;
+      }
+      snapshotRequestControllerRef.current?.abort();
+      positionSaveRequestIdRef.current += 1;
+
+      const startPointerViewport = toViewportPoint(event.clientX, event.clientY);
+      if (!startPointerViewport) {
+        return;
+      }
+
+      const startGraphPosition = {
+        x: Number(sigma.getGraph().getNodeAttribute(conceptId, "x")),
+        y: Number(sigma.getGraph().getNodeAttribute(conceptId, "y")),
+      };
+      const startConceptViewport = sigma.graphToViewport(startGraphPosition);
+      const session: ConceptDragSession = {
+        conceptId,
+        pointerType,
+        pressedAt: Date.now(),
+        startPointerViewport,
+        currentPointerViewport: startPointerViewport,
+        startGraphPosition,
+        currentGraphPosition: startGraphPosition,
+        grabOffsetViewport: {
+          x: startPointerViewport.x - startConceptViewport.x,
+          y: startPointerViewport.y - startConceptViewport.y,
+        },
+        autoPanIntentStartedAt: null,
+        pendingLongPress: pointerType === "touch",
+        isDragging: false,
+      };
+
+      dragSessionRef.current = session;
+      sigma.getMouseCaptor().enabled = false;
+      sigma.getTouchCaptor().enabled = false;
+      setDragState({
+        phase: "press",
+        conceptId,
+        pointerType,
+        startGraphPosition,
+        currentGraphPosition: startGraphPosition,
+        pointerViewportPosition: startPointerViewport,
+        snap: IDLE_DRAG_STATE.snap,
+        pendingLongPress: session.pendingLongPress,
+        retryCount: 0,
+        errorMessage: null,
+      });
+
+      if (pointerType !== "touch") {
+        event.preventDefault();
+        return;
+      }
 
       const pointerId = event.pointerId;
-      const cardElement = event.currentTarget;
-      cardElement.setPointerCapture(pointerId);
-      sigma.getCamera().disable();
-
-      let moved = false;
-      const minimumDragDistance = 4;
-      const startClientX = event.clientX;
-      const startClientY = event.clientY;
-
-      const toViewportPoint = (clientX: number, clientY: number) => {
-        const bounds = container.getBoundingClientRect();
-        return { x: clientX - bounds.left, y: clientY - bounds.top };
-      };
-
-      const onPointerMove = (moveEvent: PointerEvent) => {
-        if (moveEvent.pointerId !== pointerId) {
+      const handleTouchPointerMove = (moveEvent: PointerEvent) => {
+        const activeSession = dragSessionRef.current;
+        if (
+          moveEvent.pointerId !== pointerId ||
+          !activeSession ||
+          activeSession !== session
+        ) {
           return;
         }
 
-        const deltaX = moveEvent.clientX - startClientX;
-        const deltaY = moveEvent.clientY - startClientY;
-        if (!moved && Math.hypot(deltaX, deltaY) > minimumDragDistance) {
-          moved = true;
+        const nextPointerViewport = toViewportPoint(
+          moveEvent.clientX,
+          moveEvent.clientY
+        );
+        if (!nextPointerViewport) {
+          return;
         }
 
-        const graphPosition = sigma.viewportToGraph(
-          toViewportPoint(moveEvent.clientX, moveEvent.clientY)
+        activeSession.currentPointerViewport = nextPointerViewport;
+        const distance = getPointerTravelDistance(
+          activeSession.startPointerViewport,
+          nextPointerViewport
+        );
+        const heldForMs = Date.now() - activeSession.pressedAt;
+
+        if (!activeSession.isDragging) {
+          if (heldForMs < TOUCH_LONG_PRESS_MS) {
+            if (shouldCancelTouchLongPress(distance)) {
+              teardownTouchDragRef.current?.();
+              dragSessionRef.current = null;
+              sigma.getMouseCaptor().enabled = true;
+              sigma.getTouchCaptor().enabled = true;
+              resetDragState();
+              return;
+            }
+
+            setDragState({
+              ...dragStateRef.current,
+              pointerViewportPosition: nextPointerViewport,
+            });
+            return;
+          }
+
+          startConceptDrag(activeSession);
+        }
+
+        moveEvent.preventDefault();
+        updateDraggedConceptPosition(activeSession, nextPointerViewport);
+      };
+
+      const handleTouchPointerEnd = (endEvent: PointerEvent) => {
+        const activeSession = dragSessionRef.current;
+        if (
+          endEvent.pointerId !== pointerId ||
+          !activeSession ||
+          activeSession !== session
+        ) {
+          return;
+        }
+
+        teardownTouchDragRef.current?.();
+        completeConceptDrag(activeSession);
+      };
+
+      const cleanupTouchDrag = () => {
+        window.removeEventListener("pointermove", handleTouchPointerMove);
+        window.removeEventListener("pointerup", handleTouchPointerEnd);
+        window.removeEventListener("pointercancel", handleTouchPointerEnd);
+        teardownTouchDragRef.current = null;
+      };
+
+      teardownTouchDragRef.current = cleanupTouchDrag;
+      window.addEventListener("pointermove", handleTouchPointerMove);
+      window.addEventListener("pointerup", handleTouchPointerEnd);
+      window.addEventListener("pointercancel", handleTouchPointerEnd);
+    },
+    [
+      clearPositionRetryTimer,
+      clearAutoPanDelayTimer,
+      completeConceptDrag,
+      resetDragState,
+      setDragState,
+      startConceptDrag,
+      stopAutoPan,
+      toViewportPoint,
+      updateDraggedConceptPosition,
+    ]
+  );
+
+  const bindConceptDrag = useDrag(
+    ({ args, event, last, xy }) => {
+      const [conceptId] = args as [string];
+      const session = dragSessionRef.current;
+      if (!session || session.conceptId !== conceptId) {
+        return;
+      }
+
+      if (session.pointerType === "touch") {
+        return;
+      }
+
+      const pointerViewport = toViewportPoint(xy[0], xy[1]);
+      if (!pointerViewport) {
+        return;
+      }
+
+      session.currentPointerViewport = pointerViewport;
+
+      if (!session.isDragging) {
+        const distance = getPointerTravelDistance(
+          session.startPointerViewport,
+          pointerViewport
         );
 
-        sigma.getGraph().setNodeAttribute(conceptId, "x", graphPosition.x);
-        sigma.getGraph().setNodeAttribute(conceptId, "y", graphPosition.y);
-        updateConceptPosition(conceptId, { x: graphPosition.x, y: graphPosition.y });
-        sigma.refresh();
-        syncConceptPresentation();
-      };
-
-      const onPointerEnd = (endEvent: PointerEvent) => {
-        if (endEvent.pointerId !== pointerId) {
+        if (shouldStartPointerDrag(session.pointerType, distance)) {
+          startConceptDrag(session);
+        } else {
+          if (last) {
+            completeConceptDrag(session);
+          }
           return;
         }
+      }
 
-        const x = sigma.getGraph().getNodeAttribute(conceptId, "x");
-        const y = sigma.getGraph().getNodeAttribute(conceptId, "y");
-
-        if (moved) {
-          suppressClickForConceptIdRef.current = conceptId;
-          saveNodePosition(conceptId, x, y);
+      if (session.isDragging) {
+        if ("preventDefault" in event && typeof event.preventDefault === "function") {
+          event.preventDefault();
         }
 
-        sigma.getCamera().enable();
-        if (cardElement.hasPointerCapture(pointerId)) {
-          cardElement.releasePointerCapture(pointerId);
+        updateDraggedConceptPosition(session, pointerViewport);
+
+        const bounds =
+          cardsLayerRef.current?.getBoundingClientRect() ??
+          containerRef.current?.getBoundingClientRect();
+
+        if (bounds) {
+          const intent = deriveEdgeAutoPanIntent({
+            pointer: pointerViewport,
+            width: bounds.width,
+            height: bounds.height,
+            hotZonePx: EDGE_AUTO_PAN_HOT_ZONE_PX,
+          });
+
+          if (intent.isActive) {
+            const now = Date.now();
+            if (session.autoPanIntentStartedAt === null) {
+              session.autoPanIntentStartedAt = now;
+              clearAutoPanDelayTimer();
+              autoPanDelayTimerRef.current = setTimeout(() => {
+                autoPanDelayTimerRef.current = null;
+
+                const activeSession = dragSessionRef.current;
+                if (!activeSession || activeSession !== session || !activeSession.isDragging) {
+                  return;
+                }
+
+                const activeBounds =
+                  cardsLayerRef.current?.getBoundingClientRect() ??
+                  containerRef.current?.getBoundingClientRect();
+                if (!activeBounds) {
+                  activeSession.autoPanIntentStartedAt = null;
+                  return;
+                }
+
+                const activeIntent = deriveEdgeAutoPanIntent({
+                  pointer: activeSession.currentPointerViewport,
+                  width: activeBounds.width,
+                  height: activeBounds.height,
+                  hotZonePx: EDGE_AUTO_PAN_HOT_ZONE_PX,
+                });
+
+                if (activeIntent.isActive) {
+                  scheduleAutoPan();
+                } else {
+                  activeSession.autoPanIntentStartedAt = null;
+                }
+              }, EDGE_AUTO_PAN_START_DELAY_MS);
+            }
+
+            if (now - session.autoPanIntentStartedAt >= EDGE_AUTO_PAN_START_DELAY_MS) {
+              scheduleAutoPan();
+            }
+          } else {
+            session.autoPanIntentStartedAt = null;
+            clearAutoPanDelayTimer();
+            stopAutoPan();
+          }
         }
+      }
 
-        cleanup();
-      };
-
-      const cleanup = () => {
-        window.removeEventListener("pointermove", onPointerMove);
-        window.removeEventListener("pointerup", onPointerEnd);
-        window.removeEventListener("pointercancel", onPointerEnd);
-        teardownCardDragRef.current = null;
-      };
-
-      teardownCardDragRef.current = cleanup;
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", onPointerEnd);
-      window.addEventListener("pointercancel", onPointerEnd);
+      if (last) {
+        completeConceptDrag(session);
+      }
     },
-    [saveNodePosition, syncConceptPresentation, updateConceptPosition]
+    {
+      enabled: interactionMode === "inspect" && !isZoomedOut,
+      filterTaps: true,
+      pointer: {
+        buttons: 1,
+        capture: false,
+        keys: false,
+      },
+      threshold: 0,
+      triggerAllEvents: true,
+    }
   );
 
   const forwardWheelToSigma = useCallback(
@@ -920,12 +1679,6 @@ export function GraphCanvasRuntime({
     },
     []
   );
-
-  useEffect(() => {
-    return () => {
-      teardownCardDragRef.current?.();
-    };
-  }, []);
 
   // --- Sigma Foundation Initializer ---
   useEffect(() => {
@@ -981,37 +1734,6 @@ export function GraphCanvasRuntime({
       onClearSelectionRef.current();
     });
 
-    let isDragging = false;
-    let dragNode: string | null = null;
-
-    sigma.on("downNode", (e) => {
-      isDragging = true;
-      dragNode = e.node;
-      sigma.getCamera().disable();
-    });
-
-    sigma.getMouseCaptor().on("mousemovebody", (e) => {
-      if (!isDragging || !dragNode) return;
-
-      const pos = sigma.viewportToGraph(e);
-      sigma.getGraph().setNodeAttribute(dragNode, "x", pos.x);
-      sigma.getGraph().setNodeAttribute(dragNode, "y", pos.y);
-      updateConceptPosition(dragNode, { x: pos.x, y: pos.y });
-      syncConceptPresentation();
-    });
-
-    sigma.getMouseCaptor().on("mouseup", () => {
-      if (isDragging && dragNode) {
-        const x = sigma.getGraph().getNodeAttribute(dragNode, "x");
-        const y = sigma.getGraph().getNodeAttribute(dragNode, "y");
-        saveNodePosition(dragNode, x, y);
-      }
-      isDragging = false;
-      dragNode = null;
-      sigma.getCamera().enable();
-      syncConceptPresentation();
-    });
-
     const handleCameraUpdated = () => {
       syncViewportWithCamera();
       const ratio = sigma.getCamera().getState().ratio;
@@ -1034,11 +1756,13 @@ export function GraphCanvasRuntime({
 
     sigma.on("afterRender", syncConceptPresentation);
     sigma.getCamera().on("updated", handleCameraUpdated);
+    syncStableSigmaBounds(viewportRef.current);
     syncViewportWithCamera({ immediate: true });
     handleCameraUpdated();
 
     return () => {
       zoomPolicyRef.current = null;
+      hasHydratedSigmaGraphRef.current = false;
       resizeObserver?.disconnect();
       if (typeof window !== "undefined" && window.__SIGMA__ === sigma) {
         delete window.__SIGMA__;
@@ -1048,10 +1772,9 @@ export function GraphCanvasRuntime({
     };
   }, [
     handleConceptActivation,
-    saveNodePosition,
     syncConceptPresentation,
+    syncStableSigmaBounds,
     syncViewportWithCamera,
-    updateConceptPosition,
     updateZoomMode,
   ]);
 
@@ -1067,7 +1790,8 @@ export function GraphCanvasRuntime({
 
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
-    const nextGraph = buildGraphologyInstance(snapshot);
+    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current);
+    syncStableSigmaBounds(viewportRef.current);
     sigma.setGraph(nextGraph);
 
     const boundedRatio = camera.getBoundedRatio(previousCameraState.ratio);
@@ -1078,9 +1802,17 @@ export function GraphCanvasRuntime({
       ratio: boundedRatio,
     });
 
+    hasHydratedSigmaGraphRef.current = true;
+    syncViewportWithCamera({ immediate: true });
     updateZoomMode(boundedRatio);
     syncConceptPresentation();
-  }, [snapshot, syncConceptPresentation, updateZoomMode]);
+  }, [
+    snapshot,
+    syncConceptPresentation,
+    syncStableSigmaBounds,
+    syncViewportWithCamera,
+    updateZoomMode,
+  ]);
 
   useEffect(() => {
     if (!snapshot || !cardsLayerRef.current) {
@@ -1116,8 +1848,12 @@ export function GraphCanvasRuntime({
       ? mutationStatusMessage
       : isSnapshotLoading && !snapshot
       ? messages.canvas.loadingSnapshot
-      : isSavingPosition
+      : dragState.phase === "saving"
         ? messages.canvas.updatingPosition
+        : dragState.phase === "error"
+          ? dragState.errorMessage ?? messages.canvas.positionSaveFailed
+          : isZoomedOut && interactionMode === "inspect"
+            ? messages.canvas.zoomInToMoveConcepts
         : null;
 
   const hoveredConcept =
@@ -1148,10 +1884,21 @@ export function GraphCanvasRuntime({
           className={
             mutationStatusMessage
               ? "canvas-runtime-status is-success"
+              : dragState.phase === "error"
+                ? "canvas-runtime-status is-error"
               : "canvas-runtime-status"
           }
         >
-          <Text size="1" color={mutationStatusMessage ? "green" : "gray"}>
+          <Text
+            size="1"
+            color={
+              mutationStatusMessage
+                ? "green"
+                : dragState.phase === "error"
+                  ? "red"
+                  : "gray"
+            }
+          >
             {runtimeStatusMessage}
           </Text>
         </div>
@@ -1169,21 +1916,47 @@ export function GraphCanvasRuntime({
         aria-hidden={!snapshot}
         onWheelCapture={forwardWheelToSigma}
       >
+        {dragState.phase === "dragging" &&
+        (dragState.snap.x || dragState.snap.y) ? (
+          <div className="sl-concept-drag-guides" aria-hidden="true">
+            {dragState.snap.x ? (
+              <div
+                className="sl-concept-drag-guide is-vertical"
+                style={{ left: `${dragState.snap.x.guideViewport}px` }}
+              />
+            ) : null}
+            {dragState.snap.y ? (
+              <div
+                className="sl-concept-drag-guide is-horizontal"
+                style={{ top: `${dragState.snap.y.guideViewport}px` }}
+              />
+            ) : null}
+          </div>
+        ) : null}
         {snapshot?.concepts.map((concept) => {
           const conceptTypeLabel = messages.labels.conceptTypes[concept.conceptType];
           const isSelectedConcept = selection.kind === "concept" && selection.id === concept.id;
           const isConnectionSource =
             interactionMode === "connectLink" && connectLinkSourceId === concept.id;
           const isMutationFeedbackTarget = feedbackConceptId === concept.id;
+          const isDraggingConcept =
+            dragState.phase === "dragging" && dragState.conceptId === concept.id;
 
           const cardClassName = [
             "sl-concept-card",
             isSelectedConcept ? "is-selected" : "",
             isConnectionSource ? "is-connection-source" : "",
             isMutationFeedbackTarget ? "is-feedback-highlight" : "",
+            isDraggingConcept ? "is-dragging" : "",
           ]
             .filter(Boolean)
             .join(" ");
+          const dragBindProps = bindConceptDrag(concept.id);
+          const dragPointerDown =
+            "onPointerDown" in dragBindProps &&
+            typeof dragBindProps.onPointerDown === "function"
+              ? dragBindProps.onPointerDown
+              : null;
 
           return (
             <button
@@ -1191,9 +1964,14 @@ export function GraphCanvasRuntime({
               type="button"
               ref={(element) => registerConceptCardRef(concept.id, element)}
               className={cardClassName}
+              {...dragBindProps}
               onClick={() => handleConceptCardClick(concept.id)}
-              onPointerDown={(event) => handleConceptCardPointerDown(concept.id, event)}
+              onPointerDown={(event) => {
+                prepareConceptDragSession(concept.id, event);
+                dragPointerDown?.(event);
+              }}
               aria-label={`${concept.title}, ${conceptTypeLabel}`}
+              aria-grabbed={isDraggingConcept}
             >
               <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
                 {concept.title}

@@ -2,18 +2,45 @@ import { createStore } from "zustand";
 import type { InspectorSelection } from "@/features/inspector/types";
 import type { CanvasInteractionMode } from "@/features/maps/workspace-state";
 import type { GraphSnapshot, GraphViewport } from "@/features/map-runtime/types";
-
-export type DragState = {
-  id: string;
-  pointerX: number;
-  pointerY: number;
-  startX: number;
-  startY: number;
-};
+import type {
+  DragPointerType,
+  DragSnapState,
+} from "@/features/map-runtime/renderers/concept-drag";
 
 export type ConceptPosition = {
   x: number;
   y: number;
+};
+
+export type DragPhase = "idle" | "press" | "dragging" | "saving" | "error";
+
+export type DragState = {
+  phase: DragPhase;
+  conceptId: string | null;
+  pointerType: DragPointerType | null;
+  startGraphPosition: ConceptPosition | null;
+  currentGraphPosition: ConceptPosition | null;
+  pointerViewportPosition: ConceptPosition | null;
+  snap: DragSnapState;
+  pendingLongPress: boolean;
+  retryCount: number;
+  errorMessage: string | null;
+};
+
+export const IDLE_DRAG_STATE: DragState = {
+  phase: "idle",
+  conceptId: null,
+  pointerType: null,
+  startGraphPosition: null,
+  currentGraphPosition: null,
+  pointerViewportPosition: null,
+  snap: {
+    x: null,
+    y: null,
+  },
+  pendingLongPress: false,
+  retryCount: 0,
+  errorMessage: null,
 };
 
 export type MapState = {
@@ -30,7 +57,7 @@ export type MapState = {
   // Interactions & Selections
   interactionMode: CanvasInteractionMode;
   selection: InspectorSelection;
-  dragState: DragState | null;
+  dragState: DragState;
   connectLinkSourceId: string | null;
 
   // Actions
@@ -41,7 +68,8 @@ export type MapState = {
   setInteractionMode: (mode: CanvasInteractionMode) => void;
   setSelection: (selection: InspectorSelection) => void;
   clearSelection: () => void;
-  setDragState: (dragState: DragState | null) => void;
+  setDragState: (dragState: DragState) => void;
+  resetDragState: () => void;
   setConnectLinkSourceId: (id: string | null) => void;
 };
 
@@ -63,7 +91,7 @@ export function createMapStore(
     viewport: INITIAL_VIEWPORT,
     interactionMode: "inspect",
     selection: { kind: "none" },
-    dragState: null,
+    dragState: IDLE_DRAG_STATE,
     connectLinkSourceId: null,
 
     setSnapshot: (snapshot) => set({ snapshot }),
@@ -102,6 +130,8 @@ export function createMapStore(
     clearSelection: () => set({ selection: { kind: "none" } }),
     
     setDragState: (dragState) => set({ dragState }),
+
+    resetDragState: () => set({ dragState: IDLE_DRAG_STATE }),
     
     setConnectLinkSourceId: (connectLinkSourceId) => set({ connectLinkSourceId }),
   }));

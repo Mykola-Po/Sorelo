@@ -17,6 +17,7 @@ export function createSigmaInstance({ container, graph }: SigmaInstanceOptions):
     renderEdgeLabels: true,
     edgeLabelSize: 12,
     edgeLabelColor: { attribute: "color", color: "#868e96" },
+    autoRescale: false,
     nodeReducer: (_node, data) => ({ ...data, color: "rgba(0, 0, 0, 0)" }),
     
     defaultNodeType: "circle",

@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import { conceptTypeEnum, relationTypeEnum } from "@/shared/db/schema";
 
+const roundedCoordinateSchema = z
+  .number()
+  .finite()
+  .min(0)
+  .max(100000)
+  .transform((value) => Math.round(value));
+
 export const graphViewportSchema = z.object({
   x: z.coerce.number().min(0),
   y: z.coerce.number().min(0),
@@ -22,8 +29,8 @@ export const createConceptRouteSchema = z.object({
 export const updateConceptRouteSchema = createConceptRouteSchema;
 
 export const patchConceptPositionRouteSchema = z.object({
-  x: z.number().int().min(0).max(100000),
-  y: z.number().int().min(0).max(100000),
+  x: roundedCoordinateSchema,
+  y: roundedCoordinateSchema,
 });
 
 export const patchConceptPositionsRouteSchema = z.object({
@@ -31,8 +38,8 @@ export const patchConceptPositionsRouteSchema = z.object({
     .array(
       z.object({
         conceptId: z.string().uuid(),
-        x: z.number().int().min(0).max(100000),
-        y: z.number().int().min(0).max(100000),
+        x: roundedCoordinateSchema,
+        y: roundedCoordinateSchema,
       })
     )
     .min(1)
