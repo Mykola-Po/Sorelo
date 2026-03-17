@@ -1134,6 +1134,221 @@ select {
   min-height: 100%;
 }
 
+.sl-workspace-home {
+  gap: 16px;
+}
+
+.product-page-surface > .sl-workspace-home {
+  flex: 0 0 auto;
+  min-height: max-content;
+}
+
+.sl-workspace-home .section-card,
+.sl-workspace-hero-panel,
+.sl-workspace-focus-card {
+  border: 1px solid rgba(15, 15, 15, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(250, 250, 250, 0.82)),
+    linear-gradient(135deg, rgba(10, 132, 255, 0.05), transparent 48%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 18px 42px rgba(15, 15, 15, 0.05);
+  backdrop-filter: blur(18px);
+}
+
+.sl-workspace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(360px, 0.82fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.sl-workspace-hero-panel,
+.sl-workspace-focus-card {
+  border-radius: 28px;
+  padding: 22px !important;
+}
+
+.sl-workspace-hero-eyebrow,
+.sl-workspace-focus-eyebrow,
+.sl-workspace-summary-label,
+.sl-workspace-reason-label {
+  font-family: var(--font-mono), monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sl-workspace-title {
+  max-width: 12ch;
+  letter-spacing: -0.06em;
+  line-height: 0.94;
+}
+
+.sl-workspace-description {
+  max-width: 52rem;
+  line-height: 1.6;
+}
+
+.sl-workspace-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sl-workspace-metric-card,
+.sl-workspace-summary-card,
+.sl-workspace-reason-card,
+.sl-workspace-step-card {
+  border: 1px solid rgba(15, 15, 15, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 247, 247, 0.74)),
+    linear-gradient(135deg, rgba(10, 132, 255, 0.03), transparent 58%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 12px 24px rgba(15, 15, 15, 0.04);
+}
+
+.sl-workspace-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.sl-workspace-metric-value {
+  line-height: 1;
+}
+
+.sl-workspace-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  max-width: 34rem;
+}
+
+.sl-workspace-focus-copy {
+  min-width: 0;
+  max-width: 32rem;
+}
+
+.sl-workspace-focus-title {
+  max-width: 14ch;
+  letter-spacing: -0.05em;
+  line-height: 0.98;
+}
+
+.sl-workspace-focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 14px;
+  border: 1px solid rgba(15, 15, 15, 0.07);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.sl-workspace-focus-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.sl-workspace-reason-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sl-workspace-reason-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.sl-workspace-create-form-shell {
+  min-width: 0;
+}
+
+.sl-workspace-home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 16px;
+  min-height: max-content;
+  flex: 0 0 auto;
+  align-items: start;
+}
+
+.sl-workspace-map-library,
+.sl-workspace-rail,
+.sl-workspace-create-anchor {
+  min-height: auto;
+}
+
+.sl-workspace-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: max-content;
+}
+
+.sl-workspace-create-anchor {
+  scroll-margin-top: 12px;
+}
+
+.sl-workspace-home .section-card,
+.sl-workspace-home .section-card-body,
+.sl-workspace-home .scroll-card,
+.sl-workspace-home .panel-scroll {
+  min-height: auto;
+}
+
+.sl-workspace-home .section-card,
+.sl-workspace-home .section-card-body,
+.sl-workspace-home .panel-scroll {
+  height: auto;
+}
+
+.sl-workspace-home .panel-scroll {
+  flex: 0 0 auto;
+}
+
+.sl-workspace-map-list,
+.sl-workspace-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sl-workspace-map-card,
+.sl-workspace-run-card {
+  border-radius: 20px;
+  border: 1px solid rgba(15, 15, 15, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 250, 250, 0.82)),
+    linear-gradient(135deg, rgba(10, 132, 255, 0.03), transparent 58%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 10px 22px rgba(15, 15, 15, 0.04);
+}
+
+.sl-workspace-step-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sl-workspace-step-card {
+  min-height: 100%;
+  padding: 16px;
+  border-radius: 18px;
+}
+
 .maps-home-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.95fr) minmax(320px, 1.05fr);
@@ -2598,10 +2813,20 @@ select {
   }
 
   .maps-home-grid,
+  .sl-workspace-home-grid,
+  .sl-workspace-hero,
   .map-workspace-grid,
   .two-column-grid,
   .docs-hub-grid,
   .marketing-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sl-workspace-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sl-workspace-reason-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2771,6 +2996,50 @@ select {
     padding-right: 2px;
   }
 
+  .sl-workspace-home {
+    gap: 12px;
+  }
+
+  .sl-workspace-hero-panel,
+  .sl-workspace-focus-card {
+    border-radius: 22px;
+    padding: 16px !important;
+  }
+
+  .sl-workspace-title {
+    max-width: 100%;
+    font-size: clamp(2.2rem, 8vw, 3rem);
+  }
+
+  .sl-workspace-description {
+    font-size: 0.98rem;
+  }
+
+  .sl-workspace-metric-grid,
+  .sl-workspace-step-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sl-workspace-summary-card,
+  .sl-workspace-metric-card,
+  .sl-workspace-reason-card,
+  .sl-workspace-step-card,
+  .sl-workspace-focus-meta,
+  .sl-workspace-map-card,
+  .sl-workspace-run-card {
+    border-radius: 16px;
+  }
+
+  .sl-workspace-focus-title {
+    max-width: 100%;
+  }
+
+  .sl-workspace-map-card .rt-Button,
+  .sl-workspace-run-card .rt-Button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .maps-home-grid {
     grid-template-rows: auto auto auto;
     align-content: start;
@@ -2787,6 +3056,13 @@ select {
   .maps-home-page .scroll-card,
   .maps-home-page .panel-scroll {
     flex: 0 0 auto;
+    min-height: auto;
+  }
+
+  .sl-workspace-rail,
+  .sl-workspace-map-library,
+  .sl-workspace-create-anchor,
+  .sl-workspace-home .panel-scroll {
     min-height: auto;
   }
 
@@ -3053,6 +3329,10 @@ select {
   .marketing-session-step,
   .marketing-guardrail-card {
     border-radius: 20px;
+  }
+
+  .sl-workspace-step-list {
+    grid-template-columns: 1fr;
   }
 
   .marketing-step-index-large {

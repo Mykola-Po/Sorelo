@@ -22,6 +22,7 @@ import {
   concepts,
   links,
   maps,
+  scenarioRuns,
   scenarios,
   workspaceMembers,
   workspaces,
@@ -72,9 +73,89 @@ export async function getMapsHomeData(workspaceId: string) {
     listScenarioRunsForWorkspace(workspaceId, 6),
   ]);
 
+  const latestMapId = mapsList[0]?.id ?? null;
+  const [
+    memberCountRow,
+    conceptCountRow,
+    linkCountRow,
+    scenarioRunCountRow,
+    latestMapConceptCountRow,
+    latestMapLinkCountRow,
+    latestMapScenarioRunCountRow,
+  ] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.workspaceId, workspaceId)),
+    db
+      .select({ value: count() })
+      .from(concepts)
+      .where(
+        and(
+          eq(concepts.workspaceId, workspaceId),
+          isNull(concepts.archivedAt)
+        )
+      ),
+    db
+      .select({ value: count() })
+      .from(links)
+      .where(eq(links.workspaceId, workspaceId)),
+    db
+      .select({ value: count() })
+      .from(scenarioRuns)
+      .where(eq(scenarioRuns.workspaceId, workspaceId)),
+    latestMapId
+      ? db
+          .select({ value: count() })
+          .from(concepts)
+          .where(
+            and(
+              eq(concepts.workspaceId, workspaceId),
+              eq(concepts.mapId, latestMapId),
+              isNull(concepts.archivedAt)
+            )
+          )
+      : Promise.resolve([]),
+    latestMapId
+      ? db
+          .select({ value: count() })
+          .from(links)
+          .where(
+            and(eq(links.workspaceId, workspaceId), eq(links.mapId, latestMapId))
+          )
+      : Promise.resolve([]),
+    latestMapId
+      ? db
+          .select({ value: count() })
+          .from(scenarioRuns)
+          .where(
+            and(
+              eq(scenarioRuns.workspaceId, workspaceId),
+              eq(scenarioRuns.mapId, latestMapId)
+            )
+          )
+      : Promise.resolve([]),
+  ]);
+
   return {
     maps: mapsList,
     recentRuns,
+    summary: {
+      mapCount: mapsList.length,
+      memberCount: Number(memberCountRow[0]?.value ?? 0),
+      conceptCount: Number(conceptCountRow[0]?.value ?? 0),
+      linkCount: Number(linkCountRow[0]?.value ?? 0),
+      scenarioRunCount: Number(scenarioRunCountRow[0]?.value ?? 0),
+      latestMapMetrics: latestMapId
+        ? {
+            conceptCount: Number(latestMapConceptCountRow[0]?.value ?? 0),
+            linkCount: Number(latestMapLinkCountRow[0]?.value ?? 0),
+            scenarioRunCount: Number(
+              latestMapScenarioRunCountRow[0]?.value ?? 0
+            ),
+          }
+        : null,
+    },
   };
 }
 
