@@ -58,6 +58,7 @@ import {
 } from "../renderers/concept-drag";
 import type { Sigma } from "sigma";
 import { IDLE_DRAG_STATE } from "../store/map-store";
+import { useSemanticGravity } from "../hooks/use-semantic-gravity";
 const MUTATION_FEEDBACK_DURATION_MS = 2400;
 const VIEWPORT_SYNC_INTERVAL_MS = 240;
 const VIEWPORT_FETCH_IDLE_MS = 180;
@@ -199,6 +200,9 @@ export function GraphCanvasRuntime({
   // Zustand State
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
+  const isGravityEnabled = useMapStore((s) => s.isGravityEnabled);
+  
+  useSemanticGravity(sigmaRef.current, isGravityEnabled);
   const viewport = useMapStore((s) => s.viewport);
   const updateViewport = useMapStore((s) => s.updateViewport);
   const positions = useMapStore((s) => s.positions);
@@ -206,10 +210,13 @@ export function GraphCanvasRuntime({
   const dragState = useMapStore((s) => s.dragState);
   const setDragState = useMapStore((s) => s.setDragState);
   const resetDragState = useMapStore((s) => s.resetDragState);
+  const ghosts = useMapStore((s) => s.ghosts);
+  const setGhosts = useMapStore((s) => s.setGhosts);
   const snapshotRef = useRef(snapshot);
   const viewportRef = useRef(viewport);
   const positionsRef = useRef(positions);
   const dragStateRef = useRef(dragState);
+  const ghostsRef = useRef(ghosts);
   const pendingViewportSyncRef = useRef<GraphViewportBounds | null>(null);
   const viewportSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -272,6 +279,22 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     onCompleteConnectLinkRef.current = onCompleteConnectLink;
   }, [onCompleteConnectLink]);
+
+  useEffect(() => {
+    ghostsRef.current = ghosts;
+  }, [ghosts]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/maps/${map.id}/ghosts`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && data.ok && data.ghosts) {
+          setGhosts(data.ghosts);
+        }
+      });
+    return () => { active = false; };
+  }, [map.id, setGhosts]);
 
   useEffect(() => {
     hoveredConceptIdRef.current = hoveredConceptId;
@@ -1684,7 +1707,7 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const graph = buildGraphologyInstance(EMPTY_GRAPH_SNAPSHOT);
+    const graph = buildGraphologyInstance(EMPTY_GRAPH_SNAPSHOT, undefined, ghostsRef.current);
 
     const sigma = createSigmaInstance({
       container: containerRef.current,
@@ -1714,6 +1737,29 @@ export function GraphCanvasRuntime({
     }
 
     sigma.on("clickNode", (e) => {
+      const ghost = ghostsRef.current.find(g => g.id === e.node);
+      if (ghost) {
+        setGhosts(ghostsRef.current.filter(g => g.id !== e.node));
+        fetch(`/api/maps/${map.id}/concepts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: ghost.title || "Unknown",
+            conceptType: ghost.conceptType || "custom",
+            summary: ghost.summary,
+            description: ghost.description,
+            x: Math.round(ghost.x),
+            y: Math.round(ghost.y),
+          })
+        })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.ok && data.concept) {
+            onOpenConceptInspectorRef.current(data.concept.id);
+          }
+        });
+        return;
+      }
       handleConceptActivation(e.node);
     });
 
@@ -1790,7 +1836,7 @@ export function GraphCanvasRuntime({
 
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
-    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current);
+    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghostsRef.current);
     syncStableSigmaBounds(viewportRef.current);
     sigma.setGraph(nextGraph);
 

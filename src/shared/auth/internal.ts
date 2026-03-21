@@ -8,9 +8,16 @@ function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
+export function resolveInternalAuthSecret(
+  internalApiSecret = env.INTERNAL_API_SECRET ?? null,
+  legacySupabaseSecret = env.SUPABASE_SECRET_KEY ?? null
+) {
+  return internalApiSecret ?? legacySupabaseSecret ?? null;
+}
+
 export function hasValidInternalBearerToken(
   authorizationHeader: string | null,
-  secret = env.SUPABASE_SECRET_KEY ?? null
+  secret = resolveInternalAuthSecret()
 ) {
   if (!secret || !authorizationHeader) {
     return false;
@@ -26,7 +33,7 @@ export function hasValidInternalBearerToken(
 
 export function getInternalAuthStatus(
   request: Request,
-  secret = env.SUPABASE_SECRET_KEY ?? null
+  secret = resolveInternalAuthSecret()
 ) {
   if (!secret) {
     return "misconfigured" as const;

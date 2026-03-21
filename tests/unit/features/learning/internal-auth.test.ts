@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { assertInternalLearningRequestWithSecret } from "@/features/learning/internal-api";
-import { getInternalAuthStatus, hasValidInternalBearerToken } from "@/shared/auth/internal";
+import {
+  getInternalAuthStatus,
+  hasValidInternalBearerToken,
+  resolveInternalAuthSecret,
+} from "@/shared/auth/internal";
 
 describe("internal learning auth", () => {
   it("accepts the exact bearer token", () => {
@@ -31,6 +35,16 @@ describe("internal learning auth", () => {
     expect(getInternalAuthStatus(request, "different-secret")).toBe(
       "unauthorized"
     );
+  });
+
+  it("prefers INTERNAL_API_SECRET and falls back to SUPABASE_SECRET_KEY", () => {
+    expect(resolveInternalAuthSecret("internal-secret", "legacy-secret")).toBe(
+      "internal-secret"
+    );
+    expect(resolveInternalAuthSecret(null, "legacy-secret")).toBe(
+      "legacy-secret"
+    );
+    expect(resolveInternalAuthSecret(null, null)).toBeNull();
   });
 
   it("returns 401 for unauthorized internal requests", async () => {

@@ -95,6 +95,8 @@ function MapWorkspaceContent({
   const setConnectLinkSourceId = useMapStore(
     (state) => state.setConnectLinkSourceId
   );
+  const isGravityEnabled = useMapStore((state) => state.isGravityEnabled);
+  const toggleGravity = useMapStore((state) => state.toggleGravity);
   const [zoomState, setZoomState] = useState<CanvasZoomState>(() => {
     const { minRatio, maxRatio } = deriveZoomBounds(1);
     const { dotEnterRatio, dotExitRatio } = deriveLodThresholds(
@@ -405,6 +407,8 @@ function MapWorkspaceContent({
               onSelectMap={(value) =>
                 router.push(workspaceMapPath(workspaceSlug, value))
               }
+              isGravityEnabled={isGravityEnabled}
+              onToggleGravity={toggleGravity}
             />
           </div>
         </div>
@@ -694,6 +698,8 @@ type MapBottomDockProps = {
   onStartCreateLink: () => void;
   onCancelInteraction: () => void;
   onSelectMap: (mapId: string) => void;
+  isGravityEnabled: boolean;
+  onToggleGravity: () => void;
 };
 
 function MapBottomDock({
@@ -720,6 +726,8 @@ function MapBottomDock({
   onStartCreateLink,
   onCancelInteraction,
   onSelectMap,
+  isGravityEnabled,
+  onToggleGravity,
 }: MapBottomDockProps) {
   return (
     <div className="map-bottom-dock">
@@ -788,6 +796,14 @@ function MapBottomDock({
 
       <div className="map-bottom-dock-center">
         <div className="map-bottom-dock-group">
+          <MapIconAction
+            label={isGravityEnabled ? "Stop Semantic Gravity" : "Start Semantic Gravity"}
+            active={isGravityEnabled}
+            onClick={onToggleGravity}
+            mobileHint="Gravity"
+          >
+            <LightningBoltIcon />
+          </MapIconAction>
           <MapIconAction
             label={messages.topBar.runScenario}
             active={scenarioOpen}

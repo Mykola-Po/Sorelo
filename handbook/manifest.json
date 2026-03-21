@@ -142,6 +142,15 @@
           "tags": ["executable", "schema", "learning", "provenance"]
         },
         {
+          "id": "inbox-ai-core",
+          "title": "Inbox AI Core",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-ai-core.md",
+          "summary": "Current internal Inbox foundation for app_private persistence, worker contracts, routing state machine, and workflow definition.",
+          "tags": ["executable", "schema", "inbox", "ai-core", "workflow"]
+        },
+        {
           "id": "scenario-engine-v1",
           "title": "Scenario Engine V1",
           "status": "existing",

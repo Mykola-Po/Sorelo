@@ -6,6 +6,7 @@ export const runtimeEnvSchema = {
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
+  INTERNAL_API_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   DOCS_HUB_PASSWORD: z.string().min(1).optional(),
 };
@@ -17,6 +18,7 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
 export const env = createEnv({
   server: {
     DATABASE_URL: runtimeEnvSchema.DATABASE_URL,
+    INTERNAL_API_SECRET: runtimeEnvSchema.INTERNAL_API_SECRET,
     SUPABASE_SECRET_KEY: runtimeEnvSchema.SUPABASE_SECRET_KEY,
     DOCS_HUB_PASSWORD: runtimeEnvSchema.DOCS_HUB_PASSWORD,
   },
@@ -28,6 +30,7 @@ export const env = createEnv({
   },
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
+    INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET,
     SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
     DOCS_HUB_PASSWORD: process.env.DOCS_HUB_PASSWORD,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,

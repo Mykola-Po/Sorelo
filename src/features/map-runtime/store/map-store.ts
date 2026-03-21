@@ -1,7 +1,7 @@
 import { createStore } from "zustand";
 import type { InspectorSelection } from "@/features/inspector/types";
 import type { CanvasInteractionMode } from "@/features/maps/workspace-state";
-import type { GraphSnapshot, GraphViewport } from "@/features/map-runtime/types";
+import type { GraphSnapshot, GraphViewport, GraphConceptNode } from "@/features/map-runtime/types";
 import type {
   DragPointerType,
   DragSnapState,
@@ -50,6 +50,7 @@ export type MapState = {
   // Graph Data
   snapshot: GraphSnapshot | null;
   positions: Record<string, ConceptPosition>;
+  ghosts: GraphConceptNode[];
   
   // Viewport details
   viewport: GraphViewport;
@@ -59,9 +60,11 @@ export type MapState = {
   selection: InspectorSelection;
   dragState: DragState;
   connectLinkSourceId: string | null;
+  isGravityEnabled: boolean;
 
   // Actions
   setSnapshot: (snapshot: GraphSnapshot) => void;
+  setGhosts: (ghosts: GraphConceptNode[]) => void;
   updateViewport: (partialViewport: Partial<GraphViewport>) => void;
   setPositions: (positions: Record<string, ConceptPosition>) => void;
   updateConceptPosition: (id: string, position: ConceptPosition) => void;
@@ -71,6 +74,7 @@ export type MapState = {
   setDragState: (dragState: DragState) => void;
   resetDragState: () => void;
   setConnectLinkSourceId: (id: string | null) => void;
+  toggleGravity: () => void;
 };
 
 export const INITIAL_VIEWPORT: GraphViewport = {
@@ -88,11 +92,13 @@ export function createMapStore(
     mapId: initProps.mapId,
     snapshot: initProps.initialSnapshot ?? null,
     positions: {},
+    ghosts: [],
     viewport: INITIAL_VIEWPORT,
     interactionMode: "inspect",
     selection: { kind: "none" },
     dragState: IDLE_DRAG_STATE,
     connectLinkSourceId: null,
+    isGravityEnabled: false,
 
     setSnapshot: (snapshot) => set({ snapshot }),
     
@@ -134,6 +140,8 @@ export function createMapStore(
     resetDragState: () => set({ dragState: IDLE_DRAG_STATE }),
     
     setConnectLinkSourceId: (connectLinkSourceId) => set({ connectLinkSourceId }),
+    toggleGravity: () => set((state) => ({ isGravityEnabled: !state.isGravityEnabled })),
+    setGhosts: (ghosts) => set({ ghosts }),
   }));
 }
 

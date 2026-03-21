@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgSchema,
   pgTable,
@@ -14,6 +15,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -59,6 +61,7 @@ export const entityOriginTypeEnum = pgEnum("entity_origin_type", [
 ]);
 
 export const learningSchema = pgSchema("learning");
+export const appPrivateSchema = pgSchema("app_private");
 
 export const sourceFragmentTypeEnum = learningSchema.enum("source_fragment_type", [
   "manual_note",
@@ -128,6 +131,102 @@ export const scenarioStepFeedbackVerdictEnum = learningSchema.enum(
   "scenario_step_feedback_verdict",
   ["correct", "overstated", "wrong_link", "missing_context", "wrong_effect"]
 );
+
+export const inboxSourceTypeEnum = appPrivateSchema.enum("inbox_source_type", [
+  "manual_note",
+  "transcript",
+  "chat",
+  "upload",
+  "import",
+]);
+export const inboxItemStatusEnum = appPrivateSchema.enum("inbox_item_status", [
+  "received",
+  "persisted",
+  "normalized",
+  "segmented",
+  "interpreted",
+  "scored",
+  "resolved",
+  "clarification_requested",
+  "promoted",
+  "parked",
+  "discarded",
+  "failed_needs_review",
+]);
+export const inboxFragmentTypeEnum = appPrivateSchema.enum(
+  "inbox_fragment_type",
+  ["statement", "question", "constraint", "claim", "observation", "intent", "unknown"]
+);
+export const inboxFragmentSourceKindEnum = appPrivateSchema.enum(
+  "inbox_fragment_source_kind",
+  ["item_raw", "clarification_answer"]
+);
+export const inboxHypothesisTypeEnum = appPrivateSchema.enum(
+  "inbox_hypothesis_type",
+  [
+    "interpretation",
+    "candidate_structure",
+    "relation_cluster",
+    "actionable_summary",
+  ]
+);
+export const inboxAtomTypeEnum = appPrivateSchema.enum("inbox_atom_type", [
+  "entity",
+  "relation",
+  "intent",
+  "question",
+  "constraint",
+  "claim",
+  "observation",
+]);
+export const inboxRouteEnum = appPrivateSchema.enum("inbox_route", [
+  "promote",
+  "clarify",
+  "park",
+  "discard",
+]);
+export const inboxStructuredPacketTypeEnum = appPrivateSchema.enum(
+  "inbox_structured_packet_type",
+  [
+    "concept_packet",
+    "link_packet",
+    "mixed_packet",
+    "clarification_packet",
+    "parked_packet",
+  ]
+);
+export const inboxStructuredPacketStatusEnum = appPrivateSchema.enum(
+  "inbox_structured_packet_status",
+  ["draft", "ready", "emitted"]
+);
+export const inboxMergeTargetObjectTypeEnum = appPrivateSchema.enum(
+  "inbox_merge_target_object_type",
+  ["concept", "link", "scenario", "map"]
+);
+export const inboxMergeCandidateDecisionEnum = appPrivateSchema.enum(
+  "inbox_merge_candidate_decision",
+  ["pending", "accepted", "rejected"]
+);
+export const inboxClarificationStatusEnum = appPrivateSchema.enum(
+  "inbox_clarification_status",
+  ["pending", "answered", "dismissed", "expired"]
+);
+export const inboxEmbeddingOwnerTypeEnum = appPrivateSchema.enum(
+  "inbox_embedding_owner_type",
+  ["item", "fragment", "hypothesis", "atom", "packet"]
+);
+export const inboxWorkflowEventStatusEnum = appPrivateSchema.enum(
+  "inbox_workflow_event_status",
+  ["started", "completed", "failed"]
+);
+
+function inboxScoreColumn(name: string) {
+  return numeric(name, {
+    precision: 5,
+    scale: 4,
+    mode: "number",
+  });
+}
 
 export const users = pgTable(
   "users",
@@ -830,6 +929,231 @@ export const learningScenarioStepFeedback = learningSchema.table(
   ]
 );
 
+export const inboxItems = appPrivateSchema.table(
+  "inbox_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceType: inboxSourceTypeEnum("source_type").notNull(),
+    sourceRef: text("source_ref"),
+    rawText: text("raw_text").notNull(),
+    normalizedText: text("normalized_text"),
+    language: varchar("language", { length: 32 }),
+    status: inboxItemStatusEnum("status").notNull().default("received"),
+    score: inboxScoreColumn("score"),
+    confidence: inboxScoreColumn("confidence"),
+    ambiguity: inboxScoreColumn("ambiguity"),
+    risk: inboxScoreColumn("risk"),
+    route: inboxRouteEnum("route"),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("inbox_items_idempotency_key_key").on(table.idempotencyKey),
+    index("inbox_items_user_created_idx").on(
+      table.userId,
+      table.createdAt.desc()
+    ),
+    index("inbox_items_status_route_idx").on(table.status, table.route),
+  ]
+);
+
+export const inboxFragments = appPrivateSchema.table(
+  "inbox_fragments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    fragmentText: text("fragment_text").notNull(),
+    fragmentType: inboxFragmentTypeEnum("fragment_type"),
+    sourceKind: inboxFragmentSourceKindEnum("source_kind")
+      .notNull()
+      .default("item_raw"),
+    clarificationAnswerId: uuid("clarification_answer_id").references(
+      () => inboxClarificationAnswers.id,
+      { onDelete: "set null" }
+    ),
+    spanStart: integer("span_start"),
+    spanEnd: integer("span_end"),
+  },
+  (table) => [
+    uniqueIndex("inbox_fragments_item_ordinal_key").on(table.itemId, table.ordinal),
+    index("inbox_fragments_item_ordinal_idx").on(table.itemId, table.ordinal),
+  ]
+);
+
+export const inboxHypotheses = appPrivateSchema.table(
+  "inbox_hypotheses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    fragmentId: uuid("fragment_id").references(() => inboxFragments.id, {
+      onDelete: "set null",
+    }),
+    rank: integer("rank").notNull(),
+    hypothesisType: inboxHypothesisTypeEnum("hypothesis_type").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    confidence: inboxScoreColumn("confidence").notNull(),
+    explanation: text("explanation"),
+    modelName: varchar("model_name", { length: 160 }).notNull(),
+    promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+  },
+  (table) => [
+    index("inbox_hypotheses_item_rank_idx").on(table.itemId, table.rank),
+  ]
+);
+
+export const inboxAtoms = appPrivateSchema.table(
+  "inbox_atoms",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    hypothesisId: uuid("hypothesis_id")
+      .notNull()
+      .references(() => inboxHypotheses.id, { onDelete: "cascade" }),
+    atomType: inboxAtomTypeEnum("atom_type").notNull(),
+    canonicalValue: text("canonical_value"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    confidence: inboxScoreColumn("confidence").notNull(),
+  }
+);
+
+export const inboxStructuredPackets = appPrivateSchema.table(
+  "structured_packets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    packetType: inboxStructuredPacketTypeEnum("packet_type").notNull(),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    route: inboxRouteEnum("route").notNull(),
+    status: inboxStructuredPacketStatusEnum("status").notNull().default("draft"),
+  }
+);
+
+export const inboxMergeCandidates = appPrivateSchema.table(
+  "merge_candidates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    targetObjectType: inboxMergeTargetObjectTypeEnum("target_object_type").notNull(),
+    targetObjectId: uuid("target_object_id").notNull(),
+    similarity: inboxScoreColumn("similarity").notNull(),
+    decision: inboxMergeCandidateDecisionEnum("decision"),
+  },
+  (table) => [
+    index("inbox_merge_candidates_item_similarity_idx").on(
+      table.itemId,
+      table.similarity.desc()
+    ),
+  ]
+);
+
+export const inboxClarificationRequests = appPrivateSchema.table(
+  "clarification_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    question: text("question").notNull(),
+    reason: text("reason").notNull(),
+    status: inboxClarificationStatusEnum("status").notNull().default("pending"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+  }
+);
+
+export const inboxClarificationAnswers = appPrivateSchema.table(
+  "clarification_answers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => inboxClarificationRequests.id, { onDelete: "cascade" }),
+    answerText: text("answer_text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("inbox_clarification_answers_request_key").on(table.requestId),
+  ]
+);
+
+export const inboxEmbeddings = appPrivateSchema.table(
+  "embeddings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ownerType: inboxEmbeddingOwnerTypeEnum("owner_type").notNull(),
+    ownerId: uuid("owner_id").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+    embeddingModel: varchar("embedding_model", { length: 160 }).notNull(),
+    contentHash: varchar("content_hash", { length: 128 }).notNull(),
+  },
+  (table) => [
+    index("inbox_embeddings_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops")
+    ),
+    uniqueIndex("inbox_embeddings_owner_content_hash_key").on(
+      table.contentHash,
+      table.embeddingModel,
+      table.ownerType,
+      table.ownerId
+    ),
+  ]
+);
+
+export const inboxWorkflowEvents = appPrivateSchema.table(
+  "workflow_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    stepName: varchar("step_name", { length: 64 }).notNull(),
+    status: inboxWorkflowEventStatusEnum("status").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown> | null>(),
+    attemptNo: integer("attempt_no").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("inbox_workflow_events_item_created_idx").on(
+      table.itemId,
+      table.createdAt
+    ),
+  ]
+);
+
 /** @deprecated Legacy compatibility table. Do not use for map-first product flows. */
 export const projects = pgTable(
   "projects",
@@ -1365,3 +1689,26 @@ export type ScenarioRunFeedbackVerdict =
   (typeof scenarioRunFeedbackVerdictEnum.enumValues)[number];
 export type ScenarioStepFeedbackVerdict =
   (typeof scenarioStepFeedbackVerdictEnum.enumValues)[number];
+export type InboxSourceType = (typeof inboxSourceTypeEnum.enumValues)[number];
+export type InboxItemStatus = (typeof inboxItemStatusEnum.enumValues)[number];
+export type InboxFragmentType = (typeof inboxFragmentTypeEnum.enumValues)[number];
+export type InboxFragmentSourceKind =
+  (typeof inboxFragmentSourceKindEnum.enumValues)[number];
+export type InboxHypothesisType =
+  (typeof inboxHypothesisTypeEnum.enumValues)[number];
+export type InboxAtomType = (typeof inboxAtomTypeEnum.enumValues)[number];
+export type InboxRoute = (typeof inboxRouteEnum.enumValues)[number];
+export type InboxPacketType =
+  (typeof inboxStructuredPacketTypeEnum.enumValues)[number];
+export type InboxStructuredPacketStatus =
+  (typeof inboxStructuredPacketStatusEnum.enumValues)[number];
+export type InboxMergeTargetObjectType =
+  (typeof inboxMergeTargetObjectTypeEnum.enumValues)[number];
+export type InboxMergeCandidateDecision =
+  (typeof inboxMergeCandidateDecisionEnum.enumValues)[number];
+export type InboxClarificationStatus =
+  (typeof inboxClarificationStatusEnum.enumValues)[number];
+export type InboxEmbeddingOwnerType =
+  (typeof inboxEmbeddingOwnerTypeEnum.enumValues)[number];
+export type InboxWorkflowEventStatus =
+  (typeof inboxWorkflowEventStatusEnum.enumValues)[number];

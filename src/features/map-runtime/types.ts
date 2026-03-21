@@ -28,6 +28,7 @@ export type GraphConceptNode = {
   x: number;
   y: number;
   updatedAt: string;
+  isGhost?: boolean;
 };
 
 export type GraphLinkEdge = {
