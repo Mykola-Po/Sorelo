@@ -66,6 +66,19 @@ type MigrationDriftInput = {
   appliedMigrations: readonly string[];
 };
 
+function serializeTimestamp(value: Date | string): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsedValue = new Date(value);
+  if (Number.isNaN(parsedValue.getTime())) {
+    return value;
+  }
+
+  return parsedValue.toISOString();
+}
+
 function buildFailedCheck(
   name: InboxRuntimeCheckName,
   message: string,
@@ -301,7 +314,7 @@ async function buildItemsCheck(
       item_id: string;
       workspace_id: string | null;
       map_id: string | null;
-      updated_at: Date;
+      updated_at: Date | string;
       attempt_no: number | null;
       message: string | null;
     }[]
@@ -335,7 +348,7 @@ async function buildItemsCheck(
       itemId: row.item_id,
       workspaceId: row.workspace_id,
       mapId: row.map_id,
-      updatedAt: row.updated_at.toISOString(),
+      updatedAt: serializeTimestamp(row.updated_at),
       attemptNo: row.attempt_no,
       message: row.message,
     })
@@ -391,7 +404,7 @@ export async function buildExecutionsCheck(
           item_id: string;
           attempt_no: number;
           trigger_kind: string;
-          started_at: Date;
+          started_at: Date | string;
         }[]
       >`
         select
@@ -416,7 +429,7 @@ export async function buildExecutionsCheck(
           route: string | null;
           failure_code: string | null;
           failure_message: string | null;
-          recorded_at: Date;
+          recorded_at: Date | string;
         }[]
       >`
         select *
@@ -499,7 +512,7 @@ export async function buildExecutionsCheck(
     itemId: row.item_id,
     attemptNo: row.attempt_no,
     triggerKind: row.trigger_kind,
-    startedAt: row.started_at.toISOString(),
+    startedAt: serializeTimestamp(row.started_at),
   }));
   const recentFailures = recentFailureRows.map((row) => ({
     scope: row.failure_scope,
@@ -509,7 +522,7 @@ export async function buildExecutionsCheck(
     route: row.route,
     failureCode: row.failure_code,
     failureMessage: row.failure_message,
-    recordedAt: row.recorded_at.toISOString(),
+    recordedAt: serializeTimestamp(row.recorded_at),
   }));
   const stepLatencyP95 = latencyRows.map((row) => ({
     stepName: row.step_name,

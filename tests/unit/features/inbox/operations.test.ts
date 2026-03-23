@@ -202,4 +202,64 @@ describe("inbox operations", () => {
       },
     });
   });
+
+  it("serializes execution telemetry timestamps when SQL returns strings", async () => {
+    sqlClientMock
+      .mockResolvedValueOnce([
+        {
+          attempt_id: "attempt-2",
+          item_id: "item-4",
+          attempt_no: 1,
+          trigger_kind: "manual_process",
+          started_at: "2026-03-22T10:15:00.000Z",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          failure_scope: "attempt",
+          item_id: "item-4",
+          attempt_no: 1,
+          step_name: null,
+          route: "canonical",
+          failure_code: "validation",
+          failure_message: "Missing normalized packet.",
+          recorded_at: "2026-03-22T10:20:00.000Z",
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const check = await buildExecutionsCheck([
+      "inbox_pipeline_attempts",
+      "inbox_step_runs",
+    ]);
+
+    expect(check).toMatchObject({
+      name: "executions",
+      status: "failed",
+      details: {
+        staleRunningAttempts: [
+          {
+            attemptId: "attempt-2",
+            itemId: "item-4",
+            attemptNo: 1,
+            triggerKind: "manual_process",
+            startedAt: "2026-03-22T10:15:00.000Z",
+          },
+        ],
+        recentFailures: [
+          {
+            scope: "attempt",
+            itemId: "item-4",
+            attemptNo: 1,
+            stepName: null,
+            route: "canonical",
+            failureCode: "validation",
+            failureMessage: "Missing normalized packet.",
+            recordedAt: "2026-03-22T10:20:00.000Z",
+          },
+        ],
+      },
+    });
+  });
 });
