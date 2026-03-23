@@ -1,11 +1,14 @@
 import type {
+  CanonicalMutationType,
   EntityOriginType,
+  InboxFragmentSourceKind,
   LineageEntityType,
   LineageTransitionType,
   MapVersionTriggerType,
   ScenarioRunFeedbackVerdict,
   ScenarioStepFeedbackVerdict,
   SourceFragmentType,
+  SuggestionApplyStatus,
   SuggestionBatchStatus,
   SuggestionBatchType,
   SuggestionResolutionType,
@@ -30,6 +33,8 @@ export type SuggestionBatchRecord = {
   workspaceId: string;
   mapId: string | null;
   initiatedByUserId: string | null;
+  inboxItemId: string | null;
+  inboxPacketId: string | null;
   batchType: SuggestionBatchType;
   modelName: string;
   modelVersion: string;
@@ -46,7 +51,10 @@ export type SuggestionRecord = {
   batchId: string;
   workspaceId: string;
   mapId: string | null;
+  inboxItemId: string | null;
+  inboxPacketId: string | null;
   sourceFragmentId: string | null;
+  artifactOrder: number;
   suggestionType: SuggestionType;
   targetEntityType: SuggestionTargetEntityType;
   targetEntityId: string | null;
@@ -65,6 +73,10 @@ export type SuggestionResolutionRecord = {
   resolutionType: SuggestionResolutionType;
   beforePayload: Record<string, unknown>;
   afterPayload: Record<string, unknown>;
+  applyStatus: SuggestionApplyStatus;
+  appliedAt: Date | null;
+  applyOutcome: Record<string, unknown>;
+  applyError: string | null;
   reasonText: string | null;
   latencyMs: number | null;
   resolvedAt: Date;
@@ -76,6 +88,7 @@ export type SuggestionWithResolution = {
 };
 
 export type SuggestionFeedRecord = {
+  batch: SuggestionBatchRecord;
   suggestion: SuggestionRecord;
   resolution: SuggestionResolutionRecord | null;
   sourceFragment: SourceFragmentRecord | null;
@@ -95,6 +108,7 @@ export type MapVersionRecord = {
   versionNo: number;
   triggerType: MapVersionTriggerType;
   actorUserId: string | null;
+  causedByResolutionId: string | null;
   snapshotJson: Record<string, unknown>;
   diffJson: Record<string, unknown>;
   createdAt: Date;
@@ -110,6 +124,60 @@ export type EntityLineageRecord = {
   transitionType: LineageTransitionType;
   causedByResolutionId: string | null;
   createdAt: Date;
+};
+
+export type CanonicalMutationProvenanceRecord = {
+  id: string;
+  workspaceId: string;
+  mapId: string;
+  mapVersionId: string;
+  entityType: LineageEntityType;
+  entityId: string;
+  mutationType: CanonicalMutationType;
+  originSuggestionId: string;
+  reviewResolutionId: string;
+  inboxItemId: string;
+  inboxPacketId: string | null;
+  appliedByUserId: string | null;
+  createdAt: Date;
+};
+
+export type CanonicalMutationEvidenceRecord = {
+  id: string;
+  provenanceId: string;
+  inboxFragmentId: string;
+  clarificationAnswerId: string | null;
+  evidenceOrder: number;
+  fragmentOrdinal: number;
+};
+
+export type CanonicalMutationEvidenceDetail = {
+  id: string;
+  inboxFragmentId: string;
+  clarificationAnswerId: string | null;
+  evidenceOrder: number;
+  fragmentOrdinal: number;
+  fragmentText: string;
+  sourceKind: InboxFragmentSourceKind;
+  clarificationAnswerText: string | null;
+};
+
+export type CanonicalMutationProvenanceDetail = {
+  id: string;
+  mapVersionId: string;
+  entityType: "concept" | "link" | "scenario";
+  entityId: string;
+  mutationType: CanonicalMutationType;
+  createdAt: Date;
+  suggestion: SuggestionRecord;
+  resolution: SuggestionResolutionRecord;
+  inboxItem: {
+    id: string;
+    rawText: string;
+    status: string;
+    createdAt: Date;
+  };
+  evidence: CanonicalMutationEvidenceDetail[];
 };
 
 export type ScenarioRunFeedbackRecord = {

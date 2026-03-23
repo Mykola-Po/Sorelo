@@ -91,6 +91,22 @@ type ConceptPositionPatchResponse = {
   error?: string;
 };
 
+type GhostCreateConceptResponse = {
+  ok?: boolean;
+  revision?: number;
+  concept?: {
+    id: string;
+    title: string;
+    conceptType: GraphConceptNode["conceptType"];
+    summary: string | null;
+    description: string | null;
+    x: number;
+    y: number;
+    updatedAt: string | Date;
+  } | null;
+  error?: string;
+};
+
 type ConceptDragSession = {
   conceptId: string;
   pointerType: DragPointerType;
@@ -138,6 +154,28 @@ function deriveGesturePointerType(event: Event): DragPointerType {
   }
 
   return "mouse";
+}
+
+function toGraphConceptNode(
+  concept: GhostCreateConceptResponse["concept"]
+): GraphConceptNode | null {
+  if (!concept) {
+    return null;
+  }
+
+  return {
+    id: concept.id,
+    title: concept.title,
+    conceptType: concept.conceptType,
+    summary: concept.summary,
+    description: concept.description,
+    x: concept.x,
+    y: concept.y,
+    updatedAt:
+      concept.updatedAt instanceof Date
+        ? concept.updatedAt.toISOString()
+        : concept.updatedAt,
+  };
 }
 
 declare global {
@@ -223,11 +261,14 @@ export function GraphCanvasRuntime({
   const snapshotRequestControllerRef = useRef<AbortController | null>(null);
   const snapshotRequestIdRef = useRef(0);
   const positionSaveRequestIdRef = useRef(0);
+  const ghostCreateControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const ghostCreateInFlightIdsRef = useRef<Set<string>>(new Set());
   const hasHydratedSigmaGraphRef = useRef(false);
   const lastViewportSyncAtRef = useRef(0);
   const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ghostCreateErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanFrameRef = useRef<number | null>(null);
@@ -237,6 +278,7 @@ export function GraphCanvasRuntime({
     useState<InspectorMutationFeedback | null>(null);
   const [feedbackConceptId, setFeedbackConceptId] = useState<string | null>(null);
   const [mutationStatusMessage, setMutationStatusMessage] = useState<string | null>(null);
+  const [ghostCreateErrorMessage, setGhostCreateErrorMessage] = useState<string | null>(null);
 
   // Store refs for stable Sigma closures
   const interactionModeRef = useRef(interactionMode);
@@ -247,6 +289,7 @@ export function GraphCanvasRuntime({
   const onClearSelectionRef = useRef(onClearSelection);
   const onPickConnectSourceRef = useRef(onPickConnectSource);
   const onCompleteConnectLinkRef = useRef(onCompleteConnectLink);
+  const ghostCreateFailedMessageRef = useRef(messages.canvas.ghostCreateFailed);
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
@@ -279,6 +322,10 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     onCompleteConnectLinkRef.current = onCompleteConnectLink;
   }, [onCompleteConnectLink]);
+
+  useEffect(() => {
+    ghostCreateFailedMessageRef.current = messages.canvas.ghostCreateFailed;
+  }, [messages.canvas.ghostCreateFailed]);
 
   useEffect(() => {
     ghostsRef.current = ghosts;
@@ -328,6 +375,9 @@ export function GraphCanvasRuntime({
   }, [isZoomedOut]);
 
   useEffect(() => {
+    const ghostCreateControllers = ghostCreateControllersRef.current;
+    const ghostCreateInFlightIds = ghostCreateInFlightIdsRef.current;
+
     return () => {
       if (viewportSyncTimerRef.current !== null) {
         clearTimeout(viewportSyncTimerRef.current);
@@ -345,6 +395,9 @@ export function GraphCanvasRuntime({
       if (feedbackEdgeTimerRef.current !== null) {
         clearTimeout(feedbackEdgeTimerRef.current);
       }
+      if (ghostCreateErrorTimerRef.current !== null) {
+        clearTimeout(ghostCreateErrorTimerRef.current);
+      }
       if (positionRetryTimerRef.current !== null) {
         clearTimeout(positionRetryTimerRef.current);
       }
@@ -356,10 +409,16 @@ export function GraphCanvasRuntime({
       }
       teardownTouchDragRef.current?.();
       restoreEdgeStyleRef.current?.();
+      for (const controller of ghostCreateControllers.values()) {
+        controller.abort();
+      }
+      ghostCreateControllers.clear();
+      ghostCreateInFlightIds.clear();
       viewportSyncTimerRef.current = null;
       feedbackMessageTimerRef.current = null;
       feedbackConceptTimerRef.current = null;
       feedbackEdgeTimerRef.current = null;
+      ghostCreateErrorTimerRef.current = null;
       positionRetryTimerRef.current = null;
       autoPanDelayTimerRef.current = null;
       autoPanFrameRef.current = null;
@@ -485,6 +544,27 @@ export function GraphCanvasRuntime({
     }
   }, []);
 
+  const clearGhostCreateErrorTimer = useCallback(() => {
+    if (ghostCreateErrorTimerRef.current !== null) {
+      clearTimeout(ghostCreateErrorTimerRef.current);
+      ghostCreateErrorTimerRef.current = null;
+    }
+  }, []);
+
+  const showGhostCreateError = useCallback(
+    (message?: string) => {
+      clearGhostCreateErrorTimer();
+      setGhostCreateErrorMessage(
+        message?.trim() || ghostCreateFailedMessageRef.current
+      );
+      ghostCreateErrorTimerRef.current = setTimeout(() => {
+        setGhostCreateErrorMessage(null);
+        ghostCreateErrorTimerRef.current = null;
+      }, MUTATION_FEEDBACK_DURATION_MS);
+    },
+    [clearGhostCreateErrorTimer]
+  );
+
   const toViewportPoint = useCallback((clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) {
@@ -562,6 +642,46 @@ export function GraphCanvasRuntime({
           };
         }),
       });
+    },
+    [setSnapshot]
+  );
+
+  const mergeCreatedConceptIntoSnapshot = useCallback(
+    (
+      conceptPayload: GhostCreateConceptResponse["concept"],
+      revision?: number
+    ) => {
+      const nextConcept = toGraphConceptNode(conceptPayload);
+      if (!nextConcept) {
+        return;
+      }
+
+      const activeSnapshot = snapshotRef.current ?? EMPTY_GRAPH_SNAPSHOT;
+      const existingConceptIndex = activeSnapshot.concepts.findIndex(
+        (concept) => concept.id === nextConcept.id
+      );
+      const nextConcepts =
+        existingConceptIndex === -1
+          ? [...activeSnapshot.concepts, nextConcept]
+          : activeSnapshot.concepts.map((concept) =>
+              concept.id === nextConcept.id ? nextConcept : concept
+            );
+      const nextSnapshot: GraphSnapshot = {
+        ...activeSnapshot,
+        revision:
+          typeof revision === "number" ? revision : activeSnapshot.revision,
+        counts: {
+          ...activeSnapshot.counts,
+          conceptCount:
+            existingConceptIndex === -1
+              ? activeSnapshot.counts.conceptCount + 1
+              : activeSnapshot.counts.conceptCount,
+        },
+        concepts: nextConcepts,
+      };
+
+      snapshotRef.current = nextSnapshot;
+      setSnapshot(nextSnapshot);
     },
     [setSnapshot]
   );
@@ -1263,7 +1383,7 @@ export function GraphCanvasRuntime({
       updateDraggedConceptPosition(session, session.currentPointerViewport);
       scheduleAutoPan();
     });
-  }, [updateDraggedConceptPosition]);
+  }, [clearAutoPanDelayTimer, updateDraggedConceptPosition]);
 
   const startConceptDrag = useCallback(
     (session: ConceptDragSession) => {
@@ -1737,10 +1857,20 @@ export function GraphCanvasRuntime({
     }
 
     sigma.on("clickNode", (e) => {
-      const ghost = ghostsRef.current.find(g => g.id === e.node);
+      const ghost = ghostsRef.current.find((candidate) => candidate.id === e.node);
       if (ghost) {
-        setGhosts(ghostsRef.current.filter(g => g.id !== e.node));
-        fetch(`/api/maps/${map.id}/concepts`, {
+        if (ghostCreateInFlightIdsRef.current.has(ghost.id)) {
+          return;
+        }
+
+        clearGhostCreateErrorTimer();
+        setGhostCreateErrorMessage(null);
+
+        const controller = new AbortController();
+        ghostCreateInFlightIdsRef.current.add(ghost.id);
+        ghostCreateControllersRef.current.set(ghost.id, controller);
+
+        void fetch(`/api/maps/${map.id}/concepts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1750,14 +1880,50 @@ export function GraphCanvasRuntime({
             description: ghost.description,
             x: Math.round(ghost.x),
             y: Math.round(ghost.y),
-          })
+          }),
+          signal: controller.signal,
         })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.ok && data.concept) {
+          .then(async (response) => {
+            const data = (await response.json().catch(() => null)) as
+              | GhostCreateConceptResponse
+              | null;
+
+            if (controller.signal.aborted) {
+              return;
+            }
+
+            if (!response.ok || !data?.ok || !data.concept) {
+              throw new Error(
+                data?.error ?? ghostCreateFailedMessageRef.current
+              );
+            }
+
+            clearGhostCreateErrorTimer();
+            setGhostCreateErrorMessage(null);
+            mergeCreatedConceptIntoSnapshot(data.concept, data.revision);
+
+            const nextGhosts = ghostsRef.current.filter(
+              (candidate) => candidate.id !== ghost.id
+            );
+            ghostsRef.current = nextGhosts;
+            setGhosts(nextGhosts);
+
+            void fetchSnapshotForViewport(viewportRef.current);
             onOpenConceptInspectorRef.current(data.concept.id);
-          }
-        });
+          })
+          .catch((error) => {
+            if (controller.signal.aborted) {
+              return;
+            }
+
+            showGhostCreateError(
+              error instanceof Error ? error.message : undefined
+            );
+          })
+          .finally(() => {
+            ghostCreateInFlightIdsRef.current.delete(ghost.id);
+            ghostCreateControllersRef.current.delete(ghost.id);
+          });
         return;
       }
       handleConceptActivation(e.node);
@@ -1817,7 +1983,13 @@ export function GraphCanvasRuntime({
       sigmaRef.current = null;
     };
   }, [
+    clearGhostCreateErrorTimer,
+    fetchSnapshotForViewport,
     handleConceptActivation,
+    map.id,
+    mergeCreatedConceptIntoSnapshot,
+    setGhosts,
+    showGhostCreateError,
     syncConceptPresentation,
     syncStableSigmaBounds,
     syncViewportWithCamera,
@@ -1829,6 +2001,14 @@ export function GraphCanvasRuntime({
       return;
     }
 
+    if (
+      dragState.phase === "press" ||
+      dragState.phase === "dragging" ||
+      dragState.phase === "saving"
+    ) {
+      return;
+    }
+
     const sigma = sigmaRef.current;
     if (!sigma) {
       return;
@@ -1836,7 +2016,7 @@ export function GraphCanvasRuntime({
 
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
-    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghostsRef.current);
+    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghosts);
     syncStableSigmaBounds(viewportRef.current);
     sigma.setGraph(nextGraph);
 
@@ -1853,6 +2033,8 @@ export function GraphCanvasRuntime({
     updateZoomMode(boundedRatio);
     syncConceptPresentation();
   }, [
+    dragState.phase,
+    ghosts,
     snapshot,
     syncConceptPresentation,
     syncStableSigmaBounds,
@@ -1892,6 +2074,8 @@ export function GraphCanvasRuntime({
   const runtimeStatusMessage =
     mutationStatusMessage
       ? mutationStatusMessage
+      : ghostCreateErrorMessage
+      ? ghostCreateErrorMessage
       : isSnapshotLoading && !snapshot
       ? messages.canvas.loadingSnapshot
       : dragState.phase === "saving"
@@ -1930,9 +2114,9 @@ export function GraphCanvasRuntime({
           className={
             mutationStatusMessage
               ? "canvas-runtime-status is-success"
-              : dragState.phase === "error"
+              : ghostCreateErrorMessage || dragState.phase === "error"
                 ? "canvas-runtime-status is-error"
-              : "canvas-runtime-status"
+                : "canvas-runtime-status"
           }
         >
           <Text
@@ -1940,7 +2124,7 @@ export function GraphCanvasRuntime({
             color={
               mutationStatusMessage
                 ? "green"
-                : dragState.phase === "error"
+                : ghostCreateErrorMessage || dragState.phase === "error"
                   ? "red"
                   : "gray"
             }

@@ -34,7 +34,7 @@ describe("inbox state machine", () => {
     });
 
     expect(decision.route).toBe("promote");
-    expect(decision.nextStatus).toBe("promoted");
+    expect(decision.nextStatus).toBe("ready_for_review");
   });
 
   it("requests clarification when the expected value gain exceeds ask cost", () => {
@@ -74,11 +74,13 @@ describe("inbox state machine", () => {
   });
 
   it("guards status transitions and terminal states", () => {
-    expect(canTransitionInboxStatus("resolved", "promoted")).toBe(true);
+    expect(canTransitionInboxStatus("resolved", "ready_for_review")).toBe(true);
     expect(canTransitionInboxStatus("clarification_requested", "interpreted")).toBe(
       true
     );
-    expect(() => assertInboxStatusTransition("received", "promoted")).toThrow(
+    expect(() =>
+      assertInboxStatusTransition("received", "ready_for_review")
+    ).toThrow(
       "Invalid Inbox status transition"
     );
     expect(isTerminalInboxStatus("parked")).toBe(true);

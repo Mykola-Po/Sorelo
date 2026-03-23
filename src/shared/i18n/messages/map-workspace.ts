@@ -37,6 +37,7 @@ export type MapWorkspaceMessages = {
     conceptSummaryFallback: string;
     updatingPosition: string;
     positionSaveFailed: string;
+    ghostCreateFailed: string;
     zoomInToMoveConcepts: string;
   };
   guided: Record<
@@ -102,6 +103,19 @@ export type MapWorkspaceMessages = {
     archiveMapConfirmDescription: string;
     subjectLabel: string;
     openLink: string;
+    provenanceTitle: string;
+    provenanceEmpty: string;
+    provenanceInboxItem: string;
+    provenanceOpenInbox: string;
+    provenanceAppliedAt: string;
+    provenanceReviewStatus: string;
+    provenanceReason: string;
+    provenanceSuggestionRationale: string;
+    provenanceEvidence: string;
+    provenanceNoEvidence: string;
+    provenanceClarificationAnswer: string;
+    provenanceFragment: (ordinal: number) => string;
+    provenanceMutationType: (value: string) => string;
     strengthValue: (value: number) => string;
   };
   scenario: {
@@ -574,6 +588,8 @@ export const mapWorkspaceMessages: Record<
           "Open Inspector to define the meaning of this Concept.",
         updatingPosition: "Updating canvas position...",
         positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
+        ghostCreateFailed:
+          "Couldn't create a Concept from this ghost. Try again.",
         zoomInToMoveConcepts: "Zoom in to move Concepts.",
       },
     guided: buildGuidedMessages("en"),
@@ -640,6 +656,19 @@ export const mapWorkspaceMessages: Record<
         "This map will be moved out of active workspace lists.",
       subjectLabel: "Subject label",
       openLink: "Open Link",
+      provenanceTitle: "Provenance",
+      provenanceEmpty: "No canonical apply provenance has been recorded yet.",
+      provenanceInboxItem: "Inbox item",
+      provenanceOpenInbox: "Open in Inbox",
+      provenanceAppliedAt: "Applied",
+      provenanceReviewStatus: "Review status",
+      provenanceReason: "Review reason",
+      provenanceSuggestionRationale: "Suggestion rationale",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "No evidence fragments were attached.",
+      provenanceClarificationAnswer: "Clarification answer",
+      provenanceFragment: (ordinal) => `Fragment ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `strength ${value}`,
     },
     scenario: {
@@ -779,6 +808,8 @@ export const mapWorkspaceMessages: Record<
           "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
         updatingPosition: "Оновлюємо позицію на canvas...",
         positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
+        ghostCreateFailed:
+          "Не вдалося створити Концепт із цього ghost. Спробуйте ще раз.",
         zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
       },
     guided: buildGuidedMessages("uk"),
@@ -845,6 +876,19 @@ export const mapWorkspaceMessages: Record<
         "Цю карту буде прибрано з активних списків workspace.",
       subjectLabel: "Мітка суб’єкта",
       openLink: "Відкрити Зв’язок",
+      provenanceTitle: "Provenance",
+      provenanceEmpty: "Для цього canonical apply provenance ще не записано.",
+      provenanceInboxItem: "Inbox item",
+      provenanceOpenInbox: "Відкрити в Inbox",
+      provenanceAppliedAt: "Застосовано",
+      provenanceReviewStatus: "Статус review",
+      provenanceReason: "Причина review",
+      provenanceSuggestionRationale: "Обґрунтування suggestion",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "Фрагменти evidence не прикріплені.",
+      provenanceClarificationAnswer: "Відповідь на clarification",
+      provenanceFragment: (ordinal) => `Фрагмент ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {
@@ -984,6 +1028,8 @@ export const mapWorkspaceMessages: Record<
           "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
         updatingPosition: "Обновляем позицию на canvas...",
         positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
+        ghostCreateFailed:
+          "Не удалось создать Концепт из этого ghost. Попробуйте ещё раз.",
         zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
       },
     guided: buildGuidedMessages("ru"),
@@ -1051,6 +1097,19 @@ export const mapWorkspaceMessages: Record<
         "Эта карта будет убрана из активных списков workspace.",
       subjectLabel: "Метка субъекта",
       openLink: "Открыть Связь",
+      provenanceTitle: "Provenance",
+      provenanceEmpty: "Для этого canonical apply provenance пока не записан.",
+      provenanceInboxItem: "Inbox item",
+      provenanceOpenInbox: "Открыть в Inbox",
+      provenanceAppliedAt: "Применено",
+      provenanceReviewStatus: "Статус review",
+      provenanceReason: "Причина review",
+      provenanceSuggestionRationale: "Обоснование suggestion",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "Фрагменты evidence не прикреплены.",
+      provenanceClarificationAnswer: "Ответ на clarification",
+      provenanceFragment: (ordinal) => `Фрагмент ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {

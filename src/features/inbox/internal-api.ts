@@ -1,23 +1,10 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
 
-import { getInternalAuthStatus } from "@/shared/auth/internal";
+import { assertInternalApiRequest } from "@/shared/auth/internal-api";
 
 export function assertInternalInboxRequest(request: Request) {
-  const status = getInternalAuthStatus(request);
-
-  if (status === "authorized") {
-    return null;
-  }
-
-  if (status === "misconfigured") {
-    return NextResponse.json(
-      { error: "Internal inbox routes are not configured." },
-      { status: 503 }
-    );
-  }
-
-  return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  return assertInternalApiRequest(request);
 }
 
 export async function parseInternalInboxJson<T extends z.ZodTypeAny>(

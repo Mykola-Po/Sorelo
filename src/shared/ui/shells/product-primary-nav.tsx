@@ -37,6 +37,8 @@ export function ProductPrimaryNav({
     return null;
   }
 
+  // Inbox is intentionally excluded here while it remains a hidden internal
+  // workbench rather than a workspace-visible review/apply feature.
   const mapsHref = workspaceMapsPath(workspaceSlug);
   const membersHref = workspaceMembersPath(workspaceSlug);
   const currentPath = normalizePath(pathname ?? "");

@@ -192,6 +192,7 @@ function MapWorkspaceContent({
   const openScenarioPanel = () => {
     setPanelTab("scenario");
     setInteractionMode("inspect");
+    setSelection({ kind: "none" });
     setConnectLinkSourceId(null);
     setPanelOpen(true);
   };
@@ -199,6 +200,7 @@ function MapWorkspaceContent({
   const openLearningPanel = () => {
     setPanelTab("learning");
     setInteractionMode("inspect");
+    setSelection({ kind: "none" });
     setConnectLinkSourceId(null);
     setPanelOpen(true);
   };
@@ -286,7 +288,9 @@ function MapWorkspaceContent({
   const clearCanvasSelection = () => {
     cancelInteraction();
     setSelection({ kind: "none" });
-    setPanelOpen(false);
+    if (panelTab === "inspector") {
+      setPanelOpen(false);
+    }
   };
 
   const renderPanelContent = () => {

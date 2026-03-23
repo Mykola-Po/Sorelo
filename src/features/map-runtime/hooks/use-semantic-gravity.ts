@@ -57,9 +57,8 @@ export function useSemanticGravity(sigma: Sigma | null, enabled: boolean) {
             // Add invisible semantic gravity edge
             graph.addEdge(nodeA, nodeB, {
               weight: sim * 10,
-              type: "invisible",
-              color: "transparent",
-              size: 0
+              hidden: true,
+              size: 0,
             });
           }
         }

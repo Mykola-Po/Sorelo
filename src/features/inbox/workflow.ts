@@ -114,7 +114,7 @@ export const inboxWorkflowStatusByStep = {
   score: "scored",
   resolve: "resolved",
   route: "resolved",
-  promote: "promoted",
+  promote: "ready_for_review",
   clarify: "clarification_requested",
   park: "parked",
   discard: "discarded",
@@ -180,7 +180,7 @@ export const inboxStepContracts = {
     stepName: "promote",
     inputSchema: promoteInputSchema,
     outputSchema: promoteOutputSchema,
-    completionStatus: "promoted",
+    completionStatus: "ready_for_review",
   },
   clarify: {
     stepName: "clarify",

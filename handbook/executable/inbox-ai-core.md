@@ -12,6 +12,19 @@ Inbox AI Core is internal-only and separate from the canonical public Sorelo pro
 
 It does not replace Maps, Concepts, Links, Inspector, or Scenarios.
 
+The current Inbox UI at `/app/[workspaceSlug]/inbox` is also internal-only.
+
+It is a hidden workbench for ingestion tracing, clarification reruns, packet inspection, and review-bridge diagnostics.
+
+It is not yet a workspace-visible product feature and should stay out of primary navigation until all of the following exist:
+
+- a workspace-scoped queue instead of a user-scoped latest-items list
+- role-aware review ownership and permissions
+- filters and status views that support actual review operations
+- an explicit review/apply workflow in Inbox, or a clearly productized handoff
+
+Today the canonical accept/reject/apply flow is carried by the Learning review surface, while Inbox Workbench remains the internal trace surface around that bridge.
+
 Its current role is to define how raw input can be:
 
 - received
@@ -27,6 +40,7 @@ The persistence foundation lives in the `app_private` schema.
 
 Current internal tables cover:
 
+- `app_migrations`
 - `inbox_items`
 - `inbox_fragments`
 - `inbox_hypotheses`
@@ -95,6 +109,22 @@ If the rerun still prefers `clarify`, the route is force-converted to `park` rat
 
 ## Current Internal Auth
 
-Internal Inbox routes now prefer `INTERNAL_API_SECRET`.
+Internal Inbox and Learning routes now authenticate only with `INTERNAL_API_SECRET`.
 
-`SUPABASE_SECRET_KEY` remains only as a compatibility fallback during the transition period and should not remain the long-term primary internal route credential.
+`SUPABASE_SECRET_KEY` remains available only for unrelated service-role flows and is no longer part of internal route auth.
+
+## Current Runtime Operations
+
+Inbox now exposes an internal runtime check at:
+
+- `GET /api/internal/inbox/runtime`
+
+The runtime report is machine-readable and classifies:
+
+- `ok`
+- `degraded`
+- `failed`
+
+`failed_needs_review` Inbox items are surfaced as `degraded`, not as a deploy blocker.
+
+Env, schema, and migration problems are surfaced as `failed`.

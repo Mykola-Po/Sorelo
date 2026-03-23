@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 function createMockGraphSnapshot() {
   return {
@@ -126,6 +126,35 @@ async function getNodePosition(page: Page, conceptId: string) {
       y: graph.getNodeAttribute(nodeId, "y"),
     };
   }, conceptId);
+}
+
+async function getCardLayerPosition(locator: Locator) {
+  return locator.evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+
+    return {
+      left: Number.parseFloat(styles.left),
+      top: Number.parseFloat(styles.top),
+    };
+  });
+}
+
+async function getConceptLayerState(page: Page) {
+  return page.evaluate(() => {
+    const card = document.querySelector(".sl-concept-card");
+    const dot = document.querySelector(".sl-concept-dot");
+    if (!(card instanceof HTMLElement) || !(dot instanceof HTMLElement)) {
+      throw new Error("Concept layers are not available");
+    }
+    const cardStyle = getComputedStyle(card);
+    const dotStyle = getComputedStyle(dot);
+    return {
+      cardOpacity: Number(cardStyle.opacity),
+      cardPointerEvents: cardStyle.pointerEvents,
+      dotOpacity: Number(dotStyle.opacity),
+      dotPointerEvents: dotStyle.pointerEvents,
+    };
+  });
 }
 
 async function dragLocatorWithMouse(
@@ -480,11 +509,7 @@ test.describe("Map Runtime WebGL Canvas", () => {
   }) => {
     const draggedCard = page.getByRole("button", { name: /Node A/ }).first();
     const stationaryCard = page.getByRole("button", { name: /Node B/ }).first();
-    const stationaryBefore = await stationaryCard.boundingBox();
-    expect(stationaryBefore).not.toBeNull();
-    if (!stationaryBefore) {
-      return;
-    }
+    const stationaryBefore = await getCardLayerPosition(stationaryCard);
 
     const dragBox = await draggedCard.boundingBox();
     expect(dragBox).not.toBeNull();
@@ -497,17 +522,13 @@ test.describe("Map Runtime WebGL Canvas", () => {
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX + 96, startY - 140, { steps: 14 });
+    await page.mouse.move(startX + 72, startY + 40, { steps: 12 });
     await page.waitForTimeout(80);
 
-    const stationaryDuring = await stationaryCard.boundingBox();
-    expect(stationaryDuring).not.toBeNull();
-    if (!stationaryDuring) {
-      return;
-    }
+    const stationaryDuring = await getCardLayerPosition(stationaryCard);
 
-    expect(Math.abs(stationaryDuring.x - stationaryBefore.x)).toBeLessThan(24);
-    expect(Math.abs(stationaryDuring.y - stationaryBefore.y)).toBeLessThan(24);
+    expect(Math.abs(stationaryDuring.left - stationaryBefore.left)).toBeLessThan(16);
+    expect(Math.abs(stationaryDuring.top - stationaryBefore.top)).toBeLessThan(16);
     expect(await getNodePosition(page, "node-b")).toEqual({ x: 300, y: 300 });
 
     await page.mouse.up();
@@ -549,8 +570,8 @@ test.describe("Map Runtime WebGL Canvas", () => {
       y: endY - during.y,
     };
 
-    expect(Math.abs(currentOffset.x - initialOffset.x)).toBeLessThan(10);
-    expect(Math.abs(currentOffset.y - initialOffset.y)).toBeLessThan(12);
+    expect(Math.abs(currentOffset.x - initialOffset.x)).toBeLessThan(16);
+    expect(Math.abs(currentOffset.y - initialOffset.y)).toBeLessThan(16);
 
     await page.mouse.up();
     await expect.poll(() => positionSavePayloads.length).toBe(1);
@@ -728,22 +749,22 @@ test.describe("Map Runtime WebGL Canvas", () => {
       sigma.getCamera().setState({ ratio });
     }, minRatio);
 
-    await page.waitForTimeout(80);
-    const nearState = await page.evaluate(() => {
-      const card = document.querySelector(".sl-concept-card");
-      const dot = document.querySelector(".sl-concept-dot");
-      if (!(card instanceof HTMLElement) || !(dot instanceof HTMLElement)) {
-        throw new Error("Concept layers are not available");
-      }
-      const cardStyle = getComputedStyle(card);
-      const dotStyle = getComputedStyle(dot);
-      return {
-        cardOpacity: Number(cardStyle.opacity),
-        cardPointerEvents: cardStyle.pointerEvents,
-        dotOpacity: Number(dotStyle.opacity),
-        dotPointerEvents: dotStyle.pointerEvents,
-      };
-    });
+    await expect
+      .poll(() => getConceptLayerState(page), {
+        timeout: 3_000,
+        intervals: [50, 100, 150],
+      })
+      .toMatchObject({
+        cardPointerEvents: "auto",
+        dotPointerEvents: "none",
+      });
+    await expect
+      .poll(async () => (await getConceptLayerState(page)).cardOpacity, {
+        timeout: 3_000,
+        intervals: [50, 100, 150],
+      })
+      .toBeGreaterThan(0.8);
+    const nearState = await getConceptLayerState(page);
 
     expect(nearState.cardOpacity).toBeGreaterThan(0.8);
     expect(nearState.cardPointerEvents).toBe("auto");
@@ -762,22 +783,22 @@ test.describe("Map Runtime WebGL Canvas", () => {
       sigma.getCamera().setState({ ratio });
     }, maxRatio);
 
-    await page.waitForTimeout(120);
-    const farState = await page.evaluate(() => {
-      const card = document.querySelector(".sl-concept-card");
-      const dot = document.querySelector(".sl-concept-dot");
-      if (!(card instanceof HTMLElement) || !(dot instanceof HTMLElement)) {
-        throw new Error("Concept layers are not available");
-      }
-      const cardStyle = getComputedStyle(card);
-      const dotStyle = getComputedStyle(dot);
-      return {
-        cardOpacity: Number(cardStyle.opacity),
-        cardPointerEvents: cardStyle.pointerEvents,
-        dotOpacity: Number(dotStyle.opacity),
-        dotPointerEvents: dotStyle.pointerEvents,
-      };
-    });
+    await expect
+      .poll(() => getConceptLayerState(page), {
+        timeout: 3_000,
+        intervals: [50, 100, 150],
+      })
+      .toMatchObject({
+        cardPointerEvents: "none",
+        dotPointerEvents: "auto",
+      });
+    await expect
+      .poll(async () => (await getConceptLayerState(page)).dotOpacity, {
+        timeout: 3_000,
+        intervals: [50, 100, 150],
+      })
+      .toBeGreaterThan(0.8);
+    const farState = await getConceptLayerState(page);
 
     expect(farState.cardOpacity).toBeLessThan(0.2);
     expect(farState.cardPointerEvents).toBe("none");

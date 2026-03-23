@@ -10,9 +10,12 @@ import {
 import { InboxClarificationAnswerForm } from "@/features/inbox/components/inbox-clarification-answer-form";
 import { InboxWorkbenchComposer } from "@/features/inbox/components/inbox-workbench-composer";
 import { InboxWorkbenchProcessForm } from "@/features/inbox/components/inbox-workbench-process-form";
+import { inboxRoutingPolicyTraceSchema } from "@/features/inbox/schemas";
+import type { MapSummary } from "@/features/maps/types";
 import type {
   InboxItemDetailRecord,
   InboxItemRecord,
+  InboxRoutingPolicyTraceRecord,
 } from "@/features/inbox/types";
 import { workspaceInboxPath } from "@/shared/config/routes";
 import { DataTable } from "@/shared/ui/components/data-table";
@@ -24,6 +27,7 @@ import { StatusBadge } from "@/shared/ui/components/status-badge";
 type InboxWorkbenchProps = {
   workspaceSlug: string;
   workspaceName: string;
+  availableMaps: MapSummary[];
   items: InboxItemRecord[];
   selectedItemId?: string;
   selectionError?: string | null;
@@ -65,6 +69,110 @@ function truncateText(text: string, max = 120) {
 
 function formatJson(payload: Record<string, unknown>) {
   return JSON.stringify(payload, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getRoutingPolicyTrace(value: unknown): InboxRoutingPolicyTraceRecord | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const candidate = "routingPolicy" in value ? value.routingPolicy : value;
+  const parsed = inboxRoutingPolicyTraceSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
+function getRoutingCompatibility(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const requestedRoute =
+    typeof value.requestedRoute === "string" ? value.requestedRoute : null;
+  const effectiveRoute =
+    typeof value.effectiveRoute === "string"
+      ? value.effectiveRoute
+      : typeof value.route === "string"
+        ? value.route
+        : null;
+  const reason = typeof value.reason === "string" ? value.reason : null;
+  const overrideReason =
+    typeof value.overrideReason === "string" ? value.overrideReason : null;
+
+  if (!requestedRoute && !effectiveRoute && !reason && !overrideReason) {
+    return null;
+  }
+
+  return {
+    requestedRoute,
+    effectiveRoute,
+    reason,
+    overrideReason,
+  };
+}
+
+function renderRoutingPolicySummary(
+  trace: InboxRoutingPolicyTraceRecord | null,
+  label = "Routing policy",
+  noteSize: "1" | "2" = "2"
+) {
+  if (!trace) {
+    return null;
+  }
+
+  return (
+    <Flex direction="column" gap="1">
+      <Text size="1" color="gray">
+        {label}
+      </Text>
+      <Text size="1" className="sl-inbox-mono">
+        {trace.policyVersion}
+      </Text>
+      {trace.decisionNotes.map((note) => (
+        <Text key={note.id} size={noteSize}>
+          {note.text}
+        </Text>
+      ))}
+    </Flex>
+  );
+}
+
+function humanizeToken(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function formatReviewArtifactLabel(value: string) {
+  return humanizeToken(value);
+}
+
+function formatLatency(latencyMs: number | null) {
+  if (latencyMs === null) {
+    return "Not recorded";
+  }
+
+  if (latencyMs < 1000) {
+    return `${latencyMs} ms`;
+  }
+
+  return `${(latencyMs / 1000).toFixed(2)} s`;
+}
+
+function formatFailureReason(input: {
+  failureCode: string | null;
+  failureMessage: string | null;
+}) {
+  if (!input.failureCode && !input.failureMessage) {
+    return "Not recorded";
+  }
+
+  if (input.failureCode && input.failureMessage) {
+    return `${humanizeToken(input.failureCode)}: ${input.failureMessage}`;
+  }
+
+  return input.failureMessage ?? humanizeToken(input.failureCode ?? "unknown");
 }
 
 function getProcessActionLabel(status: InboxItemRecord["status"]) {
@@ -119,6 +227,11 @@ function renderDetailPanels(
     null;
   const clarificationAnswerByRequestId = new Map(
     detail.clarificationAnswers.map((answer) => [answer.requestId, answer])
+  );
+  const reviewBatchByPacketId = new Map(
+    detail.reviewBatches
+      .filter((batch) => batch.inboxPacketId)
+      .map((batch) => [batch.inboxPacketId as string, batch])
   );
   const canProcess = actionableStatuses.has(selectedItem.status);
 
@@ -398,7 +511,7 @@ function renderDetailPanels(
 
       <SectionCard
         title="Structured packets"
-        description="This is the current packet output and raw payload used by the routing layer."
+        description="Packets stay as routed evidence containers. Canonical changes now depend on explicit review artifacts in the bridge below."
       >
         {detail.structuredPackets.length === 0 ? (
           <EmptyState
@@ -407,9 +520,83 @@ function renderDetailPanels(
           />
         ) : (
           <div className="sl-inbox-packet-list">
-            {detail.structuredPackets.map((packet) => (
+            {detail.structuredPackets.map((packet) => {
+              const reviewBatch = reviewBatchByPacketId.get(packet.id);
+              const routingPolicy = getRoutingPolicyTrace(packet.metadata);
+
+              return (
+                <Card
+                  key={packet.id}
+                  variant="surface"
+                  className="sl-inbox-packet-card"
+                >
+                  <Flex direction="column" gap="3">
+                    <Flex align="center" justify="between" gap="2" wrap="wrap">
+                      <Flex gap="2" wrap="wrap">
+                        <StatusBadge
+                          status={packet.packetType}
+                          label={packet.packetType}
+                        />
+                        <StatusBadge status={packet.route} label={packet.route} />
+                      </Flex>
+                      <Text size="1" color="gray">
+                        {packet.status}
+                      </Text>
+                    </Flex>
+                    <Text size="2">{packet.summary}</Text>
+                    {renderRoutingPolicySummary(routingPolicy)}
+                    {reviewBatch ? (
+                      <Flex direction="column" gap="1">
+                        <Text size="1" color="gray">
+                          Review bridge
+                        </Text>
+                        <Flex gap="2" wrap="wrap">
+                          <StatusBadge
+                            status={
+                              reviewBatch.batchType === "promote_apply"
+                                ? "inbox_review"
+                                : reviewBatch.batchType
+                            }
+                            label={
+                              reviewBatch.batchType === "promote_apply"
+                                ? "inbox review"
+                                : humanizeToken(reviewBatch.batchType)
+                            }
+                          />
+                          <StatusBadge status={reviewBatch.status} />
+                          <Text size="1" color="gray" className="sl-inbox-mono">
+                            {reviewBatch.id}
+                          </Text>
+                        </Flex>
+                        <Text size="2" color="gray">
+                          {reviewBatch.artifacts.length} review artifacts were
+                          materialized from this packet.
+                        </Text>
+                      </Flex>
+                    ) : null}
+                    <pre className="sl-inbox-pre">{formatJson(packet.payload)}</pre>
+                  </Flex>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Review bridge"
+        description="Each user decision is recorded per artifact first. Only resolved artifacts can trigger canonical apply."
+      >
+        {detail.reviewBatches.length === 0 ? (
+          <EmptyState
+            title="No review artifacts yet"
+            description="Promoted packets materialize here as Learning review batches before anything can touch the canonical layer."
+          />
+        ) : (
+          <div className="sl-inbox-packet-list">
+            {detail.reviewBatches.map((batch) => (
               <Card
-                key={packet.id}
+                key={batch.id}
                 variant="surface"
                 className="sl-inbox-packet-card"
               >
@@ -417,17 +604,102 @@ function renderDetailPanels(
                   <Flex align="center" justify="between" gap="2" wrap="wrap">
                     <Flex gap="2" wrap="wrap">
                       <StatusBadge
-                        status={packet.packetType}
-                        label={packet.packetType}
+                        status={
+                          batch.batchType === "promote_apply"
+                            ? "inbox_review"
+                            : batch.batchType
+                        }
+                        label={
+                          batch.batchType === "promote_apply"
+                            ? "inbox review"
+                            : humanizeToken(batch.batchType)
+                        }
                       />
-                      <StatusBadge status={packet.route} label={packet.route} />
+                      <StatusBadge status={batch.status} />
                     </Flex>
-                    <Text size="1" color="gray">
-                      {packet.status}
+                    <Text size="1" color="gray" className="sl-inbox-mono">
+                      {batch.id}
                     </Text>
                   </Flex>
-                  <Text size="2">{packet.summary}</Text>
-                  <pre className="sl-inbox-pre">{formatJson(packet.payload)}</pre>
+
+                  <Text size="2">
+                    {typeof batch.metadata.packetSummary === "string"
+                      ? batch.metadata.packetSummary
+                      : "Inbox review batch"}
+                  </Text>
+
+                  {batch.artifacts.length === 0 ? (
+                    <Text size="2" color="gray">
+                      No review artifacts were materialized for this batch.
+                    </Text>
+                  ) : (
+                    <div className="sl-inbox-analysis-list">
+                      {batch.artifacts.map((artifact) => (
+                        <Card
+                          key={artifact.id}
+                          variant="surface"
+                          className="sl-inbox-analysis-card"
+                        >
+                          <Flex direction="column" gap="2">
+                            <Flex
+                              align="center"
+                              justify="between"
+                              gap="2"
+                              wrap="wrap"
+                            >
+                              <Flex gap="2" wrap="wrap">
+                                <StatusBadge
+                                  status={artifact.suggestionType}
+                                  label={formatReviewArtifactLabel(
+                                    artifact.suggestionType
+                                  )}
+                                />
+                                <StatusBadge
+                                  status={artifact.targetEntityType}
+                                  label={formatReviewArtifactLabel(
+                                    artifact.targetEntityType
+                                  )}
+                                />
+                                {artifact.resolutionType ? (
+                                  <StatusBadge
+                                    status={artifact.resolutionType}
+                                    label={formatReviewArtifactLabel(
+                                      artifact.resolutionType
+                                    )}
+                                  />
+                                ) : null}
+                                {artifact.applyStatus ? (
+                                  <StatusBadge
+                                    status={artifact.applyStatus}
+                                    label={formatReviewArtifactLabel(
+                                      artifact.applyStatus
+                                    )}
+                                  />
+                                ) : null}
+                              </Flex>
+                              <Text size="1" color="gray">
+                                artifact #{artifact.artifactOrder + 1}
+                              </Text>
+                            </Flex>
+
+                            {artifact.reasonText ? (
+                              <Text size="2">{artifact.reasonText}</Text>
+                            ) : null}
+
+                            {artifact.applyError ? (
+                              <Text size="2" color="red">
+                                {artifact.applyError}
+                              </Text>
+                            ) : null}
+
+                            <pre className="sl-inbox-pre">
+                              {formatJson(artifact.proposedPayload)}
+                            </pre>
+                          </Flex>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </Flex>
               </Card>
             ))}
@@ -517,6 +789,191 @@ function renderDetailPanels(
       </SectionCard>
 
       <SectionCard
+        title="Execution attempts"
+        description="Inspect durable process and rerun telemetry before diving into the legacy event timeline."
+      >
+        {detail.attempts.length === 0 ? (
+          <EmptyState
+            title="No execution telemetry yet"
+            description="Attempts and step runs are recorded on the next process or clarification rerun."
+          />
+        ) : (
+          <div className="sl-inbox-packet-list">
+            {detail.attempts.map((attempt) => (
+              <Card
+                key={attempt.id}
+                variant="surface"
+                className="sl-inbox-packet-card"
+              >
+                <Flex direction="column" gap="3">
+                  <Flex align="center" justify="between" gap="2" wrap="wrap">
+                    <Flex gap="2" wrap="wrap">
+                      <StatusBadge status={attempt.status} label={attempt.status} />
+                      <StatusBadge
+                        status={
+                          attempt.triggerKind === "manual_process"
+                            ? "manual_note"
+                            : "clarification_answer"
+                        }
+                        label={humanizeToken(attempt.triggerKind)}
+                      />
+                      {attempt.route ? (
+                        <StatusBadge status={attempt.route} label={attempt.route} />
+                      ) : null}
+                    </Flex>
+                    <Text size="1" color="gray" className="sl-inbox-mono">
+                      attempt {attempt.attemptNo}
+                    </Text>
+                  </Flex>
+
+                  <div className="sl-inbox-detail-meta-grid">
+                    <div className="sl-inbox-meta-card">
+                      <Text size="1" color="gray">
+                        Duration
+                      </Text>
+                      <Text size="2">{formatLatency(attempt.latencyMs)}</Text>
+                    </div>
+                    <div className="sl-inbox-meta-card">
+                      <Text size="1" color="gray">
+                        Started
+                      </Text>
+                      <Text size="2">{formatTimestamp(attempt.startedAt)}</Text>
+                    </div>
+                    <div className="sl-inbox-meta-card">
+                      <Text size="1" color="gray">
+                        Finished
+                      </Text>
+                      <Text size="2">{formatTimestamp(attempt.finishedAt)}</Text>
+                    </div>
+                    <div className="sl-inbox-meta-card">
+                      <Text size="1" color="gray">
+                        Runner
+                      </Text>
+                      <Text size="2" className="sl-inbox-mono">
+                        {attempt.runnerKind}
+                      </Text>
+                    </div>
+                  </div>
+
+                  <div className="sl-inbox-text-grid">
+                    <div className="sl-inbox-text-block">
+                      <Text size="1" color="gray">
+                        Route reason
+                      </Text>
+                      <Text size="2">
+                        {attempt.reason ?? "No route reason was recorded."}
+                      </Text>
+                    </div>
+                    <div className="sl-inbox-text-block">
+                      <Text size="1" color="gray">
+                        Failure
+                      </Text>
+                      <Text size="2">
+                        {formatFailureReason({
+                          failureCode: attempt.failureCode,
+                          failureMessage: attempt.failureMessage,
+                        })}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {attempt.steps.length === 0 ? (
+                    <Text size="2" color="gray">
+                      No step telemetry was recorded for this attempt.
+                    </Text>
+                  ) : (
+                    <div className="table-scroll">
+                      <DataTable
+                        columns={[
+                          "Step",
+                          "Status",
+                          "Latency",
+                          "Runtime",
+                          "Route / reason",
+                          "Failure",
+                        ]}
+                        rows={attempt.steps.map((step) => [
+                          (() => {
+                            const routingPolicy = getRoutingPolicyTrace(step.metadata);
+
+                            return (
+                              <Flex
+                                key={`${step.id}-step`}
+                                direction="column"
+                                gap="1"
+                                wrap="wrap"
+                              >
+                                <Text size="2" weight="medium">
+                                  {step.stepName}
+                                </Text>
+                                <Text size="1" color="gray">
+                                  run {step.runNo}
+                                </Text>
+                                {routingPolicy ? (
+                                  <Text size="1" color="gray" className="sl-inbox-mono">
+                                    {routingPolicy.policyVersion}
+                                  </Text>
+                                ) : null}
+                              </Flex>
+                            );
+                          })(),
+                          <StatusBadge
+                            key={`${step.id}-status`}
+                            status={step.status}
+                            label={step.status}
+                          />,
+                          formatLatency(step.latencyMs),
+                          <Flex
+                            key={`${step.id}-runtime`}
+                            direction="column"
+                            gap="1"
+                            wrap="wrap"
+                          >
+                            <Text size="2" className="sl-inbox-mono">
+                              {step.modelName ?? "deterministic"}
+                            </Text>
+                            <Text size="1" color="gray" className="sl-inbox-mono">
+                              {step.promptVersion ?? "n/a"}
+                            </Text>
+                          </Flex>,
+                          <Flex
+                            key={`${step.id}-route`}
+                            direction="column"
+                            gap="1"
+                            wrap="wrap"
+                          >
+                            {step.route ? (
+                              <StatusBadge status={step.route} label={step.route} />
+                            ) : (
+                              <Text size="1" color="gray">
+                                No route
+                              </Text>
+                            )}
+                            <Text size="1" color="gray">
+                              {step.reason ?? "No reason"}
+                            </Text>
+                            {renderRoutingPolicySummary(
+                              getRoutingPolicyTrace(step.metadata),
+                              "Policy notes",
+                              "1"
+                            )}
+                          </Flex>,
+                          formatFailureReason({
+                            failureCode: step.failureCode,
+                            failureMessage: step.failureMessage,
+                          }),
+                        ])}
+                      />
+                    </div>
+                  )}
+                </Flex>
+              </Card>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
         title="Workflow timeline"
         description="Track step-level events, attempt numbers, and timestamps for the selected item."
       >
@@ -528,13 +985,66 @@ function renderDetailPanels(
         ) : (
           <div className="table-scroll">
             <DataTable
-              columns={["Step", "Event", "Attempt", "Time"]}
-              rows={detail.workflowEvents.map((event) => [
-                event.stepName,
-                event.eventType,
-                event.attemptNo.toString(),
-                formatTimestamp(event.createdAt),
-              ])}
+              columns={["Step", "Event", "Attempt", "Policy", "Details", "Time"]}
+              rows={detail.workflowEvents.map((event) => {
+                const routingPolicy = getRoutingPolicyTrace(event.payload);
+                const routingCompatibility = getRoutingCompatibility(event.payload);
+
+                return [
+                  event.stepName,
+                  event.eventType,
+                  event.attemptNo.toString(),
+                  routingPolicy ? (
+                    <Text
+                      key={`${event.id}-policy`}
+                      size="1"
+                      className="sl-inbox-mono"
+                    >
+                      {routingPolicy.policyVersion}
+                    </Text>
+                  ) : (
+                    <Text key={`${event.id}-policy`} size="1" color="gray">
+                      n/a
+                    </Text>
+                  ),
+                  routingCompatibility || routingPolicy ? (
+                    <Flex
+                      key={`${event.id}-details`}
+                      direction="column"
+                      gap="1"
+                      wrap="wrap"
+                    >
+                      {routingCompatibility?.effectiveRoute ? (
+                        <Text size="1">
+                          {routingCompatibility.requestedRoute
+                            ? `${routingCompatibility.requestedRoute} -> ${routingCompatibility.effectiveRoute}`
+                            : routingCompatibility.effectiveRoute}
+                        </Text>
+                      ) : null}
+                      {routingCompatibility?.reason ? (
+                        <Text size="1" color="gray">
+                          {routingCompatibility.reason}
+                        </Text>
+                      ) : null}
+                      {routingCompatibility?.overrideReason ? (
+                        <Text size="1" color="gray">
+                          {routingCompatibility.overrideReason}
+                        </Text>
+                      ) : null}
+                      {routingPolicy?.decisionNotes.map((note) => (
+                        <Text key={note.id} size="1">
+                          {note.text}
+                        </Text>
+                      ))}
+                    </Flex>
+                  ) : (
+                    <Text key={`${event.id}-details`} size="1" color="gray">
+                      No routing details
+                    </Text>
+                  ),
+                  formatTimestamp(event.createdAt),
+                ];
+              })}
             />
           </div>
         )}
@@ -546,6 +1056,7 @@ function renderDetailPanels(
 export function InboxWorkbench({
   workspaceSlug,
   workspaceName,
+  availableMaps,
   items,
   selectedItemId,
   selectionError,
@@ -562,9 +1073,12 @@ export function InboxWorkbench({
         <div className="sl-inbox-rail">
           <SectionCard
             title="Create Inbox item"
-            description="Paste a raw note or transcript snippet to start the triage loop."
+            description="Pick a target Map first, then paste a raw note or transcript snippet to start the triage loop."
           >
-            <InboxWorkbenchComposer workspaceSlug={workspaceSlug} />
+            <InboxWorkbenchComposer
+              workspaceSlug={workspaceSlug}
+              availableMaps={availableMaps}
+            />
           </SectionCard>
 
           <SectionCard

@@ -1,5 +1,52 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+type InternalResponse<T> = {
+  data: T;
+};
+
+function readDotenvValue(name: string) {
+  const dotenvPath = join(process.cwd(), ".env.local");
+  if (!existsSync(dotenvPath)) {
+    return null;
+  }
+
+  const lines = readFileSync(dotenvPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    if (key !== name) {
+      continue;
+    }
+
+    const rawValue = trimmed.slice(separatorIndex + 1).trim();
+    return rawValue.replace(/^['"]|['"]$/g, "");
+  }
+
+  return null;
+}
+
+function getInternalApiSecret() {
+  const secret =
+    process.env.INTERNAL_API_SECRET ?? readDotenvValue("INTERNAL_API_SECRET");
+
+  if (!secret) {
+    throw new Error("INTERNAL_API_SECRET is required for internal e2e requests.");
+  }
+
+  return secret;
+}
 
 function normalizeWorkspaceSlug(input: string) {
   const normalized = input
@@ -30,12 +77,39 @@ async function authenticateAsE2EUser(page: Page, userId: string) {
   ]);
 }
 
+async function createMapThroughInternalApi(
+  page: Page,
+  input: {
+    userId: string;
+    workspaceSlug: string;
+    title: string;
+    subjectLabel: string;
+    description: string;
+  }
+) {
+  const response = await page.request.post("/api/internal/maps", {
+    headers: {
+      authorization: `Bearer ${getInternalApiSecret()}`,
+    },
+    data: input,
+  });
+
+  if (!response.ok()) {
+    throw new Error(
+      `Internal map request failed (${response.status()}): ${await response.text()}`
+    );
+  }
+
+  return (await response.json()) as InternalResponse<{ id: string }>;
+}
+
 async function createWorkspaceAndOpenMap(page: Page) {
   const suffix = `${Date.now()}`;
+  const userId = randomUUID();
   const workspaceName = `Canvas Workspace ${suffix}`;
   const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
 
-  await authenticateAsE2EUser(page, randomUUID());
+  await authenticateAsE2EUser(page, userId);
   await page.goto("/app");
   await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
@@ -45,26 +119,16 @@ async function createWorkspaceAndOpenMap(page: Page) {
     timeout: 30_000,
   });
 
-  await page.locator('input[name="title"]').fill(`Canvas Map ${suffix}`);
-  await page.locator('input[name="subjectLabel"]').fill("Alex");
-  await page
-    .locator('textarea[name="description"]')
-    .fill("Map used to verify canvas interactions while the Inspector is open.");
-  await page.getByRole("button", { name: "Create map" }).click();
+  const map = await createMapThroughInternalApi(page, {
+    userId,
+    workspaceSlug,
+    title: `Canvas Map ${suffix}`,
+    subjectLabel: "Alex",
+    description: "Map used to verify canvas interactions while the Inspector is open.",
+  });
+  await page.goto(`/app/${workspaceSlug}/maps/${map.data.id}`);
 
-  try {
-    await page.waitForURL(new RegExp(`/app/${workspaceSlug}/maps/[^/]+$`), {
-      timeout: 10_000,
-    });
-  } catch {
-    await page.reload();
-    await page.getByRole("link", { name: "Open map" }).first().click();
-    await page.waitForURL(new RegExp(`/app/${workspaceSlug}/maps/[^/]+$`), {
-      timeout: 30_000,
-    });
-  }
-
-  await expect(page.locator(".map-screen")).toBeVisible();
+  await expect(page.locator(".map-screen").first()).toBeVisible();
 }
 
 test.describe("Map workspace canvas interactions", () => {

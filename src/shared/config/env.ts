@@ -6,7 +6,7 @@ export const runtimeEnvSchema = {
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
-  INTERNAL_API_SECRET: z.string().min(1).optional(),
+  INTERNAL_API_SECRET: z.string().min(1),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   DOCS_HUB_PASSWORD: z.string().min(1).optional(),
 };

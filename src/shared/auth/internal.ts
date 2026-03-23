@@ -8,16 +8,22 @@ function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
+export type InternalAuthStatus =
+  | "authorized"
+  | "missing_secret"
+  | "missing_header"
+  | "malformed_bearer"
+  | "invalid_token";
+
 export function resolveInternalAuthSecret(
-  internalApiSecret = env.INTERNAL_API_SECRET ?? null,
-  legacySupabaseSecret = env.SUPABASE_SECRET_KEY ?? null
+  internalApiSecret: string | null = env.INTERNAL_API_SECRET ?? null
 ) {
-  return internalApiSecret ?? legacySupabaseSecret ?? null;
+  return internalApiSecret;
 }
 
 export function hasValidInternalBearerToken(
   authorizationHeader: string | null,
-  secret = resolveInternalAuthSecret()
+  secret: string | null = resolveInternalAuthSecret()
 ) {
   if (!secret || !authorizationHeader) {
     return false;
@@ -33,16 +39,23 @@ export function hasValidInternalBearerToken(
 
 export function getInternalAuthStatus(
   request: Request,
-  secret = resolveInternalAuthSecret()
-) {
+  secret: string | null = resolveInternalAuthSecret()
+) : InternalAuthStatus {
   if (!secret) {
-    return "misconfigured" as const;
+    return "missing_secret";
   }
 
-  return hasValidInternalBearerToken(
-    request.headers.get("authorization"),
-    secret
-  )
-    ? ("authorized" as const)
-    : ("unauthorized" as const);
+  const authorizationHeader = request.headers.get("authorization");
+  if (!authorizationHeader) {
+    return "missing_header";
+  }
+
+  const [scheme, token, ...rest] = authorizationHeader.split(" ");
+  if (scheme !== "Bearer" || !token || rest.length > 0) {
+    return "malformed_bearer";
+  }
+
+  return hasValidInternalBearerToken(authorizationHeader, secret)
+    ? "authorized"
+    : "invalid_token";
 }

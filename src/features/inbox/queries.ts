@@ -6,10 +6,12 @@ import {
   mapInboxAtomRecord,
   mapInboxClarificationAnswerRecord,
   mapInboxClarificationRequestRecord,
+  mapInboxExecutionAttemptRecord,
   mapInboxFragmentRecord,
   mapInboxHypothesisRecord,
   mapInboxItemRecord,
   mapInboxMergeCandidateRecord,
+  mapInboxStepRunRecord,
   mapInboxStructuredPacketRecord,
   mapInboxWorkflowEventRecord,
 } from "@/features/inbox/mappers";
@@ -27,8 +29,13 @@ import {
   inboxHypotheses,
   inboxItems,
   inboxMergeCandidates,
+  inboxPipelineAttempts,
   inboxStructuredPackets,
+  inboxStepRuns,
   inboxWorkflowEvents,
+  learningSuggestionBatches,
+  learningSuggestionResolutions,
+  learningSuggestions,
 } from "@/shared/db/schema";
 
 export async function getInboxItemDetailQuery(itemId: string) {
@@ -47,8 +54,11 @@ export async function getInboxItemDetailQuery(itemId: string) {
     hypothesisRows,
     atomRows,
     packetRows,
+    reviewBatchRows,
     mergeCandidateRows,
     clarificationRequestRows,
+    attemptRows,
+    stepRunRows,
     workflowEventRows,
   ] = await Promise.all([
     db
@@ -70,6 +80,27 @@ export async function getInboxItemDetailQuery(itemId: string) {
       .from(inboxStructuredPackets)
       .where(eq(inboxStructuredPackets.itemId, itemId)),
     db
+      .select({
+        batch: learningSuggestionBatches,
+        suggestion: learningSuggestions,
+        resolution: learningSuggestionResolutions,
+      })
+      .from(learningSuggestionBatches)
+      .leftJoin(
+        learningSuggestions,
+        eq(learningSuggestionBatches.id, learningSuggestions.batchId)
+      )
+      .leftJoin(
+        learningSuggestionResolutions,
+        eq(learningSuggestions.id, learningSuggestionResolutions.suggestionId)
+      )
+      .where(eq(learningSuggestionBatches.inboxItemId, itemId))
+      .orderBy(
+        desc(learningSuggestionBatches.startedAt),
+        asc(learningSuggestions.artifactOrder),
+        asc(learningSuggestions.createdAt)
+      ),
+    db
       .select()
       .from(inboxMergeCandidates)
       .where(eq(inboxMergeCandidates.itemId, itemId)),
@@ -77,6 +108,28 @@ export async function getInboxItemDetailQuery(itemId: string) {
       .select()
       .from(inboxClarificationRequests)
       .where(eq(inboxClarificationRequests.itemId, itemId)),
+    db
+      .select()
+      .from(inboxPipelineAttempts)
+      .where(eq(inboxPipelineAttempts.itemId, itemId))
+      .orderBy(desc(inboxPipelineAttempts.attemptNo)),
+    db
+      .select({
+        stepRun: inboxStepRuns,
+        attemptItemId: inboxPipelineAttempts.itemId,
+      })
+      .from(inboxStepRuns)
+      .innerJoin(
+        inboxPipelineAttempts,
+        eq(inboxStepRuns.attemptId, inboxPipelineAttempts.id)
+      )
+      .where(eq(inboxPipelineAttempts.itemId, itemId))
+      .orderBy(
+        asc(inboxPipelineAttempts.attemptNo),
+        asc(inboxStepRuns.stepOrder),
+        asc(inboxStepRuns.runNo),
+        asc(inboxStepRuns.startedAt)
+      ),
     db
       .select()
       .from(inboxWorkflowEvents)
@@ -93,18 +146,92 @@ export async function getInboxItemDetailQuery(itemId: string) {
           .from(inboxClarificationAnswers)
           .where(inArray(inboxClarificationAnswers.requestId, clarificationRequestIds));
 
+  const reviewBatchMap = new Map<
+    string,
+    InboxItemDetailRecord["reviewBatches"][number]
+  >();
+
+  for (const row of reviewBatchRows) {
+    const existing = reviewBatchMap.get(row.batch.id);
+    if (existing) {
+      if (row.suggestion) {
+        existing.artifacts.push({
+          id: row.suggestion.id,
+          batchId: row.suggestion.batchId,
+          artifactOrder: row.suggestion.artifactOrder,
+          suggestionType: row.suggestion.suggestionType,
+          targetEntityType: row.suggestion.targetEntityType,
+          targetEntityId: row.suggestion.targetEntityId,
+          proposedPayload: row.suggestion.proposedPayload,
+          resolutionType: row.resolution?.resolutionType ?? null,
+          applyStatus: row.resolution?.applyStatus ?? null,
+          applyError: row.resolution?.applyError ?? null,
+          reasonText: row.resolution?.reasonText ?? null,
+          resolvedAt: row.resolution?.resolvedAt ?? null,
+        });
+      }
+      continue;
+    }
+
+    reviewBatchMap.set(row.batch.id, {
+      id: row.batch.id,
+      inboxPacketId: row.batch.inboxPacketId,
+      batchType: row.batch.batchType,
+      status: row.batch.status,
+      startedAt: row.batch.startedAt,
+      finishedAt: row.batch.finishedAt,
+      metadata: row.batch.metadata,
+      artifacts: row.suggestion
+        ? [
+            {
+              id: row.suggestion.id,
+              batchId: row.suggestion.batchId,
+              artifactOrder: row.suggestion.artifactOrder,
+              suggestionType: row.suggestion.suggestionType,
+              targetEntityType: row.suggestion.targetEntityType,
+              targetEntityId: row.suggestion.targetEntityId,
+              proposedPayload: row.suggestion.proposedPayload,
+              resolutionType: row.resolution?.resolutionType ?? null,
+              applyStatus: row.resolution?.applyStatus ?? null,
+              applyError: row.resolution?.applyError ?? null,
+              reasonText: row.resolution?.reasonText ?? null,
+              resolvedAt: row.resolution?.resolvedAt ?? null,
+            },
+          ]
+        : [],
+    });
+  }
+
+  const stepRunsByAttemptId = new Map<
+    string,
+    InboxItemDetailRecord["attempts"][number]["steps"]
+  >();
+
+  for (const row of stepRunRows) {
+    const existing = stepRunsByAttemptId.get(row.stepRun.attemptId) ?? [];
+    existing.push(mapInboxStepRunRecord(row.stepRun));
+    stepRunsByAttemptId.set(row.stepRun.attemptId, existing);
+  }
+
   const detail: InboxItemDetailRecord = {
     item: mapInboxItemRecord(itemRow),
     fragments: fragmentRows.map(mapInboxFragmentRecord),
     hypotheses: hypothesisRows.map(mapInboxHypothesisRecord),
     atoms: atomRows.map(mapInboxAtomRecord),
     structuredPackets: packetRows.map(mapInboxStructuredPacketRecord),
+    reviewBatches: [...reviewBatchMap.values()],
     mergeCandidates: mergeCandidateRows.map(mapInboxMergeCandidateRecord),
     clarificationRequests: clarificationRequestRows.map(
       mapInboxClarificationRequestRecord
     ),
     clarificationAnswers: clarificationAnswerRows.map(
       mapInboxClarificationAnswerRecord
+    ),
+    attempts: attemptRows.map((attemptRow) =>
+      mapInboxExecutionAttemptRecord(
+        attemptRow,
+        stepRunsByAttemptId.get(attemptRow.id) ?? []
+      )
     ),
     workflowEvents: workflowEventRows.map(mapInboxWorkflowEventRecord),
   };

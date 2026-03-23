@@ -5,8 +5,11 @@ import {
   getInboxItemDetailForUserQuery,
   listInboxItemsForUserQuery,
 } from "@/features/inbox/queries";
+import { listMapsForWorkspace } from "@/features/maps/queries";
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 
+// Hidden route by design: Inbox stays internal until review/apply becomes a
+// workspace-visible workflow with queue semantics and role-aware review.
 export const dynamic = "force-dynamic";
 
 const searchParamsSchema = z.object({
@@ -28,7 +31,10 @@ export default async function InboxWorkbenchPage({
 }: InboxWorkbenchPageProps) {
   const { workspaceSlug } = await params;
   const { user, access } = await requireWorkspaceAccess(workspaceSlug);
-  const items = await listInboxItemsForUserQuery(user.id);
+  const [items, availableMaps] = await Promise.all([
+    listInboxItemsForUserQuery(user.id),
+    listMapsForWorkspace(access.workspace.id),
+  ]);
   const rawSearchParams = await searchParams;
   const requestedItem =
     typeof rawSearchParams.item === "string" ? rawSearchParams.item : undefined;
@@ -67,6 +73,7 @@ export default async function InboxWorkbenchPage({
     <InboxWorkbench
       workspaceSlug={workspaceSlug}
       workspaceName={access.workspace.name}
+      availableMaps={availableMaps}
       items={items}
       selectionError={selectionError}
       detail={detail}

@@ -74,7 +74,7 @@ describe("inbox workflow", () => {
     );
     expect(inboxRetryPolicy.terminalStatus).toBe("failed_needs_review");
     expect(getInboxStepCompletionStatus("answer_clarification")).toBeNull();
-    expect(getInboxStepCompletionStatus("promote")).toBe("promoted");
+    expect(getInboxStepCompletionStatus("promote")).toBe("ready_for_review");
     expect(assertInboxWorkflowCompleteness()).toBe(true);
   });
 });

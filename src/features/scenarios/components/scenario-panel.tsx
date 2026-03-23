@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useState } from "react";
 import {
@@ -10,6 +10,7 @@ import {
   Text,
   TextArea,
   TextField,
+  Tabs,
 } from "@radix-ui/themes";
 
 import {
@@ -98,9 +99,7 @@ export function ScenarioPanel({
   return (
     <Flex
       direction="column"
-      gap="3"
-      height="100%"
-      className="panel-scroll-fill"
+      gap="4"
     >
       <Card className="panel-card">
         <Flex direction="column" gap="3">
@@ -184,34 +183,15 @@ export function ScenarioPanel({
         </Flex>
       </Card>
 
-      <Flex gap="2" wrap="wrap">
-        <Button
-          type="button"
-          size="1"
-          variant={secondaryTab === "save" ? "solid" : "surface"}
-          onClick={() => setSecondaryTab("save")}
-        >
-          {messages.scenario.saveTab}
-        </Button>
-        <Button
-          type="button"
-          size="1"
-          variant={secondaryTab === "saved" ? "solid" : "surface"}
-          onClick={() => setSecondaryTab("saved")}
-        >
-          {messages.scenario.savedTab}
-        </Button>
-        <Button
-          type="button"
-          size="1"
-          variant={secondaryTab === "runs" ? "solid" : "surface"}
-          onClick={() => setSecondaryTab("runs")}
-        >
-          {messages.scenario.runsTab}
-        </Button>
-      </Flex>
+      <Tabs.Root value={secondaryTab} onValueChange={(value) => setSecondaryTab(value as ScenarioSecondaryTab)}>
+        <Tabs.List size="2">
+          <Tabs.Trigger value="save">{messages.scenario.saveTab}</Tabs.Trigger>
+          <Tabs.Trigger value="saved">{messages.scenario.savedTab}</Tabs.Trigger>
+          <Tabs.Trigger value="runs">{messages.scenario.runsTab}</Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
 
-      <div className="panel-native-scroll">
+      <Flex direction="column" gap="3" mt="2">
         {secondaryTab === "save" ? (
           <Card className="panel-card">
             <form action={formAction}>
@@ -443,7 +423,7 @@ export function ScenarioPanel({
             </Flex>
           )
         ) : null}
-      </div>
+      </Flex>
     </Flex>
   );
 }

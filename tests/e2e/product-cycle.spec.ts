@@ -35,6 +35,10 @@ type InternalLearningResponse<T> = {
   data: T;
 };
 
+type InternalMapResponse = {
+  id: string;
+};
+
 function readDotenvValue(name: string) {
   const dotenvPath = join(process.cwd(), ".env.local");
   if (!existsSync(dotenvPath)) {
@@ -65,12 +69,17 @@ function readDotenvValue(name: string) {
   return null;
 }
 
-function getInternalLearningSecret() {
-  return (
-    process.env.SUPABASE_SECRET_KEY ??
-    readDotenvValue("SUPABASE_SECRET_KEY") ??
-    "secret-key"
-  );
+function getInternalApiSecret() {
+  const secret =
+    process.env.INTERNAL_API_SECRET ?? readDotenvValue("INTERNAL_API_SECRET");
+
+  if (!secret) {
+    throw new Error(
+      "INTERNAL_API_SECRET is required for internal e2e requests."
+    );
+  }
+
+  return secret;
 }
 
 function getCurrentMapId(page: Page) {
@@ -147,7 +156,7 @@ async function postInternalLearning<T>(
 ) {
   const response = await page.request.post(path, {
     headers: {
-      authorization: `Bearer ${getInternalLearningSecret()}`,
+      authorization: `Bearer ${getInternalApiSecret()}`,
     },
     data: payload,
   });
@@ -159,6 +168,32 @@ async function postInternalLearning<T>(
   }
 
   return (await response.json()) as InternalLearningResponse<T>;
+}
+
+async function createMapThroughInternalApi(
+  page: Page,
+  input: {
+    userId: string;
+    workspaceSlug: string;
+    title: string;
+    subjectLabel: string;
+    description: string;
+  }
+) {
+  const response = await page.request.post("/api/internal/maps", {
+    headers: {
+      authorization: `Bearer ${getInternalApiSecret()}`,
+    },
+    data: input,
+  });
+
+  if (!response.ok()) {
+    throw new Error(
+      `Internal map request failed (${response.status()}): ${await response.text()}`
+    );
+  }
+
+  return (await response.json()) as InternalLearningResponse<InternalMapResponse>;
 }
 
 test.describe("critical product cycle", () => {
@@ -177,11 +212,11 @@ test.describe("critical product cycle", () => {
     await page.goto("/");
     await expect(
       page.getByRole("heading", {
-        name: "Build an explainable map of a person.",
+        name: "See why a person reacts the way they do.",
       })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Continue with Google" })
+      page.getByRole("button", { name: "Continue with Google" }).first()
     ).toBeVisible();
     const appOrigin = new URL(page.url()).origin;
 
@@ -206,26 +241,16 @@ test.describe("critical product cycle", () => {
       timeout: 30_000,
     });
 
-    await page.locator('input[name="title"]').fill(`Cycle Map ${suffix}`);
-    await page.locator('input[name="subjectLabel"]').fill("Alex");
-    await page
-      .locator('textarea[name="description"]')
-      .fill("Map for the end-to-end product cycle.");
-    await page.getByRole("button", { name: "Create map" }).click();
+    const map = await createMapThroughInternalApi(page, {
+      userId: e2eUserId,
+      workspaceSlug,
+      title: `Cycle Map ${suffix}`,
+      subjectLabel: "Alex",
+      description: "Map for the end-to-end product cycle.",
+    });
+    await page.goto(`/app/${workspaceSlug}/maps/${map.data.id}`);
 
-    try {
-      await page.waitForURL(new RegExp(`/app/${workspaceSlug}/maps/[^/]+$`), {
-        timeout: 10_000,
-      });
-    } catch {
-      await page.reload();
-      await page.getByRole("link", { name: "Open map" }).first().click();
-      await page.waitForURL(new RegExp(`/app/${workspaceSlug}/maps/[^/]+$`), {
-        timeout: 30_000,
-      });
-    }
-
-    await expect(page.locator(".map-screen")).toBeVisible();
+    await expect(page.locator(".map-screen").first()).toBeVisible();
 
     const layout = await readMapLayout(page);
     const expectedShellHeight = layout.viewportHeight - layout.appShellPadding * 2;

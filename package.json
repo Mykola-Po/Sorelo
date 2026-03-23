@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/prepare-next-build.mjs",
     "build": "next build",
     "start": "next start",
-    "verify": "npm run lint && npm run typecheck && npm run test",
+    "verify": "npm run lint && npm run typecheck && npm run db:check && npm run test",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
@@ -21,6 +22,7 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
+    "ops:inbox:check": "node scripts/check-inbox-runtime.mjs",
     "backup:bundle": "node scripts/backup-repo.mjs"
   },
   "dependencies": {

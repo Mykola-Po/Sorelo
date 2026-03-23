@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import {
   createInboxWorkbenchItemAction,
 } from "@/features/inbox/actions";
+import type { MapSummary } from "@/features/maps/types";
 import { createIdleState } from "@/shared/validation/action-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import {
@@ -16,20 +17,43 @@ import {
 
 type InboxWorkbenchComposerProps = {
   workspaceSlug: string;
+  availableMaps: MapSummary[];
 };
 
 export function InboxWorkbenchComposer({
   workspaceSlug,
+  availableMaps,
 }: InboxWorkbenchComposerProps) {
   const [state, formAction, isPending] = useActionState(
     createInboxWorkbenchItemAction,
-    createIdleState<"sourceType" | "rawText">()
+    createIdleState<"mapId" | "sourceType" | "rawText">()
   );
+  const defaultMapId = availableMaps[0]?.id ?? "";
 
   return (
     <form action={formAction}>
       <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
       <FormStack>
+        <InlineFormField
+          label="Target Map"
+          error={state.fieldErrors?.mapId?.[0]}
+        >
+          <select
+            name="mapId"
+            defaultValue={defaultMapId}
+            className="sl-inbox-select"
+            disabled={availableMaps.length === 0}
+          >
+            {availableMaps.length === 0 ? (
+              <option value="">Create a Map first</option>
+            ) : null}
+            {availableMaps.map((map) => (
+              <option key={map.id} value={map.id}>
+                {map.title}
+              </option>
+            ))}
+          </select>
+        </InlineFormField>
         <InlineFormField
           label="Source type"
           error={state.fieldErrors?.sourceType?.[0]}
@@ -55,7 +79,7 @@ export function InboxWorkbenchComposer({
           resize="vertical"
         />
         <FormErrorMessage message={state.message} />
-        <SubmitButton size="3" loading={isPending}>
+        <SubmitButton size="3" loading={isPending} disabled={availableMaps.length === 0}>
           Create inbox item
         </SubmitButton>
       </FormStack>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   finalizeInboxRouteAfterClarification,
+  buildInboxRouteDraft,
   normalizeInboxText,
   runInboxPipelineDraft,
   segmentInboxText,
@@ -42,6 +43,10 @@ describe("inbox engine", () => {
     expect(result.route.route).toBe("clarify");
     expect(result.route.clarificationDraft?.question).toContain("What exactly");
     expect(result.route.structuredPacket).not.toBeNull();
+    expect(result.route.routingPolicy.policyVersion).toBe("inbox-routing.v1");
+    expect(result.route.routingPolicy.finalDecision.ruleId).toBe(
+      "clarify.value_of_asking_exceeds_cost"
+    );
   });
 
   it("discards exact duplicates against existing normalized texts", () => {
@@ -56,6 +61,9 @@ describe("inbox engine", () => {
 
     expect(result.resolver.dedupeSignals).toContain("exact_normalized_text_match");
     expect(result.route.route).toBe("discard");
+    expect(result.route.routingPolicy.finalDecision.ruleId).toBe(
+      "discard.empty_duplicate_or_risk_ceiling"
+    );
   });
 
   it("appends answer-derived fragments and reroutes with clarification context", () => {
@@ -117,5 +125,71 @@ describe("inbox engine", () => {
     expect(forced.nextStatus).toBe("parked");
     expect(forced.clarificationDraft).toBeNull();
     expect(forced.structuredPacket?.packetType).toBe("parked_packet");
+    expect(forced.routingPolicy.finalDecision.ruleId).toBe(
+      "override.clarification_cap_reached"
+    );
+    expect(forced.routingPolicy.decisionNotes.map((note) => note.id)).toContain(
+      "route.override.clarification_cap_reached"
+    );
+  });
+
+  it("parks promote candidates that do not compile into deterministic canonical mutations", () => {
+    const routeDraft = buildInboxRouteDraft({
+      normalizer: {
+        normalizedText: "Strong signal that still lacks a deterministic mutation plan.",
+        language: "en",
+        normalizationNotes: [],
+      },
+      analysisFragments: [],
+      interpreter: {
+        hypotheses: [
+          {
+            rank: 1,
+            hypothesisType: "interpretation",
+            payload: {
+              summary: "Strong signal that still lacks a deterministic mutation plan.",
+            },
+            confidence: 0.91,
+            explanation: "The signal is clear enough to route.",
+          },
+        ],
+        entities: [],
+        relations: [],
+        intents: [],
+        questions: [],
+        constraints: [],
+        atoms: [],
+      },
+      scorer: {
+        scoreBreakdown: {
+          signalQuality: 0.92,
+          interpretability: 0.84,
+          structure: 0.78,
+          grounding: 0.81,
+          actionability: 0.7,
+          utility: 0.72,
+          penalty: 0.04,
+        },
+        rInbox: 0.81,
+        confidence: 0.78,
+        ambiguity: 0.18,
+        risk: 0.12,
+        explanation: "Strong signal.",
+      },
+      resolver: {
+        mergeCandidates: [],
+        linkedObjects: [],
+        dedupeSignals: [],
+      },
+    });
+
+    expect(routeDraft.route.route).toBe("park");
+    expect(routeDraft.route.routingPolicy.finalDecision.ruleId).toBe(
+      "override.promote_requires_deterministic_mutation"
+    );
+    expect(routeDraft.route.routingPolicy.decisionNotes.map((note) => note.id)).toEqual([
+      "route.promote.strong_signal_low_ambiguity",
+      "route.override.promote_requires_deterministic_mutation",
+    ]);
   });
 });

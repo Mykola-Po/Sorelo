@@ -1,4 +1,8 @@
 import {
+  compileInboxApplyContract,
+} from "@/features/inbox/promote";
+import {
+  routeOutputSchema,
   resolveOutputSchema,
   type InterpretOutput,
   type NormalizerOutput,
@@ -19,10 +23,19 @@ import {
   inboxQuestionSchema,
   structuredPacketDraftSchema,
   type InboxClarificationContextEntry,
+  type InboxInterpreterEntity,
   type InboxFragmentCandidate,
+  type InboxApplyContract,
   type InboxRouteDecisionInputDraft,
 } from "@/features/inbox/schemas";
-import { computeInboxScore, decideInboxRoute } from "@/features/inbox/state-machine";
+import {
+  applyInboxRoutingOverride,
+  applyInboxRoutingPolicyTraceToRouteOutput,
+  evaluateInboxRoutingPolicy,
+  inboxRoutingThresholds,
+} from "@/features/inbox/routing-policy";
+import { computeInboxScore } from "@/features/inbox/state-machine";
+import type { ConceptType } from "@/shared/db/schema";
 
 const sentenceBoundary = /[^.!?\n]+[.!?]?/g;
 
@@ -89,6 +102,13 @@ const stopwords = new Set([
 
 type ResolveContext = {
   otherNormalizedTexts?: string[];
+  existingConcepts?: Array<{
+    id: string;
+    title: string;
+    conceptType: ConceptType;
+    summary: string | null;
+    description: string | null;
+  }>;
 };
 
 type InterpretContext = {
@@ -128,8 +148,33 @@ export type InboxPipelineDraft = {
   route: RouteOutput;
 };
 
-export const clarificationCapReachedReason =
-  "Clarification cap reached after one answered request, so the signal is preserved as parked instead of asking again.";
+export type InboxSegmentationDraft = {
+  segmenter: SegmenterOutput;
+  clarificationFragments: InboxFragmentCandidate[];
+  analysisFragments: InboxFragmentCandidate[];
+};
+
+type BuildInboxSegmentationInput = {
+  normalizedText: string;
+  clarificationContext?: InboxClarificationContextEntry[];
+  baseFragments?: InboxFragmentCandidate[];
+};
+
+type BuildInboxRouteDraftInput = {
+  normalizer: NormalizerOutput;
+  analysisFragments: InboxFragmentCandidate[];
+  interpreter: InterpretOutput;
+  scorer: ScoreOutput;
+  resolver: ResolveOutput;
+  clarificationContext?: InboxClarificationContextEntry[];
+  resolveContext?: ResolveContext;
+};
+
+export type InboxRouteDraft = {
+  route: RouteOutput;
+  applyContract: InboxApplyContract;
+  routeInput: InboxRouteDecisionInputDraft;
+};
 
 function normalizeWhitespace(input: string) {
   return input
@@ -232,7 +277,101 @@ function buildSummaryText(fragments: InboxFragmentCandidate[]) {
     .join("; ");
 }
 
-function buildClarificationFragmentSet(
+const relationExtractionRules = [
+  {
+    relationType: "causes" as const,
+    patterns: [
+      /^(?<source>.+?)\s+(?:causes?|leads to|triggers?)\s+(?<target>.+)$/i,
+    ],
+  },
+  {
+    relationType: "strengthens" as const,
+    patterns: [/^(?<source>.+?)\s+(?:strengthens?|reinforces?)\s+(?<target>.+)$/i],
+  },
+  {
+    relationType: "weakens" as const,
+    patterns: [/^(?<source>.+?)\s+(?:weakens?|reduces?)\s+(?<target>.+)$/i],
+  },
+  {
+    relationType: "explains" as const,
+    patterns: [/^(?<source>.+?)\s+(?:explains?)\s+(?<target>.+)$/i],
+  },
+  {
+    relationType: "contradicts" as const,
+    patterns: [/^(?<source>.+?)\s+(?:contradicts?)\s+(?<target>.+)$/i],
+  },
+] as const;
+
+function cleanRelationPhrase(value: string) {
+  return value
+    .replace(/[.!?]+$/g, "")
+    .replace(/^(the|a|an)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inferEntityTypeFromPhrase(value: string) {
+  if (
+    /\b(criticism|trigger|pressure|conflict|confrontation|public challenge)\b/i.test(
+      value
+    )
+  ) {
+    return "trigger" as const;
+  }
+
+  if (
+    /\b(withdrawal|reaction|fear|anger|avoidance|defensive|shutdown)\b/i.test(
+      value
+    )
+  ) {
+    return "state" as const;
+  }
+
+  if (/\b(belief|assumption|expectation)\b/i.test(value)) {
+    return "belief" as const;
+  }
+
+  if (/\b(fact|evidence)\b/i.test(value)) {
+    return "fact" as const;
+  }
+
+  return "custom" as const;
+}
+
+function extractRelationCandidate(fragment: InboxFragmentCandidate) {
+  const normalizedText = cleanRelationPhrase(fragment.fragmentText);
+
+  for (const rule of relationExtractionRules) {
+    for (const pattern of rule.patterns) {
+      const match = pattern.exec(normalizedText);
+      const source = cleanRelationPhrase(match?.groups?.source ?? "");
+      const target = cleanRelationPhrase(match?.groups?.target ?? "");
+
+      if (!source || !target || source === target) {
+        continue;
+      }
+
+      return inboxInterpreterRelationSchema.parse({
+        sourceLabel: source,
+        targetLabel: target,
+        relationType: rule.relationType,
+        fragmentOrdinals: [fragment.ordinal],
+        confidence: 0.78,
+        payload: {
+          inferredFrom: "relation_phrase",
+        },
+      });
+    }
+  }
+
+  return null;
+}
+
+function mergeEntityFragmentOrdinals(existing: number[], next: number[]) {
+  return Array.from(new Set([...existing, ...next])).slice(0, 8);
+}
+
+export function buildClarificationFragmentSet(
   clarificationContext: InboxClarificationContextEntry[],
   ordinalOffset: number
 ) {
@@ -250,6 +389,30 @@ function buildClarificationFragmentSet(
     nextOrdinal += segmentedAnswer.fragments.length;
     return segmentedAnswer.fragments;
   });
+}
+
+export function buildInboxSegmentationDraft(
+  input: BuildInboxSegmentationInput
+): InboxSegmentationDraft {
+  const rawFragments =
+    input.baseFragments && input.baseFragments.length > 0
+      ? input.baseFragments
+      : segmentInboxText(input.normalizedText, {
+          sourceKind: "item_raw",
+        }).fragments;
+
+  const clarificationFragments = buildClarificationFragmentSet(
+    input.clarificationContext ?? [],
+    rawFragments.length
+  );
+
+  return {
+    segmenter: {
+      fragments: rawFragments,
+    },
+    clarificationFragments,
+    analysisFragments: [...rawFragments, ...clarificationFragments].slice(0, 128),
+  };
 }
 
 export function normalizeInboxText(rawText: string): NormalizerOutput {
@@ -338,6 +501,10 @@ export function interpretInboxText(
   context: InterpretContext = {}
 ): InterpretOutput {
   const tokenFrequency = new Map<string, number>();
+  const extractedEntityByLabel = new Map<string, InboxInterpreterEntity>();
+  const extractedRelations: Array<
+    ReturnType<typeof inboxInterpreterRelationSchema.parse>
+  > = [];
   const answeredQuestionSet = new Set(
     (context.clarificationContext ?? []).map((entry) =>
       entry.question.toLowerCase().trim()
@@ -345,12 +512,42 @@ export function interpretInboxText(
   );
 
   for (const fragment of fragments) {
+    const relationCandidate = extractRelationCandidate(fragment);
+    if (relationCandidate) {
+      extractedRelations.push(relationCandidate);
+
+      for (const label of [
+        relationCandidate.sourceLabel,
+        relationCandidate.targetLabel,
+      ]) {
+        const existing = extractedEntityByLabel.get(label);
+        const fragmentOrdinals = existing
+          ? mergeEntityFragmentOrdinals(existing.fragmentOrdinals, [
+              fragment.ordinal,
+            ])
+          : [fragment.ordinal];
+
+        extractedEntityByLabel.set(
+          label,
+          inboxInterpreterEntitySchema.parse({
+            label,
+            entityType: inferEntityTypeFromPhrase(label),
+            fragmentOrdinals,
+            confidence: Math.max(existing?.confidence ?? 0, 0.74),
+            payload: {
+              inferredFrom: "relation_phrase",
+            },
+          })
+        );
+      }
+    }
+
     for (const token of tokenize(fragment.fragmentText)) {
       tokenFrequency.set(token, (tokenFrequency.get(token) ?? 0) + 1);
     }
   }
 
-  const entities = [...tokenFrequency.entries()]
+  const fallbackEntities = [...tokenFrequency.entries()]
     .sort((left, right) => {
       if (right[1] !== left[1]) {
         return right[1] - left[1];
@@ -363,12 +560,23 @@ export function interpretInboxText(
       inboxInterpreterEntitySchema.parse({
         label,
         entityType: "custom",
+        fragmentOrdinals: [],
         confidence: Math.min(0.9, 0.45 + count * 0.1),
         payload: {
           frequency: count,
+          inferredFrom: "token_frequency",
         },
       })
     );
+
+  const entities = [
+    ...extractedEntityByLabel.values(),
+    ...fallbackEntities.filter(
+      (entity) =>
+        !extractedEntityByLabel.has(entity.label) &&
+        extractedEntityByLabel.size < 6
+    ),
+  ].slice(0, 6);
 
   const questions = fragments
     .filter((fragment) => fragment.fragmentType === "question")
@@ -403,8 +611,8 @@ export function interpretInboxText(
       })
     );
 
-  const relations = [];
-  if (entities.length >= 2) {
+  const relations = [...extractedRelations];
+  if (relations.length === 0 && entities.length >= 2) {
     relations.push(
       inboxInterpreterRelationSchema.parse({
         sourceLabel: entities[0]?.label,
@@ -620,19 +828,44 @@ export function resolveInboxInterpretation(
     (candidate) => candidate === normalizedText
   );
   const dedupeSignals = duplicateHit ? ["exact_normalized_text_match"] : [];
+  const mergeCandidates = interpretation.entities.flatMap((entity) => {
+    const normalizedLabel = entity.label.trim().toLowerCase();
+    const fuzzyConcept = context.existingConcepts?.find((concept) => {
+      const normalizedTitle = concept.title.trim().toLowerCase();
+
+      return (
+        normalizedTitle !== normalizedLabel &&
+        (normalizedTitle.includes(normalizedLabel) ||
+          normalizedLabel.includes(normalizedTitle))
+      );
+    });
+
+    if (!fuzzyConcept) {
+      return [];
+    }
+
+    return [
+      {
+        targetObjectType: "concept" as const,
+        targetObjectId: fuzzyConcept.id,
+        similarity: Math.max(0.65, entity.confidence),
+        decision: null,
+      },
+    ];
+  });
 
   return resolveOutputSchema.parse({
-    mergeCandidates: [],
+    mergeCandidates,
     linkedObjects: [],
     dedupeSignals,
-    payload: undefined,
   });
 }
 
 function buildStructuredPacket(
   interpretation: InterpretOutput,
   route: RouteOutput["route"],
-  clarificationContext: InboxClarificationContextEntry[] = []
+  clarificationContext: InboxClarificationContextEntry[] = [],
+  applyContract: InboxApplyContract | null = null
 ) {
   const hasRelations = interpretation.relations.length > 0;
   const hasEntities = interpretation.entities.length > 0;
@@ -659,6 +892,7 @@ function buildStructuredPacket(
       questions: interpretation.questions,
       constraints: interpretation.constraints,
       clarificationContext,
+      applyContract,
     },
     route,
     status: route === "promote" ? "ready" : "draft",
@@ -682,26 +916,102 @@ function buildClarificationDraft(
   });
 }
 
+export function buildInboxRouteDraft(
+  input: BuildInboxRouteDraftInput
+): InboxRouteDraft {
+  const clarificationContext = input.clarificationContext ?? [];
+  const applyContract = compileInboxApplyContract({
+    entities: input.interpreter.entities,
+    relations: input.interpreter.relations,
+    constraints: input.interpreter.constraints,
+    fragments: input.analysisFragments,
+    clarificationContext,
+    existingConcepts: input.resolveContext?.existingConcepts,
+  });
+
+  const routeInput: InboxRouteDecisionInputDraft = {
+    rInbox: input.scorer.rInbox,
+    confidence: input.scorer.confidence,
+    ambiguity: input.scorer.ambiguity,
+    risk: input.scorer.risk,
+    isDuplicate: input.resolver.dedupeSignals.includes(
+      "exact_normalized_text_match"
+    ),
+    isEmptySignal: input.normalizer.normalizedText.length === 0,
+    hasReusableSignal:
+      input.interpreter.entities.length > 0 ||
+      input.interpreter.questions.length > 0 ||
+      input.interpreter.constraints.length > 0 ||
+      clarificationContext.length > 0,
+    expectedValueGain: Math.min(
+      1,
+      Math.max(
+        0,
+        input.scorer.ambiguity -
+          0.1 +
+          input.interpreter.questions.length * 0.18 +
+          input.interpreter.constraints.length * 0.12
+      )
+    ),
+    askCost: inboxRoutingThresholds.askCost,
+  };
+
+  let routingPolicy = evaluateInboxRoutingPolicy(routeInput).trace;
+  let route = routeOutputSchema.parse({
+    ...routingPolicy.finalDecision,
+    structuredPacket:
+      routingPolicy.finalDecision.route === "discard"
+        ? null
+        : buildStructuredPacket(
+            input.interpreter,
+            routingPolicy.finalDecision.route,
+            clarificationContext,
+            applyContract
+          ),
+    clarificationDraft:
+      routingPolicy.finalDecision.route === "clarify"
+        ? buildClarificationDraft(input.interpreter, input.scorer)
+        : null,
+    routingPolicy,
+  });
+  const hasCanonicalMutationOperation = applyContract.operations.some(
+    (operation) =>
+      operation.operationType === "create_concept" ||
+      operation.operationType === "update_concept" ||
+      operation.operationType === "create_link"
+  );
+
+  if (route.route === "promote" && !hasCanonicalMutationOperation) {
+    routingPolicy = applyInboxRoutingOverride(
+      routingPolicy,
+      "override.promote_requires_deterministic_mutation"
+    );
+    route = routeOutputSchema.parse(
+      applyInboxRoutingPolicyTraceToRouteOutput(route, routingPolicy)
+    );
+  }
+
+  return {
+    applyContract,
+    routeInput,
+    route,
+  };
+}
+
 export function finalizeInboxRouteAfterClarification(route: RouteOutput) {
   if (route.route !== "clarify") {
     return route;
   }
 
-  return {
-    ...route,
-    route: "park" as const,
-    nextStatus: "parked" as const,
-    reason: clarificationCapReachedReason,
-    structuredPacket: route.structuredPacket
-      ? {
-          ...route.structuredPacket,
-          packetType: "parked_packet" as const,
-          route: "park" as const,
-          status: "draft" as const,
-        }
-      : null,
-    clarificationDraft: null,
-  };
+  return routeOutputSchema.parse(
+    applyInboxRoutingPolicyTraceToRouteOutput(
+      route,
+      applyInboxRoutingOverride(
+        route.routingPolicy,
+        "override.clarification_cap_reached"
+      )
+    )
+  );
 }
 
 export function runInboxPipelineDraft(
@@ -717,22 +1027,17 @@ export function runInboxPipelineDraft(
           normalizationNotes: [],
         }
       : normalizeInboxText(input.rawText);
-
-  const rawFragments =
-    input.baseFragments && input.baseFragments.length > 0
-      ? input.baseFragments
-      : segmentInboxText(normalizer.normalizedText, {
-          sourceKind: "item_raw",
-        }).fragments;
-
-  const clarificationFragments = buildClarificationFragmentSet(
+  const {
+    segmenter,
+    clarificationFragments,
+    analysisFragments,
+  } = buildInboxSegmentationDraft({
+    normalizedText: normalizer.normalizedText,
     clarificationContext,
-    rawFragments.length
-  );
-  const analysisFragments = [...rawFragments, ...clarificationFragments].slice(0, 128);
-  const segmenter = {
-    fragments: rawFragments,
-  };
+    ...(input.baseFragments === undefined
+      ? {}
+      : { baseFragments: input.baseFragments }),
+  });
   const interpreter = interpretInboxText(
     normalizer.normalizedText,
     analysisFragments,
@@ -746,44 +1051,17 @@ export function runInboxPipelineDraft(
     interpreter,
     input.resolveContext
   );
-
-  const routeInput: InboxRouteDecisionInputDraft = {
-    rInbox: scorer.rInbox,
-    confidence: scorer.confidence,
-    ambiguity: scorer.ambiguity,
-    risk: scorer.risk,
-    isDuplicate: resolver.dedupeSignals.includes("exact_normalized_text_match"),
-    isEmptySignal: normalizer.normalizedText.length === 0,
-    hasReusableSignal:
-      interpreter.entities.length > 0 ||
-      interpreter.questions.length > 0 ||
-      interpreter.constraints.length > 0 ||
-      clarificationContext.length > 0,
-    expectedValueGain: Math.min(
-      1,
-      Math.max(
-        0,
-        scorer.ambiguity -
-          0.1 +
-          interpreter.questions.length * 0.18 +
-          interpreter.constraints.length * 0.12
-      )
-    ),
-    askCost: 0.32,
-  };
-
-  const baseRoute = decideInboxRoute(routeInput);
-  const route: RouteOutput = {
-    ...baseRoute,
-    structuredPacket:
-      baseRoute.route === "discard"
-        ? null
-        : buildStructuredPacket(interpreter, baseRoute.route, clarificationContext),
-    clarificationDraft:
-      baseRoute.route === "clarify"
-        ? buildClarificationDraft(interpreter, scorer)
-        : null,
-  };
+  const { route } = buildInboxRouteDraft({
+    normalizer,
+    analysisFragments,
+    interpreter,
+    scorer,
+    resolver,
+    clarificationContext,
+    ...(input.resolveContext === undefined
+      ? {}
+      : { resolveContext: input.resolveContext }),
+  });
 
   return {
     normalizer,

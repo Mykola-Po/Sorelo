@@ -5,6 +5,7 @@ import {
   learningEntityLineage,
   learningMapVersions,
   type ConceptType,
+  type MapVersionTriggerType,
   type RelationType,
 } from "@/shared/db/schema";
 
@@ -59,6 +60,8 @@ export async function recordMapManualVersion(
     mapId: string;
     versionNo: number;
     actorUserId: string;
+    triggerType?: MapVersionTriggerType | undefined;
+    causedByResolutionId?: string | null | undefined;
     snapshotJson?: Record<string, unknown>;
     diffJson?: Record<string, unknown>;
   }
@@ -67,8 +70,9 @@ export async function recordMapManualVersion(
     workspaceId: input.workspaceId,
     mapId: input.mapId,
     versionNo: input.versionNo,
-    triggerType: "manual_edit",
+    triggerType: input.triggerType ?? "manual_edit",
     actorUserId: input.actorUserId,
+    causedByResolutionId: input.causedByResolutionId ?? null,
     snapshotJson: input.snapshotJson ?? {},
     diffJson: input.diffJson ?? {},
   });

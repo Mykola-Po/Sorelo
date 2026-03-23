@@ -49,6 +49,19 @@ The maps home surface reinforces:
 
 The active map workspace positions the canvas as primary and the Inspector and Scenario panels as secondary bounded surfaces.
 
+### Inbox Workbench
+
+The Inbox route is currently a hidden internal surface, not a primary product surface.
+
+It is useful for internal creation, processing, clarification, and inspection of Inbox items, but it does not yet represent a complete workspace review product.
+
+Inbox should remain outside the primary navigation until it carries product meaning through:
+
+- workspace-visible queue semantics
+- roles or ownership for review work
+- filters and status views for review operations
+- an explicit review/apply workflow instead of trace-only inspection
+
 ## Localization Rule
 
 Localized strings in landing and app-shell message files are derived surfaces.

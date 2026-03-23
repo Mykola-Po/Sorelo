@@ -55,7 +55,7 @@ export function LearningPanel({
   }
 
   return (
-    <Flex direction="column" gap="3" className="panel-scroll-fill">
+    <Flex direction="column" gap="3">
       <Card className="panel-card">
         <Flex align="center" justify="between" gap="3" wrap="wrap">
           <Heading size="4">{messages.heading}</Heading>
@@ -70,7 +70,7 @@ export function LearningPanel({
         </Flex>
       </Card>
 
-      <div className="panel-native-scroll">
+      <Flex direction="column" gap="3" mt="2">
         {suggestions.map((item) => (
           <SuggestionCard
             key={item.id}
@@ -80,7 +80,7 @@ export function LearningPanel({
             item={item}
           />
         ))}
-      </div>
+      </Flex>
     </Flex>
   );
 }

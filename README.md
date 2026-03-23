@@ -73,9 +73,11 @@ The next domain rewrite should keep moving the product layer away from legacy `p
 npm run dev
 npm run lint
 npm run typecheck
+npm run db:check
 npm run test
 npm run test:e2e
 npm run build
+npm run ops:inbox:check -- --base-url http://localhost:3000
 npm run format
 npm run db:generate
 npm run verify
@@ -90,9 +92,31 @@ Copy `.env.example` into a local env file and provide:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `DATABASE_URL`
+- `INTERNAL_API_SECRET`
+
+Optional:
+
 - `SUPABASE_SECRET_KEY`
 
 The env contract is validated with Zod. Missing required values should fail fast.
+
+## Inbox Runtime Operations
+
+Internal Inbox and Learning routes authenticate only with `INTERNAL_API_SECRET`.
+
+Production-safe Inbox delivery flow:
+
+1. Set `INTERNAL_API_SECRET` in the deployment secret manager.
+2. Apply the latest SQL migration in `supabase/migrations/`.
+3. Run `npm run db:check`.
+4. Deploy the Next.js app.
+5. Run `npm run ops:inbox:check -- --base-url <deployment-url>`.
+
+`ops:inbox:check` returns a machine-readable Inbox runtime report:
+
+- `ok`: ready
+- `degraded`: Inbox has `failed_needs_review` items, but runtime is still operational
+- `failed`: env, internal auth, schema, or migration state is not production-safe
 
 ## Structure
 

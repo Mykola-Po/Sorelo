@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { inboxApplyOperationSchema } from "@/features/inbox/schemas";
+
 export const sourceFragmentTypeSchema = z.enum([
   "manual_note",
   "import",
@@ -14,6 +16,8 @@ export const suggestionBatchTypeSchema = z.enum([
   "retype",
   "scenario_seed",
   "scenario_eval",
+  "promote_apply",
+  "inbox_review",
 ]);
 
 export const suggestionBatchStatusSchema = z.enum([
@@ -28,6 +32,8 @@ export const suggestionTypeSchema = z.enum([
   "update_concept",
   "create_link",
   "update_link",
+  "merge_candidate",
+  "park_for_review",
   "create_scenario_seed",
   "scenario_hypothesis",
 ]);
@@ -51,6 +57,12 @@ export const suggestionResolutionTypeSchema = z.enum([
   "confidence_changed",
   "context_limited",
 ]);
+export const suggestionApplyStatusSchema = z.enum([
+  "pending",
+  "applied",
+  "failed",
+  "not_applicable",
+]);
 
 export const entityOriginTypeSchema = z.enum([
   "manual",
@@ -61,6 +73,17 @@ export const entityOriginTypeSchema = z.enum([
 const uuidSchema = z.string().uuid();
 const nullableUuidSchema = uuidSchema.nullable().optional();
 const recordSchema = z.record(z.string(), z.unknown());
+const integerSchema = z.number().int().min(0);
+
+export const inboxReviewArtifactPayloadSchema = z.object({
+  operation: inboxApplyOperationSchema,
+  before: recordSchema.default({}),
+  after: recordSchema.default({}),
+  evidenceFragmentOrdinals: z.array(integerSchema).max(8).default([]),
+  inboxItemId: uuidSchema,
+  inboxPacketId: uuidSchema,
+  artifactOrder: integerSchema,
+});
 
 export const sourceFragmentInputSchema = z.object({
   workspaceId: uuidSchema,
@@ -76,6 +99,8 @@ export const suggestionBatchInputSchema = z.object({
   workspaceId: uuidSchema,
   mapId: nullableUuidSchema,
   initiatedByUserId: nullableUuidSchema,
+  inboxItemId: nullableUuidSchema,
+  inboxPacketId: nullableUuidSchema,
   batchType: suggestionBatchTypeSchema,
   modelName: z.string().trim().min(1).max(160),
   modelVersion: z.string().trim().min(1).max(64),
@@ -92,7 +117,10 @@ export const suggestionInputSchema = z
     batchId: uuidSchema,
     workspaceId: uuidSchema,
     mapId: nullableUuidSchema,
+    inboxItemId: nullableUuidSchema,
+    inboxPacketId: nullableUuidSchema,
     sourceFragmentId: nullableUuidSchema,
+    artifactOrder: integerSchema.optional(),
     suggestionType: suggestionTypeSchema,
     targetEntityType: suggestionTargetEntityTypeSchema,
     targetEntityId: nullableUuidSchema,
@@ -151,6 +179,12 @@ export type SuggestionBatchInput = z.infer<typeof suggestionBatchInputSchema>;
 export type SuggestionInput = z.infer<typeof suggestionInputSchema>;
 export type SuggestionResolutionInput = z.infer<
   typeof suggestionResolutionInputSchema
+>;
+export type SuggestionApplyStatusInput = z.infer<
+  typeof suggestionApplyStatusSchema
+>;
+export type InboxReviewArtifactPayload = z.infer<
+  typeof inboxReviewArtifactPayloadSchema
 >;
 export type AttachSuggestionOriginInput = z.infer<
   typeof attachSuggestionOriginInputSchema

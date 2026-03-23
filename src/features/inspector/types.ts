@@ -12,6 +12,44 @@ export type InspectorSelection =
       strength?: number;
     };
 
+export type InspectorProvenancePayload = {
+  id: string;
+  mapVersionId: string;
+  mutationType: "create_concept" | "update_concept" | "create_link";
+  createdAt: string;
+  suggestion: {
+    id: string;
+    suggestionType: string;
+    rationale: string | null;
+    confidence: number | null;
+    artifactOrder: number;
+  };
+  resolution: {
+    id: string;
+    resolutionType: string;
+    applyStatus: string;
+    reasonText: string | null;
+    resolvedAt: string;
+    appliedAt: string | null;
+  };
+  inboxItem: {
+    id: string;
+    rawText: string;
+    status: string;
+    createdAt: string;
+  };
+  evidence: Array<{
+    id: string;
+    inboxFragmentId: string;
+    clarificationAnswerId: string | null;
+    evidenceOrder: number;
+    fragmentOrdinal: number;
+    fragmentText: string;
+    sourceKind: "item_raw" | "clarification_answer";
+    clarificationAnswerText: string | null;
+  }>;
+};
+
 export type InspectorConceptPayload = {
   kind: "concept";
   concept: {
@@ -50,10 +88,11 @@ export type InspectorConceptPayload = {
       | "weakens"
       | "explains"
       | "contradicts";
-    strength: number;
-    relatedConceptId: string;
-    relatedConceptTitle: string;
+      strength: number;
+      relatedConceptId: string;
+      relatedConceptTitle: string;
   }>;
+  provenance: InspectorProvenancePayload | null;
 };
 
 export type InspectorLinkPayload = {
@@ -71,6 +110,7 @@ export type InspectorLinkPayload = {
     strength: number;
     description: string | null;
   };
+  provenance: InspectorProvenancePayload | null;
 };
 
 export type InspectorPayload = InspectorConceptPayload | InspectorLinkPayload;

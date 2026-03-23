@@ -15,6 +15,7 @@ import {
   inboxQuestionSchema,
   inboxRouteDecisionInputSchema,
   inboxRouteDecisionSchema,
+  inboxRoutingPolicyTraceSchema,
   inboxScoreBreakdownSchema,
   inboxSourceTypeSchema,
   structuredPacketDraftSchema,
@@ -136,6 +137,7 @@ export const routeInputSchema = z
 export const routeOutputSchema = inboxRouteDecisionSchema.extend({
   structuredPacket: structuredPacketDraftSchema.optional().nullable(),
   clarificationDraft: clarificationRequestDraftSchema.optional().nullable(),
+  routingPolicy: inboxRoutingPolicyTraceSchema,
 });
 
 export const clarifierInputSchema = z.object({
@@ -168,7 +170,7 @@ export const promoteInputSchema = z.object({
 
 export const promoteOutputSchema = z.object({
   itemId: uuidSchema,
-  status: z.literal("promoted"),
+  status: z.literal("ready_for_review"),
   packetStatus: z.enum(["ready", "emitted"]),
 });
 

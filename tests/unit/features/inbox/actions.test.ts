@@ -79,6 +79,7 @@ describe("inbox workbench actions", () => {
       },
       access: {
         workspace: {
+          id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           name: "Test workspace",
         },
       },
@@ -94,6 +95,7 @@ describe("inbox workbench actions", () => {
 
     const formData = createFormData({
       workspaceSlug: "demo-workspace",
+      mapId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       sourceType: "manual_note",
       rawText:
         "Public criticism from close people causes withdrawal and a defensive reaction.",
@@ -109,6 +111,8 @@ describe("inbox workbench actions", () => {
     expect(createInboxItemCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        mapId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         sourceType: "manual_note",
         rawText:
           "Public criticism from close people causes withdrawal and a defensive reaction.",

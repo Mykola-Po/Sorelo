@@ -6,17 +6,21 @@ import type {
   inboxHypotheses,
   inboxItems,
   inboxMergeCandidates,
+  inboxPipelineAttempts,
   inboxStructuredPackets,
+  inboxStepRuns,
   inboxWorkflowEvents,
 } from "@/shared/db/schema";
 import type {
   InboxAtomRecord,
   InboxClarificationAnswerRecord,
   InboxClarificationRequestRecord,
+  InboxExecutionAttemptRecord,
   InboxFragmentRecord,
   InboxHypothesisRecord,
   InboxItemRecord,
   InboxMergeCandidateRecord,
+  InboxStepRunRecord,
   InboxStructuredPacketRecord,
   InboxWorkflowEventRecord,
 } from "@/features/inbox/types";
@@ -27,6 +31,8 @@ export function mapInboxItemRecord(
   return {
     id: row.id,
     userId: row.userId,
+    workspaceId: row.workspaceId,
+    mapId: row.mapId,
     sourceType: row.sourceType,
     sourceRef: row.sourceRef,
     rawText: row.rawText,
@@ -100,6 +106,7 @@ export function mapInboxStructuredPacketRecord(
     packetType: row.packetType,
     summary: row.summary,
     payload: row.payload,
+    metadata: row.metadata,
     route: row.route,
     status: row.status,
   };
@@ -154,5 +161,54 @@ export function mapInboxWorkflowEventRecord(
     payload: row.payload ?? null,
     attemptNo: row.attemptNo,
     createdAt: row.createdAt,
+  };
+}
+
+export function mapInboxStepRunRecord(
+  row: typeof inboxStepRuns.$inferSelect
+): InboxStepRunRecord {
+  return {
+    id: row.id,
+    attemptId: row.attemptId,
+    stepName: row.stepName,
+    stepOrder: row.stepOrder,
+    runNo: row.runNo,
+    status: row.status,
+    modelName: row.modelName,
+    promptVersion: row.promptVersion,
+    route: row.route,
+    reason: row.reason,
+    inputHash: row.inputHash,
+    outputHash: row.outputHash,
+    failureCode: row.failureCode,
+    failureMessage: row.failureMessage,
+    metadata: row.metadata,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    latencyMs: row.latencyMs,
+  };
+}
+
+export function mapInboxExecutionAttemptRecord(
+  row: typeof inboxPipelineAttempts.$inferSelect,
+  steps: InboxStepRunRecord[]
+): InboxExecutionAttemptRecord {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    attemptNo: row.attemptNo,
+    triggerKind: row.triggerKind,
+    runnerKind: row.runnerKind,
+    status: row.status,
+    route: row.route,
+    reason: row.reason,
+    failureCode: row.failureCode,
+    failureMessage: row.failureMessage,
+    clarificationRequestId: row.clarificationRequestId,
+    clarificationAnswerId: row.clarificationAnswerId,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    latencyMs: row.latencyMs,
+    steps,
   };
 }

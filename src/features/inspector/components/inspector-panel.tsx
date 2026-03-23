@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "@radix-ui/react-icons";
@@ -21,6 +21,7 @@ import {
   type ConceptActionState,
   updateConceptAction,
 } from "@/features/concepts/actions";
+import { InspectorProvenanceSection } from "@/features/inspector/components/inspector-provenance";
 import { useInspectorPayload } from "@/features/map-runtime/hooks/use-inspector-payload";
 import type { ConceptCatalogEntry } from "@/features/map-runtime/types";
 import {
@@ -103,7 +104,7 @@ export function InspectorPanel({
   const { payload, isLoading, error } = useInspectorPayload(map.id, selection);
 
   return (
-    <Flex direction="column" gap="3" height="100%">
+    <Flex direction="column" gap="3">
       {selection.kind === "none" ? (
         <GuidedInspectorState
           locale={locale}
@@ -497,6 +498,14 @@ function ConceptInspectorCard({
             </>
           )}
         </Flex>
+
+        <Separator size="4" />
+
+        <InspectorProvenanceSection
+          locale={locale}
+          workspaceSlug={workspaceSlug}
+          provenance={payload.provenance}
+        />
       </Flex>
     </Card>
   );
@@ -755,6 +764,14 @@ function LinkInspectorCard({
             <Button type="submit" size="2" loading={isPending}>{messages.inspector.saveLink}</Button>
           </Flex>
         </form>
+
+        <Separator size="4" />
+
+        <InspectorProvenanceSection
+          locale={locale}
+          workspaceSlug={workspaceSlug}
+          provenance={payload.provenance}
+        />
       </Flex>
     </Card>
   );

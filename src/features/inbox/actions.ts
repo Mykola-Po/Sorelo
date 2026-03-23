@@ -27,7 +27,7 @@ import {
   zodErrorToActionState,
 } from "@/shared/validation/action-state";
 
-type CreateInboxWorkbenchActionFields = "sourceType" | "rawText";
+type CreateInboxWorkbenchActionFields = "mapId" | "sourceType" | "rawText";
 type ProcessInboxWorkbenchActionFields = "itemId";
 type AnswerInboxWorkbenchActionFields = "answerText";
 
@@ -46,6 +46,7 @@ export async function createInboxWorkbenchItemAction(
 ) {
   const parsed = inboxWorkbenchCreateActionSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
+    mapId: formData.get("mapId"),
     sourceType: formData.get("sourceType") || undefined,
     rawText: formData.get("rawText"),
   });
@@ -55,9 +56,11 @@ export async function createInboxWorkbenchItemAction(
   }
 
   try {
-    const { user } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const { user, access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
     const result = await createInboxItemCommand({
       userId: user.id,
+      workspaceId: access.workspace.id,
+      mapId: parsed.data.mapId,
       sourceType: parsed.data.sourceType,
       rawText: parsed.data.rawText,
       sourceRef: null,
