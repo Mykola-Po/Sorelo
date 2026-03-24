@@ -16,6 +16,18 @@ Rules:
 - Push important work to a remote repository early.
 - Treat `git worktree` directories as disposable working copies, not as the long-term source of truth.
 
+Before starting substantial engineering work, read `handbook/executable/project-working-guide.md`.
+
+Use that guide for:
+
+- repository map
+- feature ownership boundaries
+- safe change workflows
+- risk areas
+- verification expectations
+
+Use this playbook as the safety and repository-operations companion to that engineering entrypoint.
+
 ## 2. Safety Baseline
 
 Required controls:

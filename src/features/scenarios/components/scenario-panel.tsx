@@ -97,10 +97,7 @@ export function ScenarioPanel({
   };
 
   return (
-    <Flex
-      direction="column"
-      gap="4"
-    >
+    <Flex direction="column" gap="4">
       <Card className="panel-card">
         <Flex direction="column" gap="3">
           <Flex direction="column" gap="1">
@@ -122,13 +119,16 @@ export function ScenarioPanel({
             ))}
             <Flex direction="column" gap="3">
               <InlineFormField label={messages.scenario.situationLabel}>
-                <TextArea
-                  name="triggerText"
-                  placeholder={messages.scenario.situationPlaceholder}
-                  value={triggerText}
-                  onChange={(event) => setTriggerText(event.target.value)}
-                  rows={3}
-                />
+                {({ controlProps }) => (
+                  <TextArea
+                    {...controlProps}
+                    name="triggerText"
+                    placeholder={messages.scenario.situationPlaceholder}
+                    value={triggerText}
+                    onChange={(event) => setTriggerText(event.target.value)}
+                    rows={3}
+                  />
+                )}
               </InlineFormField>
               <SeedConceptPicker
                 locale={locale}
@@ -183,13 +183,26 @@ export function ScenarioPanel({
         </Flex>
       </Card>
 
-      <Tabs.Root value={secondaryTab} onValueChange={(value) => setSecondaryTab(value as ScenarioSecondaryTab)}>
-        <Tabs.List size="2">
-          <Tabs.Trigger value="save">{messages.scenario.saveTab}</Tabs.Trigger>
-          <Tabs.Trigger value="saved">{messages.scenario.savedTab}</Tabs.Trigger>
-          <Tabs.Trigger value="runs">{messages.scenario.runsTab}</Tabs.Trigger>
-        </Tabs.List>
-      </Tabs.Root>
+      <div className="panel-sticky-tabs">
+        <Tabs.Root
+          value={secondaryTab}
+          onValueChange={(value) =>
+            setSecondaryTab(value as ScenarioSecondaryTab)
+          }
+        >
+          <Tabs.List size="2">
+            <Tabs.Trigger value="save">
+              {messages.scenario.saveTab}
+            </Tabs.Trigger>
+            <Tabs.Trigger value="saved">
+              {messages.scenario.savedTab}
+            </Tabs.Trigger>
+            <Tabs.Trigger value="runs">
+              {messages.scenario.runsTab}
+            </Tabs.Trigger>
+          </Tabs.List>
+        </Tabs.Root>
+      </div>
 
       <Flex direction="column" gap="3" mt="2">
         {secondaryTab === "save" ? (
@@ -211,22 +224,28 @@ export function ScenarioPanel({
                   label={messages.inspector.titleLabel}
                   error={state.fieldErrors?.title?.[0]}
                 >
-                  <TextField.Root
-                    name="title"
-                    placeholder={messages.scenario.saveTitlePlaceholder}
-                    size="2"
-                  />
+                  {({ controlProps }) => (
+                    <TextField.Root
+                      {...controlProps}
+                      name="title"
+                      placeholder={messages.scenario.saveTitlePlaceholder}
+                      size="2"
+                    />
+                  )}
                 </InlineFormField>
                 <InlineFormField
                   label={messages.scenario.situationLabel}
                   error={state.fieldErrors?.situation?.[0]}
                 >
-                  <TextArea
-                    name="situation"
-                    placeholder={messages.scenario.saveSituationPlaceholder}
-                    defaultValue={triggerText}
-                    rows={3}
-                  />
+                  {({ controlProps }) => (
+                    <TextArea
+                      {...controlProps}
+                      name="situation"
+                      placeholder={messages.scenario.saveSituationPlaceholder}
+                      defaultValue={triggerText}
+                      rows={3}
+                    />
+                  )}
                 </InlineFormField>
                 {state.message ? (
                   <Text color="red" size="2">
@@ -345,7 +364,11 @@ export function ScenarioPanel({
                       </Flex>
                       <Flex gap="2" wrap="wrap">
                         {run.steps.slice(0, 2).map((step) => (
-                          <Badge key={`${run.id}-${step.id}`} color="gray" variant="surface">
+                          <Badge
+                            key={`${run.id}-${step.id}`}
+                            color="gray"
+                            variant="surface"
+                          >
                             {step.stepOrder}. {step.conceptTitle}
                           </Badge>
                         ))}
@@ -375,13 +398,20 @@ export function ScenarioPanel({
                                 className="scenario-step"
                               >
                                 <Flex align="center" gap="2" wrap="wrap">
-                                  <Badge color="blue" radius="full" variant="soft">
+                                  <Badge
+                                    color="blue"
+                                    radius="full"
+                                    variant="soft"
+                                  >
                                     {messages.scenario.step(step.stepOrder)}
                                   </Badge>
-                                  <Text weight="medium">{step.conceptTitle}</Text>
+                                  <Text weight="medium">
+                                    {step.conceptTitle}
+                                  </Text>
                                   <Badge color="gray" variant="surface">
-                                    {messages.labels.effectTypes[step.effectType] ??
-                                      step.effectType.replace(/_/g, " ")}
+                                    {messages.labels.effectTypes[
+                                      step.effectType
+                                    ] ?? step.effectType.replace(/_/g, " ")}
                                   </Badge>
                                   <Badge color="orange" variant="surface">
                                     {messages.scenario.score(step.score)}
@@ -466,21 +496,24 @@ function RunFeedbackForm({
                 label={messages.scenario.runFeedbackVerdictLabel}
                 error={state.fieldErrors?.verdict?.[0]}
               >
-                <select
-                  name="verdict"
-                  defaultValue={run.feedback?.verdict ?? "partly_useful"}
-                  className="sl-scenario-feedback-select"
-                >
-                  <option value="useful">
-                    {messages.scenario.runFeedbackVerdictUseful}
-                  </option>
-                  <option value="partly_useful">
-                    {messages.scenario.runFeedbackVerdictPartlyUseful}
-                  </option>
-                  <option value="wrong">
-                    {messages.scenario.runFeedbackVerdictWrong}
-                  </option>
-                </select>
+                {({ controlProps }) => (
+                  <select
+                    {...controlProps}
+                    name="verdict"
+                    defaultValue={run.feedback?.verdict ?? "partly_useful"}
+                    className="sl-scenario-feedback-select"
+                  >
+                    <option value="useful">
+                      {messages.scenario.runFeedbackVerdictUseful}
+                    </option>
+                    <option value="partly_useful">
+                      {messages.scenario.runFeedbackVerdictPartlyUseful}
+                    </option>
+                    <option value="wrong">
+                      {messages.scenario.runFeedbackVerdictWrong}
+                    </option>
+                  </select>
+                )}
               </InlineFormField>
             </div>
             <div className="panel-field-half">
@@ -488,14 +521,17 @@ function RunFeedbackForm({
                 label={messages.scenario.runFeedbackScoreLabel}
                 error={state.fieldErrors?.overallScore?.[0]}
               >
-                <TextField.Root
-                  type="number"
-                  name="overallScore"
-                  min={1}
-                  max={5}
-                  defaultValue={String(run.feedback?.overallScore ?? 3)}
-                  size="2"
-                />
+                {({ controlProps }) => (
+                  <TextField.Root
+                    {...controlProps}
+                    type="number"
+                    name="overallScore"
+                    min={1}
+                    max={5}
+                    defaultValue={String(run.feedback?.overallScore ?? 3)}
+                    size="2"
+                  />
+                )}
               </InlineFormField>
             </div>
           </Flex>
@@ -503,12 +539,15 @@ function RunFeedbackForm({
             label={messages.scenario.runFeedbackCommentLabel}
             error={state.fieldErrors?.feedbackText?.[0]}
           >
-            <TextArea
-              name="feedbackText"
-              rows={2}
-              placeholder={messages.scenario.runFeedbackCommentPlaceholder}
-              defaultValue={run.feedback?.feedbackText ?? ""}
-            />
+            {({ controlProps }) => (
+              <TextArea
+                {...controlProps}
+                name="feedbackText"
+                rows={2}
+                placeholder={messages.scenario.runFeedbackCommentPlaceholder}
+                defaultValue={run.feedback?.feedbackText ?? ""}
+              />
+            )}
           </InlineFormField>
           {state.message ? (
             <Text color="red" size="1">
@@ -565,27 +604,30 @@ function StepFeedbackForm({
             label={messages.scenario.stepFeedbackVerdictLabel}
             error={state.fieldErrors?.verdict?.[0]}
           >
-            <select
-              name="verdict"
-              defaultValue={step.feedback?.verdict ?? "correct"}
-              className="sl-scenario-feedback-select"
-            >
-              <option value="correct">
-                {messages.scenario.stepFeedbackVerdictCorrect}
-              </option>
-              <option value="overstated">
-                {messages.scenario.stepFeedbackVerdictOverstated}
-              </option>
-              <option value="wrong_link">
-                {messages.scenario.stepFeedbackVerdictWrongLink}
-              </option>
-              <option value="missing_context">
-                {messages.scenario.stepFeedbackVerdictMissingContext}
-              </option>
-              <option value="wrong_effect">
-                {messages.scenario.stepFeedbackVerdictWrongEffect}
-              </option>
-            </select>
+            {({ controlProps }) => (
+              <select
+                {...controlProps}
+                name="verdict"
+                defaultValue={step.feedback?.verdict ?? "correct"}
+                className="sl-scenario-feedback-select"
+              >
+                <option value="correct">
+                  {messages.scenario.stepFeedbackVerdictCorrect}
+                </option>
+                <option value="overstated">
+                  {messages.scenario.stepFeedbackVerdictOverstated}
+                </option>
+                <option value="wrong_link">
+                  {messages.scenario.stepFeedbackVerdictWrongLink}
+                </option>
+                <option value="missing_context">
+                  {messages.scenario.stepFeedbackVerdictMissingContext}
+                </option>
+                <option value="wrong_effect">
+                  {messages.scenario.stepFeedbackVerdictWrongEffect}
+                </option>
+              </select>
+            )}
           </InlineFormField>
           <Flex gap="2" wrap="wrap">
             <div className="panel-field-half">
@@ -593,15 +635,20 @@ function StepFeedbackForm({
                 label={messages.scenario.stepFeedbackCorrectedScoreLabel}
                 error={state.fieldErrors?.correctedScore?.[0]}
               >
-                <TextField.Root
-                  type="number"
-                  name="correctedScore"
-                  min={1}
-                  max={100}
-                  defaultValue={step.feedback?.correctedScore?.toString() ?? ""}
-                  placeholder={String(step.score)}
-                  size="1"
-                />
+                {({ controlProps }) => (
+                  <TextField.Root
+                    {...controlProps}
+                    type="number"
+                    name="correctedScore"
+                    min={1}
+                    max={100}
+                    defaultValue={
+                      step.feedback?.correctedScore?.toString() ?? ""
+                    }
+                    placeholder={String(step.score)}
+                    size="1"
+                  />
+                )}
               </InlineFormField>
             </div>
           </Flex>
@@ -609,14 +656,17 @@ function StepFeedbackForm({
             label={messages.scenario.stepFeedbackCorrectedExplanationLabel}
             error={state.fieldErrors?.correctedExplanation?.[0]}
           >
-            <TextArea
-              name="correctedExplanation"
-              rows={2}
-              placeholder={
-                messages.scenario.stepFeedbackCorrectedExplanationPlaceholder
-              }
-              defaultValue={step.feedback?.correctedExplanation ?? ""}
-            />
+            {({ controlProps }) => (
+              <TextArea
+                {...controlProps}
+                name="correctedExplanation"
+                rows={2}
+                placeholder={
+                  messages.scenario.stepFeedbackCorrectedExplanationPlaceholder
+                }
+                defaultValue={step.feedback?.correctedExplanation ?? ""}
+              />
+            )}
           </InlineFormField>
           {state.message ? (
             <Text color="red" size="1">

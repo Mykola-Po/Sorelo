@@ -44,19 +44,24 @@ async function createWorkspace(page: Page, userId: string) {
   await page.goto("/app");
   await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
-  await page.locator('input[name="name"]').fill(workspaceName);
+  const workspaceNameField = page.getByLabel("Workspace name");
+  await expect(workspaceNameField).toBeVisible();
+  await workspaceNameField.fill(workspaceName);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
     timeout: 30_000,
   });
-  await expect(
-    page.getByRole("heading", { name: workspaceName })
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: workspaceName })).toBeVisible({
+    timeout: 15_000,
+  });
 
   return { workspaceSlug };
 }
 
-async function openCreatedMapFromWorkspaceHome(page: Page, workspaceSlug: string) {
+async function openCreatedMapFromWorkspaceHome(
+  page: Page,
+  workspaceSlug: string
+) {
   const mapUrlPattern = new RegExp(`/app/${workspaceSlug}/maps/[^/]+$`);
 
   try {
@@ -97,9 +102,38 @@ test.describe("Map creation UI", () => {
       page.getByRole("heading", { name: "Create the first Map" })
     ).toBeVisible();
 
-    await page.locator('input[name="title"]').fill(mapTitle);
-    await page.locator('input[name="subjectLabel"]').fill(subjectLabel);
-    await page.locator('textarea[name="description"]').fill(description);
+    const mapTitleField = page.getByLabel("Map title");
+    const subjectLabelField = page.getByLabel("Subject label");
+    const descriptionField = page.getByLabel("Description");
+
+    await expect(mapTitleField).toBeVisible();
+    await expect(subjectLabelField).toBeVisible();
+    await expect(descriptionField).toBeVisible();
+    await expect(
+      mapTitleField.evaluate(
+        (element) => (element as HTMLInputElement).labels?.length ?? 0
+      )
+    ).resolves.toBe(1);
+    await expect(
+      descriptionField.evaluate(
+        (element) => (element as HTMLTextAreaElement).labels?.length ?? 0
+      )
+    ).resolves.toBe(1);
+
+    await mapTitleField.fill("A");
+    await subjectLabelField.fill(subjectLabel);
+    await page.getByRole("button", { name: "Create map" }).click();
+
+    await expect(mapTitleField).toHaveAttribute("aria-invalid", "true");
+    const describedBy = await mapTitleField.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    for (const id of describedBy?.split(/\s+/).filter(Boolean) ?? []) {
+      await expect(page.locator(`#${id}`)).toBeVisible();
+    }
+
+    await mapTitleField.fill(mapTitle);
+    await subjectLabelField.fill(subjectLabel);
+    await descriptionField.fill(description);
     await page.getByRole("button", { name: "Create map" }).click();
 
     await openCreatedMapFromWorkspaceHome(page, workspaceSlug);

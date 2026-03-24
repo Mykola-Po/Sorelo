@@ -2,9 +2,7 @@
 
 import { useActionState } from "react";
 
-import {
-  createInboxWorkbenchItemAction,
-} from "@/features/inbox/actions";
+import { createInboxWorkbenchItemAction } from "@/features/inbox/actions";
 import type { MapSummary } from "@/features/maps/types";
 import { createIdleState } from "@/shared/validation/action-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
@@ -38,37 +36,43 @@ export function InboxWorkbenchComposer({
           label="Target Map"
           error={state.fieldErrors?.mapId?.[0]}
         >
-          <select
-            name="mapId"
-            defaultValue={defaultMapId}
-            className="sl-inbox-select"
-            disabled={availableMaps.length === 0}
-          >
-            {availableMaps.length === 0 ? (
-              <option value="">Create a Map first</option>
-            ) : null}
-            {availableMaps.map((map) => (
-              <option key={map.id} value={map.id}>
-                {map.title}
-              </option>
-            ))}
-          </select>
+          {({ controlProps }) => (
+            <select
+              {...controlProps}
+              name="mapId"
+              defaultValue={defaultMapId}
+              className="sl-inbox-select"
+              disabled={availableMaps.length === 0}
+            >
+              {availableMaps.length === 0 ? (
+                <option value="">Create a Map first</option>
+              ) : null}
+              {availableMaps.map((map) => (
+                <option key={map.id} value={map.id}>
+                  {map.title}
+                </option>
+              ))}
+            </select>
+          )}
         </InlineFormField>
         <InlineFormField
           label="Source type"
           error={state.fieldErrors?.sourceType?.[0]}
         >
-          <select
-            name="sourceType"
-            defaultValue="manual_note"
-            className="sl-inbox-select"
-          >
-            <option value="manual_note">manual_note</option>
-            <option value="transcript">transcript</option>
-            <option value="chat">chat</option>
-            <option value="upload">upload</option>
-            <option value="import">import</option>
-          </select>
+          {({ controlProps }) => (
+            <select
+              {...controlProps}
+              name="sourceType"
+              defaultValue="manual_note"
+              className="sl-inbox-select"
+            >
+              <option value="manual_note">manual_note</option>
+              <option value="transcript">transcript</option>
+              <option value="chat">chat</option>
+              <option value="upload">upload</option>
+              <option value="import">import</option>
+            </select>
+          )}
         </InlineFormField>
         <TextAreaField
           label="Raw input"
@@ -79,7 +83,11 @@ export function InboxWorkbenchComposer({
           resize="vertical"
         />
         <FormErrorMessage message={state.message} />
-        <SubmitButton size="3" loading={isPending} disabled={availableMaps.length === 0}>
+        <SubmitButton
+          size="3"
+          loading={isPending}
+          disabled={availableMaps.length === 0}
+        >
           Create inbox item
         </SubmitButton>
       </FormStack>

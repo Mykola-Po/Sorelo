@@ -25,6 +25,7 @@ Published internal documentation now lives under `./handbook` and is organized b
 Start with:
 
 - [Handbook overview](handbook/README.md)
+- [Project working guide](handbook/executable/project-working-guide.md)
 - [Sorelo source of truth](handbook/canon/sorelo-source-of-truth.md)
 - [Product spec](handbook/canon/product-spec.md)
 - [Implementation principles](handbook/rules/implementation-principles.md)
@@ -34,6 +35,8 @@ Start with:
 - [Security policy](SECURITY.md)
 
 `docs/` is retained only for drafting assets and templates such as `docs/engineering/adr-template.md`.
+
+If you are onboarding to the codebase or preparing a non-trivial change, the default engineering entrypoint is [`handbook/executable/project-working-guide.md`](handbook/executable/project-working-guide.md).
 
 ## Current architectural position
 

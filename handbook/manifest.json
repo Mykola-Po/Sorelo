@@ -123,6 +123,16 @@
       "summary": "Describes what is currently true in schema, routes, runtime behavior, and deterministic scenario execution.",
       "documents": [
         {
+          "id": "project-working-guide",
+          "title": "Project Working Guide",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/project-working-guide.md",
+          "summary": "Primary engineering entrypoint for the current repository layout, feature boundaries, change workflows, risk areas, and verification expectations.",
+          "tags": ["executable", "onboarding", "architecture", "workflow", "verification"],
+          "derivedFrom": ["implementation-principles", "repository-operations", "map-first-routing-and-flows", "public-schema", "map-runtime-architecture"]
+        },
+        {
           "id": "public-schema",
           "title": "Public Schema",
           "status": "existing",

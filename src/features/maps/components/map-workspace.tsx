@@ -218,7 +218,7 @@ function MapWorkspaceContent({
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
     setPanelTab("inspector");
-    setPanelOpen(true);
+    setPanelOpen(false);
   };
 
   const beginConnectLink = () => {
@@ -378,6 +378,26 @@ function MapWorkspaceContent({
             onZoomStateChange={handleZoomStateChange}
           />
         </div>
+
+        {interactionMode !== "inspect" && !dialogOpen && (
+          <div className="canvas-guidance-banner">
+            <Flex align="center" gap="3">
+              <Text size="2" weight="medium">
+                {interactionMode === "placeConcept"
+                  ? messages.canvas.placeConceptTitle
+                  : messages.canvas.createLinkSourceTitle}
+              </Text>
+              <Button
+                type="button"
+                size="1"
+                variant="soft"
+                onClick={cancelInteraction}
+              >
+                {messages.inspector.cancel}
+              </Button>
+            </Flex>
+          </div>
+        )}
 
         <div className="map-overlay-layer">
           <div className="map-overlay-bottom">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Badge,
   Card,
   Flex,
   Heading,
@@ -23,6 +24,7 @@ import { EmptyState } from "@/shared/ui/components/empty-state";
 import { PageHeader } from "@/shared/ui/components/page-header";
 import { SectionCard } from "@/shared/ui/components/section-card";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
+import { WorkspaceSectionNav } from "@/features/workspace/components/workspace-section-nav";
 
 type InboxWorkbenchProps = {
   workspaceSlug: string;
@@ -112,6 +114,95 @@ function getRoutingCompatibility(value: unknown) {
     reason,
     overrideReason,
   };
+}
+
+function getStepRuntimeDetails(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const executionMode =
+    typeof value.executionMode === "string" ? value.executionMode : null;
+  const actualModelName =
+    typeof value.actualModelName === "string" ? value.actualModelName : null;
+  const configuredModel =
+    typeof value.configuredModel === "string" ? value.configuredModel : null;
+  const actualProvider =
+    typeof value.actualProvider === "string" ? value.actualProvider : null;
+  const fallbackUsed =
+    typeof value.fallbackUsed === "boolean" ? value.fallbackUsed : false;
+  const fallbackReason =
+    typeof value.fallbackReason === "string" ? value.fallbackReason : null;
+  const failureCode =
+    typeof value.failureCode === "string" ? value.failureCode : null;
+  const failureStatusCode =
+    typeof value.failureStatusCode === "number"
+      ? value.failureStatusCode
+      : null;
+  const attemptCount =
+    typeof value.attemptCount === "number" ? value.attemptCount : null;
+  const retryCount = typeof value.retryCount === "number" ? value.retryCount : null;
+  const quotaExceeded =
+    failureStatusCode === 429 ||
+    (fallbackReason !== null && /quota|billing/i.test(fallbackReason));
+
+  if (
+    !executionMode &&
+    !actualModelName &&
+    !configuredModel &&
+    !actualProvider &&
+    !fallbackUsed &&
+    !fallbackReason &&
+    !failureCode &&
+    failureStatusCode === null &&
+    attemptCount === null &&
+    retryCount === null
+  ) {
+    return null;
+  }
+
+  return {
+    executionMode,
+    actualModelName,
+    configuredModel,
+    actualProvider,
+    fallbackUsed,
+    fallbackReason,
+    failureCode,
+    failureStatusCode,
+    attemptCount,
+    retryCount,
+    quotaExceeded,
+  };
+}
+
+function getQuotaFallbackNotice(detail: InboxItemDetailRecord) {
+  for (const attempt of detail.attempts) {
+    for (const step of attempt.steps) {
+      if (step.stepName !== "interpret") {
+        continue;
+      }
+
+      const runtimeDetails = getStepRuntimeDetails(step.metadata);
+      if (!runtimeDetails?.fallbackUsed || !runtimeDetails.quotaExceeded) {
+        continue;
+      }
+
+      return {
+        attemptNo: attempt.attemptNo,
+        configuredModel:
+          runtimeDetails.configuredModel ?? step.modelName ?? "configured LLM",
+        actualModelName:
+          runtimeDetails.actualModelName ?? step.modelName ?? "deterministic-parser",
+        actualProvider: runtimeDetails.actualProvider ?? "deterministic",
+        fallbackReason: runtimeDetails.fallbackReason,
+        attemptCount: runtimeDetails.attemptCount,
+        retryCount: runtimeDetails.retryCount,
+      };
+    }
+  }
+
+  return null;
 }
 
 function renderRoutingPolicySummary(
@@ -234,6 +325,7 @@ function renderDetailPanels(
       .map((batch) => [batch.inboxPacketId as string, batch])
   );
   const canProcess = actionableStatuses.has(selectedItem.status);
+  const quotaFallbackNotice = getQuotaFallbackNotice(detail);
 
   return (
     <>
@@ -292,6 +384,49 @@ function renderDetailPanels(
             <Text size="2">{formatTimestamp(selectedItem.updatedAt)}</Text>
           </div>
         </div>
+
+        {quotaFallbackNotice ? (
+          <div className="sl-inbox-warning-card" role="status" aria-live="polite">
+            <Flex direction="column" gap="2">
+              <Flex align="center" gap="2" wrap="wrap">
+                <Badge color="amber" variant="soft" radius="full">
+                  LLM fallback
+                </Badge>
+                <Text size="2" weight="medium">
+                  OpenAI quota was exhausted, so Inbox fell back to the
+                  deterministic parser.
+                </Text>
+              </Flex>
+              <Text size="2" color="gray">
+                Attempt {quotaFallbackNotice.attemptNo} configured{" "}
+                <span className="sl-inbox-mono">
+                  {quotaFallbackNotice.configuredModel}
+                </span>{" "}
+                but completed with{" "}
+                <span className="sl-inbox-mono">
+                  {quotaFallbackNotice.actualModelName}
+                </span>{" "}
+                via {quotaFallbackNotice.actualProvider}. Review the item, then
+                retry once quota or billing is restored.
+              </Text>
+              {quotaFallbackNotice.attemptCount !== null &&
+              quotaFallbackNotice.attemptCount !== undefined ? (
+                <Text size="1" color="gray">
+                  {quotaFallbackNotice.attemptCount} attempts
+                  {quotaFallbackNotice.retryCount &&
+                  quotaFallbackNotice.retryCount > 0
+                    ? ` (${quotaFallbackNotice.retryCount} retries)`
+                    : ""}
+                </Text>
+              ) : null}
+              {quotaFallbackNotice.fallbackReason ? (
+                <Text size="1" color="gray">
+                  {quotaFallbackNotice.fallbackReason}
+                </Text>
+              ) : null}
+            </Flex>
+          </div>
+        ) : null}
 
         <div className="sl-inbox-text-grid">
           <div className="sl-inbox-text-block">
@@ -929,12 +1064,54 @@ function renderDetailPanels(
                             gap="1"
                             wrap="wrap"
                           >
-                            <Text size="2" className="sl-inbox-mono">
-                              {step.modelName ?? "deterministic"}
-                            </Text>
-                            <Text size="1" color="gray" className="sl-inbox-mono">
-                              {step.promptVersion ?? "n/a"}
-                            </Text>
+                            {(() => {
+                              const runtimeDetails = getStepRuntimeDetails(step.metadata);
+
+                              return (
+                                <>
+                                  <Text size="2" className="sl-inbox-mono">
+                                    {step.modelName ?? "deterministic"}
+                                  </Text>
+                                  <Text size="1" color="gray" className="sl-inbox-mono">
+                                    {step.promptVersion ?? "n/a"}
+                                  </Text>
+                                  {runtimeDetails?.executionMode ? (
+                                    <Text size="1" color="gray">
+                                      {humanizeToken(runtimeDetails.executionMode)}
+                                    </Text>
+                                  ) : null}
+                                  {runtimeDetails?.actualModelName &&
+                                  runtimeDetails.actualModelName !== step.modelName ? (
+                                    <Text size="1" color="gray" className="sl-inbox-mono">
+                                      actual {runtimeDetails.actualModelName}
+                                    </Text>
+                                  ) : null}
+                                  {runtimeDetails?.fallbackReason ? (
+                                    <Text size="1" color="gray">
+                                      {runtimeDetails.fallbackReason}
+                                    </Text>
+                                  ) : null}
+                                  {runtimeDetails?.quotaExceeded ? (
+                                    <Text
+                                      size="1"
+                                      className="sl-inbox-runtime-warning"
+                                    >
+                                      OpenAI quota exceeded {"->"} deterministic fallback
+                                    </Text>
+                                  ) : null}
+                                  {runtimeDetails?.attemptCount !== null &&
+                                  runtimeDetails?.attemptCount !== undefined ? (
+                                    <Text size="1" color="gray">
+                                      {runtimeDetails.attemptCount} attempts
+                                      {runtimeDetails.retryCount &&
+                                      runtimeDetails.retryCount > 0
+                                        ? ` (${runtimeDetails.retryCount} retries)`
+                                        : ""}
+                                    </Text>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
                           </Flex>,
                           <Flex
                             key={`${step.id}-route`}
@@ -1064,6 +1241,11 @@ export function InboxWorkbench({
 }: InboxWorkbenchProps) {
   return (
     <div className="page-stack sl-inbox-page">
+      <WorkspaceSectionNav
+        workspaceSlug={workspaceSlug}
+        currentSection="inbox"
+      />
+
       <PageHeader
         title="Inbox Workbench"
         description={`Internal triage surface for raw Inbox items in ${workspaceName}. Data is scoped to the current signed-in user.`}

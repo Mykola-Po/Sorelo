@@ -123,7 +123,9 @@ test.describe("workspace home", () => {
     await page.goto("/app");
     await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
-    await page.locator('input[name="name"]').fill(workspaceName);
+    const workspaceNameField = page.getByLabel("Workspace name");
+    await expect(workspaceNameField).toBeVisible();
+    await workspaceNameField.fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
       timeout: 30_000,
@@ -139,13 +141,31 @@ test.describe("workspace home", () => {
     await expect(
       page.getByRole("heading", { name: "First useful session" })
     ).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Workspace sections" })
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Inbox" }).click();
+    await page.waitForURL(new RegExp(`/app/${workspaceSlug}/inbox$`), {
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("heading", { name: "Inbox Workbench" })
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Overview" }).click();
+    await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("heading", { name: workspaceName })
+    ).toBeVisible();
 
     const map = await createMapThroughInternalApi(page, {
       userId,
       workspaceSlug,
       title: `Signal Map ${suffix}`,
       subjectLabel: "Alex",
-      description: "Track the explainable structure before the first Scenario run.",
+      description:
+        "Track the explainable structure before the first Scenario run.",
     });
     await page.goto(`/app/${workspaceSlug}/maps/${map.data.id}`);
 
@@ -159,6 +179,8 @@ test.describe("workspace home", () => {
     await expect(
       page.getByRole("heading", { name: "Recent Scenario signal" })
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Map" }).first()).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open Map" }).first()
+    ).toBeVisible();
   });
 });

@@ -42,7 +42,9 @@ function getInternalApiSecret() {
     process.env.INTERNAL_API_SECRET ?? readDotenvValue("INTERNAL_API_SECRET");
 
   if (!secret) {
-    throw new Error("INTERNAL_API_SECRET is required for internal e2e requests.");
+    throw new Error(
+      "INTERNAL_API_SECRET is required for internal e2e requests."
+    );
   }
 
   return secret;
@@ -113,7 +115,9 @@ async function createWorkspaceAndOpenMap(page: Page) {
   await page.goto("/app");
   await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
-  await page.locator('input[name="name"]').fill(workspaceName);
+  const workspaceNameField = page.getByLabel("Workspace name");
+  await expect(workspaceNameField).toBeVisible();
+  await workspaceNameField.fill(workspaceName);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
     timeout: 30_000,
@@ -124,7 +128,8 @@ async function createWorkspaceAndOpenMap(page: Page) {
     workspaceSlug,
     title: `Canvas Map ${suffix}`,
     subjectLabel: "Alex",
-    description: "Map used to verify canvas interactions while the Inspector is open.",
+    description:
+      "Map used to verify canvas interactions while the Inspector is open.",
   });
   await page.goto(`/app/${workspaceSlug}/maps/${map.data.id}`);
 
@@ -151,10 +156,12 @@ test.describe("Map workspace canvas interactions", () => {
       position: { x: 180, y: 180 },
     });
 
-    await expect(page.getByRole("heading", { name: "New Concept" })).toBeVisible();
-    await expect(page.getByText("Position:")).toBeVisible();
     await expect(
-      page.locator('input[name="title"]')
+      page.getByRole("heading", { name: "New Concept" })
     ).toBeVisible();
+    await expect(page.getByText("Position:")).toBeVisible();
+    await expect(page.getByLabel("Title")).toBeVisible();
+    await expect(page.getByLabel("Description")).toBeVisible();
+    await expect(page.getByLabel("Concept type")).toBeVisible();
   });
 });

@@ -52,13 +52,29 @@ import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
 import type { ActionState } from "@/shared/validation/action-state";
 
-const conceptTypeOptions = ["thought", "state", "belief", "experience", "fact", "trigger", "custom"] as const;
-const relationTypeOptions = ["causes", "strengthens", "weakens", "explains", "contradicts"] as const;
+const conceptTypeOptions = [
+  "thought",
+  "state",
+  "belief",
+  "experience",
+  "fact",
+  "trigger",
+  "custom",
+] as const;
+const relationTypeOptions = [
+  "causes",
+  "strengthens",
+  "weakens",
+  "explains",
+  "contradicts",
+] as const;
 const strengthOptions = [1, 2, 3, 4, 5] as const;
 
 const conceptFormState: ConceptActionState = { status: "idle" };
 const linkFormState: LinkActionState = { status: "idle" };
-const mapFormState: ActionState<"title" | "subjectLabel" | "description"> = { status: "idle" };
+const mapFormState: ActionState<"title" | "subjectLabel" | "description"> = {
+  status: "idle",
+};
 
 type InspectorPanelProps = {
   locale: SupportedLocale;
@@ -111,6 +127,7 @@ export function InspectorPanel({
           guidedStep={guidedStep}
           interactionMode={interactionMode}
           linkingSourceConceptTitle={linkingSourceConceptTitle}
+          conceptCount={conceptCount}
           onStartCreateConcept={onStartCreateConcept}
           onStartCreateLink={onStartCreateLink}
           onOpenScenario={onOpenScenario}
@@ -157,15 +174,44 @@ export function InspectorPanel({
         />
       ) : null}
 
-      {selection.kind !== "none" && selection.kind !== "create-concept" && selection.kind !== "create-link" && selection.kind !== "map-settings" && isLoading ? <LoadingCard locale={locale} /> : null}
-      {selection.kind !== "none" && selection.kind !== "create-concept" && selection.kind !== "create-link" && selection.kind !== "map-settings" && error ? <ErrorCard locale={locale} message={error} /> : null}
+      {selection.kind !== "none" &&
+      selection.kind !== "create-concept" &&
+      selection.kind !== "create-link" &&
+      selection.kind !== "map-settings" &&
+      isLoading ? (
+        <LoadingCard locale={locale} />
+      ) : null}
+      {selection.kind !== "none" &&
+      selection.kind !== "create-concept" &&
+      selection.kind !== "create-link" &&
+      selection.kind !== "map-settings" &&
+      error ? (
+        <ErrorCard locale={locale} message={error} />
+      ) : null}
 
       {selection.kind === "concept" && payload?.kind === "concept" ? (
-        <ConceptInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} payload={payload} onSelect={onSelect} onMutationFeedback={onMutationFeedback} />
+        <ConceptInspectorCard
+          locale={locale}
+          workspaceSlug={workspaceSlug}
+          mapId={map.id}
+          payload={payload}
+          onSelect={onSelect}
+          onMutationFeedback={onMutationFeedback}
+        />
       ) : null}
 
       {selection.kind === "link" && payload?.kind === "link" ? (
-        <LinkInspectorCard locale={locale} workspaceSlug={workspaceSlug} mapId={map.id} conceptCatalog={conceptCatalog} conceptCatalogLoading={conceptCatalogLoading} conceptCatalogError={conceptCatalogError} payload={payload} onSelect={onSelect} onMutationFeedback={onMutationFeedback} />
+        <LinkInspectorCard
+          locale={locale}
+          workspaceSlug={workspaceSlug}
+          mapId={map.id}
+          conceptCatalog={conceptCatalog}
+          conceptCatalogLoading={conceptCatalogLoading}
+          conceptCatalogError={conceptCatalogError}
+          payload={payload}
+          onSelect={onSelect}
+          onMutationFeedback={onMutationFeedback}
+        />
       ) : null}
     </Flex>
   );
@@ -176,13 +222,24 @@ type GuidedInspectorStateProps = {
   guidedStep: GuidedOnboardingStep;
   interactionMode: CanvasInteractionMode;
   linkingSourceConceptTitle: string | null;
+  conceptCount: number;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
   onOpenScenario: () => void;
   onCancelInteraction: () => void;
 };
 
-function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSourceConceptTitle, onStartCreateConcept, onStartCreateLink, onOpenScenario, onCancelInteraction }: GuidedInspectorStateProps) {
+function GuidedInspectorState({
+  locale,
+  guidedStep,
+  interactionMode,
+  linkingSourceConceptTitle,
+  conceptCount,
+  onStartCreateConcept,
+  onStartCreateLink,
+  onOpenScenario,
+  onCancelInteraction,
+}: GuidedInspectorStateProps) {
   const messages = getMapWorkspaceMessages(locale);
   const stepBadge =
     guidedStep === "done"
@@ -241,7 +298,9 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
         }
         title={
           linkingSourceConceptTitle
-            ? messages.inspector.connectLinkTargetTitle(linkingSourceConceptTitle)
+            ? messages.inspector.connectLinkTargetTitle(
+                linkingSourceConceptTitle
+              )
             : messages.inspector.connectLinkSourceTitle
         }
         description={
@@ -288,32 +347,56 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
     );
 
   return (
-    <EmptyState
-      eyebrow={
-        <Flex
-          gap="2"
-          wrap="wrap"
-          align="center"
-          className="inspector-empty-eyebrow-group"
-        >
-          <Badge
-            color={guidedStep === "done" ? "green" : "blue"}
-            radius="full"
-            variant="soft"
+    <Flex direction="column" gap="3">
+      <EmptyState
+        eyebrow={
+          <Flex
+            gap="2"
+            wrap="wrap"
+            align="center"
+            className="inspector-empty-eyebrow-group"
           >
-            {stepBadge}
-          </Badge>
-        </Flex>
-      }
-      title={guidedCopy.title}
-      description={guidedCopy.description}
-      action={primaryAction}
-      className={
-        guidedStep === "done"
-          ? "inspector-empty-state is-ready-state"
-          : "inspector-empty-state"
-      }
-    />
+            <Badge
+              color={guidedStep === "done" ? "green" : "blue"}
+              radius="full"
+              variant="soft"
+            >
+              {stepBadge}
+            </Badge>
+          </Flex>
+        }
+        title={guidedCopy.title}
+        description={guidedCopy.description}
+        action={primaryAction}
+        className={
+          guidedStep === "done"
+            ? "inspector-empty-state is-ready-state"
+            : "inspector-empty-state"
+        }
+      />
+      {guidedStep === "done" && (
+        <Card className="panel-card">
+          <Flex direction="column" gap="2">
+            <Text size="2" weight="medium" color="gray">
+              {locale === "uk"
+                ? "Статистика карти"
+                : locale === "ru"
+                  ? "Статистика карты"
+                  : "Map statistics"}
+            </Text>
+            <Flex gap="3" wrap="wrap">
+              <Badge variant="surface" radius="full" size="2">
+                {locale === "uk"
+                  ? `${conceptCount} Концептів`
+                  : locale === "ru"
+                    ? `${conceptCount} Концептов`
+                    : `${conceptCount} Concepts`}
+              </Badge>
+            </Flex>
+          </Flex>
+        </Card>
+      )}
+    </Flex>
   );
 }
 
@@ -339,8 +422,12 @@ function CreateConceptCard({
   onMutationFeedback,
 }: CreateConceptCardProps) {
   const messages = getMapWorkspaceMessages(locale);
-  const [state, formAction, isPending] = useActionState(createConceptAction, conceptFormState);
-  const [conceptType, setConceptType] = useState<(typeof conceptTypeOptions)[number]>("custom");
+  const [state, formAction, isPending] = useActionState(
+    createConceptAction,
+    conceptFormState
+  );
+  const [conceptType, setConceptType] =
+    useState<(typeof conceptTypeOptions)[number]>("custom");
   const fallbackPosition = getDefaultConceptPosition(conceptCount);
   const x = initialX ?? fallbackPosition.x;
   const y = initialY ?? fallbackPosition.y;
@@ -357,7 +444,13 @@ function CreateConceptCard({
       eventId: state.payload.eventId,
       message: messages.inspector.conceptCreatedFeedback,
     });
-  }, [messages.inspector.conceptCreatedFeedback, onMutationFeedback, onSelect, state.payload, state.status]);
+  }, [
+    messages.inspector.conceptCreatedFeedback,
+    onMutationFeedback,
+    onSelect,
+    state.payload,
+    state.status,
+  ]);
 
   return (
     <Card className="panel-card">
@@ -369,27 +462,84 @@ function CreateConceptCard({
         <Flex direction="column" gap="3">
           <Flex direction="column" gap="1">
             <Heading size="4">{messages.inspector.newConcept}</Heading>
-            <Text size="2" color="gray">{messages.inspector.positionLabel}: {Math.round(x)} | {Math.round(y)}</Text>
+            <Text size="2" color="gray">
+              {messages.inspector.positionLabel}: {Math.round(x)} |{" "}
+              {Math.round(y)}
+            </Text>
           </Flex>
-          <InlineFormField label={messages.inspector.titleLabel} error={state.fieldErrors?.title?.[0]}>
-            <TextField.Root name="title" placeholder={messages.inspector.createConceptTitlePlaceholder} size="2" />
+          <InlineFormField
+            label={messages.inspector.titleLabel}
+            error={state.fieldErrors?.title?.[0]}
+          >
+            {({ controlProps }) => (
+              <TextField.Root
+                {...controlProps}
+                name="title"
+                placeholder={messages.inspector.createConceptTitlePlaceholder}
+                size="2"
+              />
+            )}
           </InlineFormField>
-          <InlineFormField label={messages.inspector.conceptTypeLabel} error={state.fieldErrors?.conceptType?.[0]}>
-            <Select.Root name="conceptType" value={conceptType} onValueChange={(value) => setConceptType(value as (typeof conceptTypeOptions)[number])}>
-              <Select.Trigger />
-              <Select.Content>
-                {conceptTypeOptions.map((option) => <Select.Item key={option} value={option}>{messages.labels.conceptTypes[option]}</Select.Item>)}
-              </Select.Content>
-            </Select.Root>
+          <InlineFormField
+            label={messages.inspector.conceptTypeLabel}
+            error={state.fieldErrors?.conceptType?.[0]}
+            association="labelledby"
+          >
+            {({ triggerProps }) => (
+              <Select.Root
+                name="conceptType"
+                value={conceptType}
+                onValueChange={(value) =>
+                  setConceptType(value as (typeof conceptTypeOptions)[number])
+                }
+              >
+                <Select.Trigger {...triggerProps} />
+                <Select.Content>
+                  {conceptTypeOptions.map((option) => (
+                    <Select.Item key={option} value={option}>
+                      {messages.labels.conceptTypes[option]}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            )}
           </InlineFormField>
-          <InlineFormField label={messages.inspector.summaryLabel} error={state.fieldErrors?.summary?.[0]}>
-            <TextField.Root name="summary" placeholder={messages.inspector.createConceptSummaryPlaceholder} size="2" />
+          <InlineFormField
+            label={messages.inspector.summaryLabel}
+            error={state.fieldErrors?.summary?.[0]}
+          >
+            {({ controlProps }) => (
+              <TextField.Root
+                {...controlProps}
+                name="summary"
+                placeholder={messages.inspector.createConceptSummaryPlaceholder}
+                size="2"
+              />
+            )}
           </InlineFormField>
-          <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
-            <TextArea name="description" placeholder={messages.inspector.createConceptDescriptionPlaceholder} rows={3} />
+          <InlineFormField
+            label={messages.inspector.descriptionLabel}
+            error={state.fieldErrors?.description?.[0]}
+          >
+            {({ controlProps }) => (
+              <TextArea
+                {...controlProps}
+                name="description"
+                placeholder={
+                  messages.inspector.createConceptDescriptionPlaceholder
+                }
+                rows={3}
+              />
+            )}
           </InlineFormField>
-          {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-          <Button type="submit" size="2" loading={isPending}>{messages.inspector.createConceptCta}</Button>
+          {state.status === "error" && state.message ? (
+            <Text color="red" size="2">
+              {state.message}
+            </Text>
+          ) : null}
+          <Button type="submit" size="2" loading={isPending}>
+            {messages.inspector.createConceptCta}
+          </Button>
         </Flex>
       </form>
     </Card>
@@ -414,7 +564,10 @@ function ConceptInspectorCard({
   onMutationFeedback,
 }: ConceptInspectorCardProps) {
   const messages = getMapWorkspaceMessages(locale);
-  const [state, formAction, isPending] = useActionState(updateConceptAction, conceptFormState);
+  const [state, formAction, isPending] = useActionState(
+    updateConceptAction,
+    conceptFormState
+  );
   const [conceptType, setConceptType] = useState(payload.concept.conceptType);
 
   useEffect(() => {
@@ -428,7 +581,12 @@ function ConceptInspectorCard({
       eventId: state.payload.eventId,
       message: messages.inspector.conceptUpdatedFeedback,
     });
-  }, [messages.inspector.conceptUpdatedFeedback, onMutationFeedback, state.payload, state.status]);
+  }, [
+    messages.inspector.conceptUpdatedFeedback,
+    onMutationFeedback,
+    state.payload,
+    state.status,
+  ]);
 
   return (
     <Card className="panel-card">
@@ -436,7 +594,10 @@ function ConceptInspectorCard({
         <Flex align="start" justify="between" gap="3">
           <Flex direction="column" gap="1">
             <Heading size="4">{payload.concept.title}</Heading>
-            <StatusBadge status={payload.concept.conceptType} label={messages.labels.conceptTypes[payload.concept.conceptType]} />
+            <StatusBadge
+              status={payload.concept.conceptType}
+              label={messages.labels.conceptTypes[payload.concept.conceptType]}
+            />
           </Flex>
           <ConfirmDialog
             triggerLabel={messages.inspector.conceptArchive}
@@ -460,28 +621,82 @@ function ConceptInspectorCard({
           <input type="hidden" name="x" value={payload.concept.x} />
           <input type="hidden" name="y" value={payload.concept.y} />
           <Flex direction="column" gap="3">
-            <InlineFormField label={messages.inspector.titleLabel} error={state.fieldErrors?.title?.[0]}>
-              <TextField.Root name="title" defaultValue={payload.concept.title} size="2" />
+            <InlineFormField
+              label={messages.inspector.titleLabel}
+              error={state.fieldErrors?.title?.[0]}
+            >
+              {({ controlProps }) => (
+                <TextField.Root
+                  {...controlProps}
+                  name="title"
+                  defaultValue={payload.concept.title}
+                  size="2"
+                />
+              )}
             </InlineFormField>
-            <InlineFormField label={messages.inspector.conceptTypeLabel} error={state.fieldErrors?.conceptType?.[0]}>
-              <Select.Root name="conceptType" value={conceptType} onValueChange={(value) => setConceptType(value as (typeof conceptTypeOptions)[number])}>
-                <Select.Trigger />
-                <Select.Content>
-                  {conceptTypeOptions.map((option) => <Select.Item key={option} value={option}>{messages.labels.conceptTypes[option]}</Select.Item>)}
-                </Select.Content>
-              </Select.Root>
+            <InlineFormField
+              label={messages.inspector.conceptTypeLabel}
+              error={state.fieldErrors?.conceptType?.[0]}
+              association="labelledby"
+            >
+              {({ triggerProps }) => (
+                <Select.Root
+                  name="conceptType"
+                  value={conceptType}
+                  onValueChange={(value) =>
+                    setConceptType(value as (typeof conceptTypeOptions)[number])
+                  }
+                >
+                  <Select.Trigger {...triggerProps} />
+                  <Select.Content>
+                    {conceptTypeOptions.map((option) => (
+                      <Select.Item key={option} value={option}>
+                        {messages.labels.conceptTypes[option]}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              )}
             </InlineFormField>
-            <InlineFormField label={messages.inspector.summaryLabel} error={state.fieldErrors?.summary?.[0]}>
-              <TextField.Root name="summary" defaultValue={payload.concept.summary ?? ""} size="2" />
+            <InlineFormField
+              label={messages.inspector.summaryLabel}
+              error={state.fieldErrors?.summary?.[0]}
+            >
+              {({ controlProps }) => (
+                <TextField.Root
+                  {...controlProps}
+                  name="summary"
+                  defaultValue={payload.concept.summary ?? ""}
+                  size="2"
+                />
+              )}
             </InlineFormField>
-            <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
-              <TextArea name="description" defaultValue={payload.concept.description ?? ""} rows={4} />
+            <InlineFormField
+              label={messages.inspector.descriptionLabel}
+              error={state.fieldErrors?.description?.[0]}
+            >
+              {({ controlProps }) => (
+                <TextArea
+                  {...controlProps}
+                  name="description"
+                  defaultValue={payload.concept.description ?? ""}
+                  rows={4}
+                />
+              )}
             </InlineFormField>
-            {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-            {state.status === "success" ? (
-              <Text color="green" size="2">{messages.inspector.conceptUpdatedFeedback}</Text>
+            {state.status === "error" && state.message ? (
+              <Text color="red" size="2">
+                {state.message}
+              </Text>
             ) : null}
-            <Button type="submit" size="2" loading={isPending}>{messages.inspector.conceptSave}</Button>
+            {state.status === "success" ? (
+              <Text color="green" size="2">
+                {messages.inspector.conceptUpdatedFeedback}
+              </Text>
+            ) : null}
+            <Button type="submit" size="2" loading={isPending}>
+              {messages.inspector.conceptSave}
+            </Button>
           </Flex>
         </form>
 
@@ -490,11 +705,23 @@ function ConceptInspectorCard({
         <Flex direction="column" gap="3">
           <Heading size="3">{messages.inspector.connectedLinksTitle}</Heading>
           {payload.incoming.length === 0 && payload.outgoing.length === 0 ? (
-            <Text color="gray" size="2">{messages.inspector.connectedLinksEmpty}</Text>
+            <Text color="gray" size="2">
+              {messages.inspector.connectedLinksEmpty}
+            </Text>
           ) : (
             <>
-              <LinkList locale={locale} label={messages.inspector.incoming} links={payload.incoming} onSelect={onSelect} />
-              <LinkList locale={locale} label={messages.inspector.outgoing} links={payload.outgoing} onSelect={onSelect} />
+              <LinkList
+                locale={locale}
+                label={messages.inspector.incoming}
+                links={payload.incoming}
+                onSelect={onSelect}
+              />
+              <LinkList
+                locale={locale}
+                label={messages.inspector.outgoing}
+                links={payload.outgoing}
+                onSelect={onSelect}
+              />
             </>
           )}
         </Flex>
@@ -541,10 +768,21 @@ function CreateLinkCard({
   onMutationFeedback,
 }: CreateLinkCardProps) {
   const messages = getMapWorkspaceMessages(locale);
-  const [state, formAction, isPending] = useActionState(createLinkAction, linkFormState);
-  const [sourceConceptId, setSourceConceptId] = useState(initialSourceConceptId ?? conceptCatalog[0]?.id ?? "");
-  const [targetConceptId, setTargetConceptId] = useState(initialTargetConceptId ?? conceptCatalog.find((concept) => concept.id !== sourceConceptId)?.id ?? "");
-  const [relationType, setRelationType] = useState<(typeof relationTypeOptions)[number]>(initialRelationType ?? "causes");
+  const [state, formAction, isPending] = useActionState(
+    createLinkAction,
+    linkFormState
+  );
+  const [sourceConceptId, setSourceConceptId] = useState(
+    initialSourceConceptId ?? conceptCatalog[0]?.id ?? ""
+  );
+  const [targetConceptId, setTargetConceptId] = useState(
+    initialTargetConceptId ??
+      conceptCatalog.find((concept) => concept.id !== sourceConceptId)?.id ??
+      ""
+  );
+  const [relationType, setRelationType] = useState<
+    (typeof relationTypeOptions)[number]
+  >(initialRelationType ?? "causes");
   const [strength, setStrength] = useState(String(initialStrength ?? 3));
 
   useEffect(() => {
@@ -559,7 +797,13 @@ function CreateLinkCard({
       eventId: state.payload.eventId,
       message: messages.inspector.linkCreatedFeedback,
     });
-  }, [messages.inspector.linkCreatedFeedback, onMutationFeedback, onSelect, state.payload, state.status]);
+  }, [
+    messages.inspector.linkCreatedFeedback,
+    onMutationFeedback,
+    onSelect,
+    state.payload,
+    state.status,
+  ]);
 
   if (conceptCatalogLoading) {
     return <LoadingCard locale={locale} />;
@@ -570,7 +814,12 @@ function CreateLinkCard({
   }
 
   if (conceptCatalog.length < 2) {
-    return <EmptyState title={messages.inspector.atLeastTwoConceptsTitle} description={messages.inspector.atLeastTwoConceptsDescription} />;
+    return (
+      <EmptyState
+        title={messages.inspector.atLeastTwoConceptsTitle}
+        description={messages.inspector.atLeastTwoConceptsDescription}
+      />
+    );
   }
 
   return (
@@ -580,45 +829,131 @@ function CreateLinkCard({
         <input type="hidden" name="mapId" value={mapId} />
         <Flex direction="column" gap="3">
           <Heading size="4">{messages.inspector.createLink}</Heading>
-          <InlineFormField label={messages.inspector.sourceConceptLabel} error={state.fieldErrors?.sourceConceptId?.[0]}>
-            <Select.Root name="sourceConceptId" value={sourceConceptId} onValueChange={(value) => { setSourceConceptId(value); if (value === targetConceptId) { const nextTarget = conceptCatalog.find((concept) => concept.id !== value); setTargetConceptId(nextTarget?.id ?? ""); } }}>
-              <Select.Trigger />
-              <Select.Content>
-                {conceptCatalog.map((concept) => <Select.Item key={concept.id} value={concept.id}>{concept.title}</Select.Item>)}
-              </Select.Content>
-            </Select.Root>
+          <InlineFormField
+            label={messages.inspector.sourceConceptLabel}
+            error={state.fieldErrors?.sourceConceptId?.[0]}
+            association="labelledby"
+          >
+            {({ triggerProps }) => (
+              <Select.Root
+                name="sourceConceptId"
+                value={sourceConceptId}
+                onValueChange={(value) => {
+                  setSourceConceptId(value);
+                  if (value === targetConceptId) {
+                    const nextTarget = conceptCatalog.find(
+                      (concept) => concept.id !== value
+                    );
+                    setTargetConceptId(nextTarget?.id ?? "");
+                  }
+                }}
+              >
+                <Select.Trigger {...triggerProps} />
+                <Select.Content>
+                  {conceptCatalog.map((concept) => (
+                    <Select.Item key={concept.id} value={concept.id}>
+                      {concept.title}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            )}
           </InlineFormField>
-          <InlineFormField label={messages.inspector.targetConceptLabel} error={state.fieldErrors?.targetConceptId?.[0]}>
-            <Select.Root name="targetConceptId" value={targetConceptId} onValueChange={setTargetConceptId}>
-              <Select.Trigger />
-              <Select.Content>
-                {conceptCatalog.filter((concept) => concept.id !== sourceConceptId).map((concept) => <Select.Item key={concept.id} value={concept.id}>{concept.title}</Select.Item>)}
-              </Select.Content>
-            </Select.Root>
+          <InlineFormField
+            label={messages.inspector.targetConceptLabel}
+            error={state.fieldErrors?.targetConceptId?.[0]}
+            association="labelledby"
+          >
+            {({ triggerProps }) => (
+              <Select.Root
+                name="targetConceptId"
+                value={targetConceptId}
+                onValueChange={setTargetConceptId}
+              >
+                <Select.Trigger {...triggerProps} />
+                <Select.Content>
+                  {conceptCatalog
+                    .filter((concept) => concept.id !== sourceConceptId)
+                    .map((concept) => (
+                      <Select.Item key={concept.id} value={concept.id}>
+                        {concept.title}
+                      </Select.Item>
+                    ))}
+                </Select.Content>
+              </Select.Root>
+            )}
           </InlineFormField>
           <Flex gap="3" wrap="wrap">
-            <InlineFormField label={messages.inspector.relationTypeLabel} error={state.fieldErrors?.relationType?.[0]}>
-              <Select.Root name="relationType" value={relationType} onValueChange={(value) => setRelationType(value as (typeof relationTypeOptions)[number])}>
-                <Select.Trigger />
-                <Select.Content>
-                  {relationTypeOptions.map((option) => <Select.Item key={option} value={option}>{messages.labels.relationTypes[option]}</Select.Item>)}
-                </Select.Content>
-              </Select.Root>
+            <InlineFormField
+              label={messages.inspector.relationTypeLabel}
+              error={state.fieldErrors?.relationType?.[0]}
+              association="labelledby"
+            >
+              {({ triggerProps }) => (
+                <Select.Root
+                  name="relationType"
+                  value={relationType}
+                  onValueChange={(value) =>
+                    setRelationType(
+                      value as (typeof relationTypeOptions)[number]
+                    )
+                  }
+                >
+                  <Select.Trigger {...triggerProps} />
+                  <Select.Content>
+                    {relationTypeOptions.map((option) => (
+                      <Select.Item key={option} value={option}>
+                        {messages.labels.relationTypes[option]}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              )}
             </InlineFormField>
-            <InlineFormField label={messages.inspector.strengthLabel} error={state.fieldErrors?.strength?.[0]}>
-              <Select.Root name="strength" value={strength} onValueChange={setStrength}>
-                <Select.Trigger />
-                <Select.Content>
-                  {strengthOptions.map((value) => <Select.Item key={value} value={String(value)}>{String(value)}</Select.Item>)}
-                </Select.Content>
-              </Select.Root>
+            <InlineFormField
+              label={messages.inspector.strengthLabel}
+              error={state.fieldErrors?.strength?.[0]}
+              association="labelledby"
+            >
+              {({ triggerProps }) => (
+                <Select.Root
+                  name="strength"
+                  value={strength}
+                  onValueChange={setStrength}
+                >
+                  <Select.Trigger {...triggerProps} />
+                  <Select.Content>
+                    {strengthOptions.map((value) => (
+                      <Select.Item key={value} value={String(value)}>
+                        {String(value)}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              )}
             </InlineFormField>
           </Flex>
-          <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
-            <TextArea name="description" placeholder={messages.inspector.linkDescriptionPlaceholder} rows={3} />
+          <InlineFormField
+            label={messages.inspector.descriptionLabel}
+            error={state.fieldErrors?.description?.[0]}
+          >
+            {({ controlProps }) => (
+              <TextArea
+                {...controlProps}
+                name="description"
+                placeholder={messages.inspector.linkDescriptionPlaceholder}
+                rows={3}
+              />
+            )}
           </InlineFormField>
-          {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-          <Button type="submit" size="2" loading={isPending}>{messages.inspector.createLinkCta}</Button>
+          {state.status === "error" && state.message ? (
+            <Text color="red" size="2">
+              {state.message}
+            </Text>
+          ) : null}
+          <Button type="submit" size="2" loading={isPending}>
+            {messages.inspector.createLinkCta}
+          </Button>
         </Flex>
       </form>
     </Card>
@@ -649,12 +984,22 @@ function LinkInspectorCard({
   onMutationFeedback,
 }: LinkInspectorCardProps) {
   const messages = getMapWorkspaceMessages(locale);
-  const [state, formAction, isPending] = useActionState(updateLinkAction, linkFormState);
-  const [sourceConceptId, setSourceConceptId] = useState(payload.link.sourceConceptId);
-  const [targetConceptId, setTargetConceptId] = useState(payload.link.targetConceptId);
+  const [state, formAction, isPending] = useActionState(
+    updateLinkAction,
+    linkFormState
+  );
+  const [sourceConceptId, setSourceConceptId] = useState(
+    payload.link.sourceConceptId
+  );
+  const [targetConceptId, setTargetConceptId] = useState(
+    payload.link.targetConceptId
+  );
   const [relationType, setRelationType] = useState(payload.link.relationType);
   const [strength, setStrength] = useState(String(payload.link.strength));
-  const catalogById = useMemo(() => new Map(conceptCatalog.map((concept) => [concept.id, concept.title])), [conceptCatalog]);
+  const catalogById = useMemo(
+    () => new Map(conceptCatalog.map((concept) => [concept.id, concept.title])),
+    [conceptCatalog]
+  );
 
   useEffect(() => {
     if (state.status !== "success" || !state.payload) {
@@ -667,7 +1012,12 @@ function LinkInspectorCard({
       eventId: state.payload.eventId,
       message: messages.inspector.linkUpdatedFeedback,
     });
-  }, [messages.inspector.linkUpdatedFeedback, onMutationFeedback, state.payload, state.status]);
+  }, [
+    messages.inspector.linkUpdatedFeedback,
+    onMutationFeedback,
+    state.payload,
+    state.status,
+  ]);
 
   if (conceptCatalogLoading) {
     return <LoadingCard locale={locale} />;
@@ -677,8 +1027,10 @@ function LinkInspectorCard({
     return <ErrorCard locale={locale} message={conceptCatalogError} />;
   }
 
-  const sourceTitle = catalogById.get(sourceConceptId) ?? messages.inspector.unknownConcept;
-  const targetTitle = catalogById.get(targetConceptId) ?? messages.inspector.unknownConcept;
+  const sourceTitle =
+    catalogById.get(sourceConceptId) ?? messages.inspector.unknownConcept;
+  const targetTitle =
+    catalogById.get(targetConceptId) ?? messages.inspector.unknownConcept;
 
   return (
     <Card className="panel-card">
@@ -687,8 +1039,13 @@ function LinkInspectorCard({
           <Flex direction="column" gap="1">
             <Heading size="4">{messages.inspector.linkTitle}</Heading>
             <Flex gap="2" wrap="wrap">
-              <StatusBadge status={payload.link.relationType} label={messages.labels.relationTypes[payload.link.relationType]} />
-              <Badge color="orange" variant="surface">{messages.inspector.strengthValue(payload.link.strength)}</Badge>
+              <StatusBadge
+                status={payload.link.relationType}
+                label={messages.labels.relationTypes[payload.link.relationType]}
+              />
+              <Badge color="orange" variant="surface">
+                {messages.inspector.strengthValue(payload.link.strength)}
+              </Badge>
             </Flex>
           </Flex>
           <ConfirmDialog
@@ -708,10 +1065,30 @@ function LinkInspectorCard({
 
         <Card variant="surface" className="panel-surface-card">
           <Flex direction="column" gap="2">
-            <Text size="2" color="gray">{messages.inspector.currentDirection}</Text>
-            <Button type="button" variant="ghost" onClick={() => onSelect({ kind: "concept", id: payload.link.sourceConceptId })}>{sourceTitle}</Button>
-            <Text size="2" color="gray">{messages.labels.relationTypes[payload.link.relationType]}</Text>
-            <Button type="button" variant="ghost" onClick={() => onSelect({ kind: "concept", id: payload.link.targetConceptId })}>{targetTitle}</Button>
+            <Text size="2" color="gray">
+              {messages.inspector.currentDirection}
+            </Text>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() =>
+                onSelect({ kind: "concept", id: payload.link.sourceConceptId })
+              }
+            >
+              {sourceTitle}
+            </Button>
+            <Text size="2" color="gray">
+              {messages.labels.relationTypes[payload.link.relationType]}
+            </Text>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() =>
+                onSelect({ kind: "concept", id: payload.link.targetConceptId })
+              }
+            >
+              {targetTitle}
+            </Button>
           </Flex>
         </Card>
 
@@ -720,48 +1097,136 @@ function LinkInspectorCard({
           <input type="hidden" name="mapId" value={mapId} />
           <input type="hidden" name="linkId" value={payload.link.id} />
           <Flex direction="column" gap="3">
-            <InlineFormField label={messages.inspector.sourceConceptLabel} error={state.fieldErrors?.sourceConceptId?.[0]}>
-              <Select.Root name="sourceConceptId" value={sourceConceptId} onValueChange={(value) => { setSourceConceptId(value); if (value === targetConceptId) { const nextTarget = conceptCatalog.find((concept) => concept.id !== value); setTargetConceptId(nextTarget?.id ?? ""); } }}>
-                <Select.Trigger />
-                <Select.Content>
-                  {conceptCatalog.map((concept) => <Select.Item key={concept.id} value={concept.id}>{concept.title}</Select.Item>)}
-                </Select.Content>
-              </Select.Root>
+            <InlineFormField
+              label={messages.inspector.sourceConceptLabel}
+              error={state.fieldErrors?.sourceConceptId?.[0]}
+              association="labelledby"
+            >
+              {({ triggerProps }) => (
+                <Select.Root
+                  name="sourceConceptId"
+                  value={sourceConceptId}
+                  onValueChange={(value) => {
+                    setSourceConceptId(value);
+                    if (value === targetConceptId) {
+                      const nextTarget = conceptCatalog.find(
+                        (concept) => concept.id !== value
+                      );
+                      setTargetConceptId(nextTarget?.id ?? "");
+                    }
+                  }}
+                >
+                  <Select.Trigger {...triggerProps} />
+                  <Select.Content>
+                    {conceptCatalog.map((concept) => (
+                      <Select.Item key={concept.id} value={concept.id}>
+                        {concept.title}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              )}
             </InlineFormField>
-            <InlineFormField label={messages.inspector.targetConceptLabel} error={state.fieldErrors?.targetConceptId?.[0]}>
-              <Select.Root name="targetConceptId" value={targetConceptId} onValueChange={setTargetConceptId}>
-                <Select.Trigger />
-                <Select.Content>
-                  {conceptCatalog.filter((concept) => concept.id !== sourceConceptId).map((concept) => <Select.Item key={concept.id} value={concept.id}>{concept.title}</Select.Item>)}
-                </Select.Content>
-              </Select.Root>
+            <InlineFormField
+              label={messages.inspector.targetConceptLabel}
+              error={state.fieldErrors?.targetConceptId?.[0]}
+              association="labelledby"
+            >
+              {({ triggerProps }) => (
+                <Select.Root
+                  name="targetConceptId"
+                  value={targetConceptId}
+                  onValueChange={setTargetConceptId}
+                >
+                  <Select.Trigger {...triggerProps} />
+                  <Select.Content>
+                    {conceptCatalog
+                      .filter((concept) => concept.id !== sourceConceptId)
+                      .map((concept) => (
+                        <Select.Item key={concept.id} value={concept.id}>
+                          {concept.title}
+                        </Select.Item>
+                      ))}
+                  </Select.Content>
+                </Select.Root>
+              )}
             </InlineFormField>
             <Flex gap="3" wrap="wrap">
-              <InlineFormField label={messages.inspector.relationTypeLabel} error={state.fieldErrors?.relationType?.[0]}>
-                <Select.Root name="relationType" value={relationType} onValueChange={(value) => setRelationType(value as (typeof relationTypeOptions)[number])}>
-                  <Select.Trigger />
-                  <Select.Content>
-                    {relationTypeOptions.map((option) => <Select.Item key={option} value={option}>{messages.labels.relationTypes[option]}</Select.Item>)}
-                  </Select.Content>
-                </Select.Root>
+              <InlineFormField
+                label={messages.inspector.relationTypeLabel}
+                error={state.fieldErrors?.relationType?.[0]}
+                association="labelledby"
+              >
+                {({ triggerProps }) => (
+                  <Select.Root
+                    name="relationType"
+                    value={relationType}
+                    onValueChange={(value) =>
+                      setRelationType(
+                        value as (typeof relationTypeOptions)[number]
+                      )
+                    }
+                  >
+                    <Select.Trigger {...triggerProps} />
+                    <Select.Content>
+                      {relationTypeOptions.map((option) => (
+                        <Select.Item key={option} value={option}>
+                          {messages.labels.relationTypes[option]}
+                        </Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                )}
               </InlineFormField>
-              <InlineFormField label={messages.inspector.strengthLabel} error={state.fieldErrors?.strength?.[0]}>
-                <Select.Root name="strength" value={strength} onValueChange={setStrength}>
-                  <Select.Trigger />
-                  <Select.Content>
-                    {strengthOptions.map((value) => <Select.Item key={value} value={String(value)}>{String(value)}</Select.Item>)}
-                  </Select.Content>
-                </Select.Root>
+              <InlineFormField
+                label={messages.inspector.strengthLabel}
+                error={state.fieldErrors?.strength?.[0]}
+                association="labelledby"
+              >
+                {({ triggerProps }) => (
+                  <Select.Root
+                    name="strength"
+                    value={strength}
+                    onValueChange={setStrength}
+                  >
+                    <Select.Trigger {...triggerProps} />
+                    <Select.Content>
+                      {strengthOptions.map((value) => (
+                        <Select.Item key={value} value={String(value)}>
+                          {String(value)}
+                        </Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                )}
               </InlineFormField>
             </Flex>
-            <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
-              <TextArea name="description" defaultValue={payload.link.description ?? ""} rows={3} />
+            <InlineFormField
+              label={messages.inspector.descriptionLabel}
+              error={state.fieldErrors?.description?.[0]}
+            >
+              {({ controlProps }) => (
+                <TextArea
+                  {...controlProps}
+                  name="description"
+                  defaultValue={payload.link.description ?? ""}
+                  rows={3}
+                />
+              )}
             </InlineFormField>
-            {state.status === "error" && state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-            {state.status === "success" ? (
-              <Text color="green" size="2">{messages.inspector.linkUpdatedFeedback}</Text>
+            {state.status === "error" && state.message ? (
+              <Text color="red" size="2">
+                {state.message}
+              </Text>
             ) : null}
-            <Button type="submit" size="2" loading={isPending}>{messages.inspector.saveLink}</Button>
+            {state.status === "success" ? (
+              <Text color="green" size="2">
+                {messages.inspector.linkUpdatedFeedback}
+              </Text>
+            ) : null}
+            <Button type="submit" size="2" loading={isPending}>
+              {messages.inspector.saveLink}
+            </Button>
           </Flex>
         </form>
 
@@ -777,11 +1242,24 @@ function LinkInspectorCard({
   );
 }
 
-type MapSettingsCardProps = { locale: SupportedLocale; workspaceSlug: string; workspaceRole: WorkspaceRole; map: MapDetail; };
+type MapSettingsCardProps = {
+  locale: SupportedLocale;
+  workspaceSlug: string;
+  workspaceRole: WorkspaceRole;
+  map: MapDetail;
+};
 
-function MapSettingsCard({ locale, workspaceSlug, workspaceRole, map }: MapSettingsCardProps) {
+function MapSettingsCard({
+  locale,
+  workspaceSlug,
+  workspaceRole,
+  map,
+}: MapSettingsCardProps) {
   const messages = getMapWorkspaceMessages(locale);
-  const [state, formAction, isPending] = useActionState(renameMapAction, mapFormState);
+  const [state, formAction, isPending] = useActionState(
+    renameMapAction,
+    mapFormState
+  );
 
   return (
     <Card className="panel-card">
@@ -792,21 +1270,57 @@ function MapSettingsCard({ locale, workspaceSlug, workspaceRole, map }: MapSetti
           <Heading size="4">{messages.inspector.mapSettings}</Heading>
           <Flex gap="3" wrap="wrap">
             <div className="panel-field-half">
-              <InlineFormField label={messages.inspector.titleLabel} error={state.fieldErrors?.title?.[0]}>
-                <TextField.Root name="title" defaultValue={map.title} size="2" />
+              <InlineFormField
+                label={messages.inspector.titleLabel}
+                error={state.fieldErrors?.title?.[0]}
+              >
+                {({ controlProps }) => (
+                  <TextField.Root
+                    {...controlProps}
+                    name="title"
+                    defaultValue={map.title}
+                    size="2"
+                  />
+                )}
               </InlineFormField>
             </div>
             <div className="panel-field-half">
-              <InlineFormField label={messages.inspector.subjectLabel} error={state.fieldErrors?.subjectLabel?.[0]}>
-                <TextField.Root name="subjectLabel" defaultValue={map.subjectLabel} size="2" />
+              <InlineFormField
+                label={messages.inspector.subjectLabel}
+                error={state.fieldErrors?.subjectLabel?.[0]}
+              >
+                {({ controlProps }) => (
+                  <TextField.Root
+                    {...controlProps}
+                    name="subjectLabel"
+                    defaultValue={map.subjectLabel}
+                    size="2"
+                  />
+                )}
               </InlineFormField>
             </div>
           </Flex>
-          <InlineFormField label={messages.inspector.descriptionLabel} error={state.fieldErrors?.description?.[0]}>
-            <TextArea name="description" defaultValue={map.description ?? ""} rows={3} />
+          <InlineFormField
+            label={messages.inspector.descriptionLabel}
+            error={state.fieldErrors?.description?.[0]}
+          >
+            {({ controlProps }) => (
+              <TextArea
+                {...controlProps}
+                name="description"
+                defaultValue={map.description ?? ""}
+                rows={3}
+              />
+            )}
           </InlineFormField>
-          {state.message ? <Text color="red" size="2">{state.message}</Text> : null}
-          <Button type="submit" size="2" loading={isPending}>{messages.inspector.saveMap}</Button>
+          {state.message ? (
+            <Text color="red" size="2">
+              {state.message}
+            </Text>
+          ) : null}
+          <Button type="submit" size="2" loading={isPending}>
+            {messages.inspector.saveMap}
+          </Button>
         </Flex>
       </form>
       {workspaceRole !== "member" ? (
@@ -830,7 +1344,12 @@ function MapSettingsCard({ locale, workspaceSlug, workspaceRole, map }: MapSetti
   );
 }
 
-type LinkListProps = { locale: SupportedLocale; label: string; links: InspectorConceptPayload["incoming"]; onSelect: (selection: InspectorSelection) => void; };
+type LinkListProps = {
+  locale: SupportedLocale;
+  label: string;
+  links: InspectorConceptPayload["incoming"];
+  onSelect: (selection: InspectorSelection) => void;
+};
 
 function LinkList({ locale, label, links, onSelect }: LinkListProps) {
   const messages = getMapWorkspaceMessages(locale);
@@ -842,43 +1361,84 @@ function LinkList({ locale, label, links, onSelect }: LinkListProps) {
 
   return (
     <Flex direction="column" gap="2">
-      <Button type="button" size="1" variant="ghost" color="gray" className="panel-section-toggle" onClick={() => setIsOpen((current) => !current)}>
+      <Button
+        type="button"
+        size="1"
+        variant="ghost"
+        color="gray"
+        className="panel-section-toggle"
+        onClick={() => setIsOpen((current) => !current)}
+      >
         {isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
         {label} ({links.length})
       </Button>
-      {isOpen ? links.map((link) => (
-        <Card key={`${label}-${link.id}`} variant="surface" className="panel-surface-card">
-          <Flex align="center" justify="between" gap="3" wrap="wrap">
-            <Flex direction="column" gap="1">
-              <Text weight="medium">{link.relatedConceptTitle}</Text>
-              <Text color="gray" size="2">{messages.labels.relationTypes[link.relationType]} | {messages.inspector.strengthValue(link.strength)}</Text>
-            </Flex>
-            <Button type="button" variant="soft" onClick={() => onSelect({ kind: "link", id: link.id })}>{messages.inspector.openLink}</Button>
-          </Flex>
-        </Card>
-      )) : null}
+      {isOpen
+        ? links.map((link) => (
+            <Card
+              key={`${label}-${link.id}`}
+              variant="surface"
+              className="panel-surface-card"
+            >
+              <Flex align="center" justify="between" gap="3" wrap="wrap">
+                <Flex direction="column" gap="1">
+                  <Text weight="medium">{link.relatedConceptTitle}</Text>
+                  <Text color="gray" size="2">
+                    {messages.labels.relationTypes[link.relationType]} |{" "}
+                    {messages.inspector.strengthValue(link.strength)}
+                  </Text>
+                </Flex>
+                <Button
+                  type="button"
+                  variant="soft"
+                  onClick={() => onSelect({ kind: "link", id: link.id })}
+                >
+                  {messages.inspector.openLink}
+                </Button>
+              </Flex>
+            </Card>
+          ))
+        : null}
     </Flex>
   );
 }
 
 function LoadingCard({ locale }: { locale: SupportedLocale }) {
-  const message = locale === "uk" ? "Завантажуємо деталі..." : locale === "ru" ? "Загружаем детали..." : "Loading details...";
+  const message =
+    locale === "uk"
+      ? "Завантажуємо деталі..."
+      : locale === "ru"
+        ? "Загружаем детали..."
+        : "Loading details...";
   return (
     <Card className="panel-card">
-      <Text size="2" color="gray">{message}</Text>
+      <Text size="2" color="gray">
+        {message}
+      </Text>
     </Card>
   );
 }
 
-function ErrorCard({ locale, message }: { locale: SupportedLocale; message: string }) {
-  const title = locale === "uk" ? "Не вдалося завантажити цю поверхню." : locale === "ru" ? "Не удалось загрузить эту поверхность." : "Unable to load this panel.";
+function ErrorCard({
+  locale,
+  message,
+}: {
+  locale: SupportedLocale;
+  message: string;
+}) {
+  const title =
+    locale === "uk"
+      ? "Не вдалося завантажити цю поверхню."
+      : locale === "ru"
+        ? "Не удалось загрузить эту поверхность."
+        : "Unable to load this panel.";
   return (
     <Card className="panel-card">
       <Flex direction="column" gap="2">
         <Heading size="3">{title}</Heading>
-        <Text size="2" color="gray">{message}</Text>
+        <Text size="2" color="gray">
+          {message}
+        </Text>
       </Flex>
     </Card>
   );
 }
-

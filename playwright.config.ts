@@ -3,6 +3,7 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 const isCI = Boolean(process.env.CI);
+const playwrightWebServerCommand = "node scripts/playwright-web-server.mjs";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -24,7 +25,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run build && npm run start -- --hostname 127.0.0.1",
+    command: playwrightWebServerCommand,
     env: {
       ...process.env,
       E2E_AUTH_BYPASS: "true",

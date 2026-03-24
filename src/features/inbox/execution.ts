@@ -64,6 +64,7 @@ export type RunRecordedInboxStepInput = {
   route?: InboxRouteInput | null;
   reason?: string | null;
   metadata?: Record<string, unknown>;
+  runtimeOverride?: StepRuntimeInfo;
   now?: () => Date;
 };
 
@@ -186,7 +187,7 @@ export async function runRecordedInboxStep<T>(
   work: () => Promise<RecordedStepResult<T>>
 ) {
   const now = input.now ?? (() => new Date());
-  const runtime = getInboxExecutionStepRuntime(input.stepName);
+  const runtime = input.runtimeOverride ?? getInboxExecutionStepRuntime(input.stepName);
   const startedAt = now();
   const stepRunId = await input.recorder.startStep({
     attemptId: input.attemptId,

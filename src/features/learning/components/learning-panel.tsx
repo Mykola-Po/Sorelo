@@ -147,7 +147,9 @@ function SuggestionCard({
       <Flex direction="column" gap="3">
         <Flex align="start" justify="between" gap="3">
           <Flex direction="column" gap="1">
-            <Heading size="3">{messages.suggestionType(item.suggestionType)}</Heading>
+            <Heading size="3">
+              {messages.suggestionType(item.suggestionType)}
+            </Heading>
             <Text size="2" color="gray">
               {messages.targetEntity(item.targetEntityType)}
             </Text>
@@ -187,7 +189,11 @@ function SuggestionCard({
             <ul className="sl-learning-diff-list">
               {diffEntries.map((entry) => (
                 <li key={entry.fieldPath} className="sl-learning-diff-item">
-                  <Text size="1" color="gray" className="sl-learning-diff-label">
+                  <Text
+                    size="1"
+                    color="gray"
+                    className="sl-learning-diff-label"
+                  >
                     {formatFieldPath(entry.fieldPath)}
                   </Text>
                   <Text size="2" className="sl-learning-diff-change">
@@ -215,7 +221,11 @@ function SuggestionCard({
             <div className="sl-learning-evidence-list">
               {evidenceItems.map((entry) => (
                 <div key={entry.label} className="sl-learning-evidence-item">
-                  <Text size="1" color="gray" className="sl-learning-evidence-label">
+                  <Text
+                    size="1"
+                    color="gray"
+                    className="sl-learning-evidence-label"
+                  >
                     {entry.label}
                   </Text>
                   <Text size="2" className="sl-learning-evidence-value">
@@ -251,11 +261,14 @@ function SuggestionCard({
                 label={messages.reasonLabel}
                 error={state.fieldErrors?.reasonText?.[0]}
               >
-                <TextArea
-                  name="reasonText"
-                  rows={2}
-                  placeholder={messages.reasonPlaceholder}
-                />
+                {({ controlProps }) => (
+                  <TextArea
+                    {...controlProps}
+                    name="reasonText"
+                    rows={2}
+                    placeholder={messages.reasonPlaceholder}
+                  />
+                )}
               </InlineFormField>
 
               {state.fieldErrors?.resolutionType?.[0] ? (
@@ -322,4 +335,3 @@ function SuggestionCard({
     </Card>
   );
 }
-

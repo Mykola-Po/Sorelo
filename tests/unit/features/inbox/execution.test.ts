@@ -82,6 +82,38 @@ describe("inbox execution recorder", () => {
     );
   });
 
+  it("allows step runtimes to be overridden by the caller", async () => {
+    const startStep = vi.fn(async () => "step-run-override");
+    const finishStep = vi.fn(async () => undefined);
+
+    await runRecordedInboxStep(
+      {
+        recorder: {
+          startStep,
+          finishStep,
+        },
+        attemptId: "11111111-1111-4111-8111-111111111111",
+        stepName: "interpret",
+        stepOrder: 4,
+        runtimeOverride: {
+          modelName: "gpt-5-mini",
+          promptVersion: "inbox-interpret.openai.v1",
+        },
+      },
+      async () => ({
+        result: null,
+      })
+    );
+
+    expect(startStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stepName: "interpret",
+        modelName: "gpt-5-mini",
+        promptVersion: "inbox-interpret.openai.v1",
+      })
+    );
+  });
+
   it("records route and reason on route-bound steps", async () => {
     const startStep = vi.fn(async () => "step-run-3");
     const finishStep = vi.fn(async () => undefined);

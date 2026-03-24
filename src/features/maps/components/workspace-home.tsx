@@ -23,6 +23,7 @@ import { SectionCard } from "@/shared/ui/components/section-card";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
 import { deriveGuidedOnboardingStep } from "@/features/maps/workspace-state";
 import { CreateMapForm } from "@/features/maps/components/create-map-form";
+import { WorkspaceSectionNav } from "@/features/workspace/components/workspace-section-nav";
 
 type WorkspaceHomeProps = {
   locale: SupportedLocale;
@@ -127,6 +128,11 @@ export function WorkspaceHome({
 
   return (
     <div className="page-stack maps-home-page sl-workspace-home">
+      <WorkspaceSectionNav
+        workspaceSlug={workspaceSlug}
+        currentSection="overview"
+      />
+
       <div className="sl-workspace-hero">
         <Card className="sl-workspace-hero-panel">
           <Flex direction="column" gap="6">

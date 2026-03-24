@@ -8,7 +8,6 @@ import {
   buildInboxRouteDraft,
   buildInboxSegmentationDraft,
   finalizeInboxRouteAfterClarification,
-  interpretInboxText,
   normalizeInboxText,
   resolveInboxInterpretation,
   scoreInboxInterpretation,
@@ -20,11 +19,14 @@ import {
 } from "@/features/inbox/routing-policy";
 import {
   classifyInboxExecutionFailure,
-  getInboxExecutionStepRuntime,
   getInboxExecutionStepOrder,
   runRecordedInboxStep,
   type InboxStepRecorder,
 } from "@/features/inbox/execution";
+import {
+  extractInboxInterpretation,
+  getConfiguredInboxInterpretRuntime,
+} from "@/features/inbox/llm-extractor";
 import { mapInboxItemRecord } from "@/features/inbox/mappers";
 import { getInboxItemDetailQuery } from "@/features/inbox/queries";
 import { materializeInboxReviewBatchWithTx } from "@/features/learning/commands";
@@ -648,11 +650,15 @@ async function persistInterpretStep(input: {
   item: InboxItemRow;
   attemptNo: number;
   fragmentRows: InboxFragmentRow[];
-  interpretation: ReturnType<typeof interpretInboxText>;
+  interpretation: Awaited<
+    ReturnType<typeof extractInboxInterpretation>
+  >["interpretation"];
   clarificationFragmentCount: number;
+  modelName: string;
+  promptVersion: string;
+  metadata: Record<string, unknown>;
 }) {
   return db.transaction(async (tx) => {
-    const interpretRuntime = getInboxExecutionStepRuntime("interpret");
     const fragmentIdByOrdinal = new Map(
       input.fragmentRows.map((row) => [row.ordinal, row.id] as const)
     );
@@ -668,15 +674,15 @@ async function persistInterpretStep(input: {
               ? (fragmentIdByOrdinal.get(hypothesis.fragmentOrdinal) ?? null)
               : null,
           rank: hypothesis.rank,
-          hypothesisType: hypothesis.hypothesisType,
-          payload: hypothesis.payload,
-          confidence: hypothesis.confidence,
-          explanation: hypothesis.explanation,
-          modelName: interpretRuntime.modelName ?? "pending-model-selection",
-          promptVersion: interpretRuntime.promptVersion ?? "inbox-interpret.v1",
-        }))
-      )
-      .returning();
+           hypothesisType: hypothesis.hypothesisType,
+           payload: hypothesis.payload,
+           confidence: hypothesis.confidence,
+           explanation: hypothesis.explanation,
+           modelName: input.modelName,
+           promptVersion: input.promptVersion,
+         }))
+       )
+       .returning();
 
     const primaryHypothesisId = hypothesisRows[0]?.id;
     if (primaryHypothesisId) {
@@ -711,6 +717,7 @@ async function persistInterpretStep(input: {
         hypothesisCount: hypothesisRows.length,
         atomCount: input.interpretation.atoms.length,
         clarificationFragmentCount: input.clarificationFragmentCount,
+        runtime: input.metadata,
       },
     });
   });
@@ -1051,6 +1058,7 @@ async function runInboxProcessingAttempt(
     );
 
     const segmentHash = hashValue(JSON.stringify(segmentation.analysisFragments));
+    const interpretAttemptRuntime = getConfiguredInboxInterpretRuntime();
     const interpretation = await runRecordedInboxStep(
       {
         recorder,
@@ -1058,35 +1066,47 @@ async function runInboxProcessingAttempt(
         stepName: "interpret",
         stepOrder: getInboxExecutionStepOrder("interpret"),
         inputHash: segmentHash,
+        runtimeOverride: {
+          modelName: interpretAttemptRuntime.modelName,
+          promptVersion: interpretAttemptRuntime.promptVersion,
+        },
         metadata: {
           clarificationFragmentCount: segmentation.clarificationFragments.length,
+          configuredProvider: interpretAttemptRuntime.provider,
         },
       },
       async () => {
-        const result = interpretInboxText(
-          normalizer.normalizedText,
-          segmentation.analysisFragments,
-          {
-            clarificationContext,
-          }
-        );
-        const outputHash = hashValue(JSON.stringify(result));
+        const extraction = await extractInboxInterpretation({
+          itemId: input.item.id,
+          normalizedText: normalizer.normalizedText,
+          fragments: segmentation.analysisFragments,
+          clarificationContext,
+        });
+        const outputHash = hashValue(JSON.stringify(extraction.interpretation));
 
         await persistInterpretStep({
           item: input.item,
           attemptNo: input.attemptNo,
           fragmentRows: segmentation.fragmentRows,
-          interpretation: result,
+          interpretation: extraction.interpretation,
           clarificationFragmentCount: segmentation.clarificationFragments.length,
+          modelName: extraction.runtime.modelName,
+          promptVersion: extraction.runtime.promptVersion,
+          metadata: extraction.runtime.metadata,
         });
 
         return {
-          result,
+          result: extraction.interpretation,
           outputHash,
           metadata: {
-            hypothesisCount: result.hypotheses.length,
-            atomCount: result.atoms.length,
-            relationCount: result.relations.length,
+            hypothesisCount: extraction.interpretation.hypotheses.length,
+            atomCount: extraction.interpretation.atoms.length,
+            relationCount: extraction.interpretation.relations.length,
+            ...extraction.runtime.metadata,
+            actualProvider: extraction.runtime.provider,
+            actualModelName: extraction.runtime.modelName,
+            actualPromptVersion: extraction.runtime.promptVersion,
+            fallbackUsed: extraction.runtime.fallbackUsed,
           },
         };
       }
