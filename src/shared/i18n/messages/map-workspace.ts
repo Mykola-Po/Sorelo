@@ -16,6 +16,7 @@ export type MapWorkspaceMessages = {
     runScenario: string;
     inspector: string;
     scenario: string;
+    switchMap: string;
     mapSettings: string;
     expandPanel: string;
     collapsePanel: string;
@@ -353,7 +354,8 @@ function humanizeSuggestionValue(value: string) {
 function buildLearningMessages(
   locale: SupportedLocale
 ): MapWorkspaceMessages["learning"] {
-  const formatSuggestionValue = (value: string) => humanizeSuggestionValue(value);
+  const formatSuggestionValue = (value: string) =>
+    humanizeSuggestionValue(value);
 
   if (locale === "uk") {
     return {
@@ -398,10 +400,8 @@ function buildLearningMessages(
       resolvedCount: (count) => `Вирішені: ${count}`,
       confidence: (value) => `Впевненість: ${Math.round(value * 100)}%`,
       suggestionType: formatSuggestionValue,
-      targetEntity: (value) =>
-        `Ціль: ${humanizeSuggestionValue(value)}`,
-      sourceType: (value) =>
-        `Джерело: ${humanizeSuggestionValue(value)}`,
+      targetEntity: (value) => `Ціль: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) => `Джерело: ${humanizeSuggestionValue(value)}`,
       resolutionType: (value) => {
         if (value === "accepted") {
           return "прийнято";
@@ -444,7 +444,8 @@ function buildLearningMessages(
       evidenceRationaleLabel: "Почему это предложено",
       evidenceSourceLabel: "Подтверждение из источника",
       reviewNoEvidence: "Дополнительные подтверждения не приложены.",
-      reasonPlaceholder: "При необходимости добавьте короткий комментарий к решению.",
+      reasonPlaceholder:
+        "При необходимости добавьте короткий комментарий к решению.",
       acceptCta: "Принять",
       editCta: "Редактировать",
       rejectCta: "Отклонить",
@@ -467,10 +468,8 @@ function buildLearningMessages(
       resolvedCount: (count) => `Решенные: ${count}`,
       confidence: (value) => `Уверенность: ${Math.round(value * 100)}%`,
       suggestionType: formatSuggestionValue,
-      targetEntity: (value) =>
-        `Цель: ${humanizeSuggestionValue(value)}`,
-      sourceType: (value) =>
-        `Источник: ${humanizeSuggestionValue(value)}`,
+      targetEntity: (value) => `Цель: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) => `Источник: ${humanizeSuggestionValue(value)}`,
       resolutionType: (value) => {
         if (value === "accepted") {
           return "принято";
@@ -495,7 +494,8 @@ function buildLearningMessages(
 
   return {
     tabLabel: "Learning",
-    mobileDescription: "Review Suggestions and resolve them in the learning loop.",
+    mobileDescription:
+      "Review Suggestions and resolve them in the learning loop.",
     heading: "Learning",
     emptyTitle: "No Suggestions yet",
     emptyDescription:
@@ -560,6 +560,7 @@ export const mapWorkspaceMessages: Record<
       runScenario: "Run Scenario",
       inspector: "Inspector",
       scenario: "Scenario",
+      switchMap: "Switch map",
       mapSettings: "Map settings",
       expandPanel: "Expand panel",
       collapsePanel: "Collapse panel",
@@ -570,9 +571,9 @@ export const mapWorkspaceMessages: Record<
     canvas: {
       placeConceptBadge: "Place Concept",
       placeConceptTitle:
-        "Click anywhere on the canvas to place the next Concept.",
+        "Click anywhere on the canvas, or focus it and press Enter or Space, to place the next Concept.",
       placeConceptDescription:
-        "The Inspector will open with the position already filled in.",
+        "Keyboard placement uses the center of the visible canvas. The Inspector opens with the position already filled in.",
       createLinkBadge: "Create Link",
       createLinkSourceTitle: "Select the source Concept for the new Link.",
       createLinkSourceDescription:
@@ -581,22 +582,23 @@ export const mapWorkspaceMessages: Record<
         `Select the target Concept for \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "The second click opens the Link form with source and target already filled in.",
-        emptyOverlay:
-          "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
-        loadingSnapshot: "Loading graph snapshot...",
-        conceptSummaryFallback:
-          "Open Inspector to define the meaning of this Concept.",
-        updatingPosition: "Updating canvas position...",
-        positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
-        ghostCreateFailed:
-          "Couldn't create a Concept from this ghost. Try again.",
-        zoomInToMoveConcepts: "Zoom in to move Concepts.",
-      },
+      emptyOverlay:
+        "The first Concept starts the map. Click New Concept, then click the canvas or press Enter on the focused canvas.",
+      loadingSnapshot: "Loading graph snapshot...",
+      conceptSummaryFallback:
+        "Open Inspector to define the meaning of this Concept.",
+      updatingPosition: "Updating canvas position...",
+      positionSaveFailed:
+        "Couldn't save the new position. Drag again to retry.",
+      ghostCreateFailed:
+        "Couldn't create a Concept from this ghost. Try again.",
+      zoomInToMoveConcepts: "Zoom in to move Concepts.",
+    },
     guided: buildGuidedMessages("en"),
     inspector: {
-      placeConceptTitle: "Click on the canvas to place the Concept",
+      placeConceptTitle: "Place the next Concept on the canvas",
       placeConceptDescription:
-        "The next click sets the position, then the Inspector opens a short Concept form.",
+        "Click the canvas, or focus it and press Enter or Space. Keyboard placement uses the center of the visible canvas, then the Inspector opens a short Concept form.",
       connectLinkSourceTitle: "Select the source Concept",
       connectLinkSourceDescription:
         "The first click chooses where the influence starts.",
@@ -780,6 +782,7 @@ export const mapWorkspaceMessages: Record<
       runScenario: "Запустити Сценарій",
       inspector: "Інспектор",
       scenario: "Сценарій",
+      switchMap: "Перемкнути карту",
       mapSettings: "Налаштування карти",
       expandPanel: "Розгорнути панель",
       collapsePanel: "Згорнути панель",
@@ -790,9 +793,9 @@ export const mapWorkspaceMessages: Record<
     canvas: {
       placeConceptBadge: "Поставити Концепт",
       placeConceptTitle:
-        "Клікніть будь-де на canvas, щоб поставити наступний Концепт.",
+        "Клікніть будь-де на canvas або переведіть на нього фокус і натисніть Enter чи Space, щоб поставити наступний Концепт.",
       placeConceptDescription:
-        "Інспектор відкриється з уже заповненою позицією.",
+        "Постановка з клавіатури використовує центр видимої області canvas. Інспектор відкриється з уже заповненою позицією.",
       createLinkBadge: "Створити Зв’язок",
       createLinkSourceTitle: "Оберіть вихідний Концепт для нового Зв’язку.",
       createLinkSourceDescription:
@@ -801,22 +804,23 @@ export const mapWorkspaceMessages: Record<
         `Оберіть цільовий Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Другий клік відкриє форму Зв’язку з уже заповненими source і target.",
-        emptyOverlay:
-          "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
-        loadingSnapshot: "Завантажуємо snapshot графа...",
-        conceptSummaryFallback:
-          "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
-        updatingPosition: "Оновлюємо позицію на canvas...",
-        positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
-        ghostCreateFailed:
-          "Не вдалося створити Концепт із цього ghost. Спробуйте ще раз.",
-        zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
-      },
+      emptyOverlay:
+        "Перший Концепт починає карту. Натисніть Новий Концепт, а потім клікніть на canvas або натисніть Enter на сфокусованому canvas.",
+      loadingSnapshot: "Завантажуємо snapshot графа...",
+      conceptSummaryFallback:
+        "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
+      updatingPosition: "Оновлюємо позицію на canvas...",
+      positionSaveFailed:
+        "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
+      ghostCreateFailed:
+        "Не вдалося створити Концепт із цього ghost. Спробуйте ще раз.",
+      zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
+    },
     guided: buildGuidedMessages("uk"),
     inspector: {
-      placeConceptTitle: "Клікніть на canvas, щоб поставити Концепт",
+      placeConceptTitle: "Поставте наступний Концепт на canvas",
       placeConceptDescription:
-        "Наступний клік задає позицію, після чого Інспектор відкриє коротку форму Концепту.",
+        "Клікніть на canvas або переведіть на нього фокус і натисніть Enter чи Space. Постановка з клавіатури використовує центр видимої області canvas, після чого Інспектор відкриє коротку форму Концепту.",
       connectLinkSourceTitle: "Оберіть вихідний Концепт",
       connectLinkSourceDescription:
         "Перший клік визначає, звідки починається вплив.",
@@ -1000,6 +1004,7 @@ export const mapWorkspaceMessages: Record<
       runScenario: "Запустить Сценарий",
       inspector: "Инспектор",
       scenario: "Сценарий",
+      switchMap: "Переключить карту",
       mapSettings: "Настройки карты",
       expandPanel: "Развернуть панель",
       collapsePanel: "Свернуть панель",
@@ -1010,9 +1015,9 @@ export const mapWorkspaceMessages: Record<
     canvas: {
       placeConceptBadge: "Поставить Концепт",
       placeConceptTitle:
-        "Кликните в любом месте canvas, чтобы поставить следующий Концепт.",
+        "Кликните в любом месте canvas или переведите на него фокус и нажмите Enter или Space, чтобы поставить следующий Концепт.",
       placeConceptDescription:
-        "Инспектор откроется с уже заполненной позицией.",
+        "Постановка с клавиатуры использует центр видимой области canvas. Инспектор откроется с уже заполненной позицией.",
       createLinkBadge: "Создать Связь",
       createLinkSourceTitle: "Выберите исходный Концепт для новой Связи.",
       createLinkSourceDescription:
@@ -1021,22 +1026,23 @@ export const mapWorkspaceMessages: Record<
         `Выберите целевой Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Второй клик откроет форму Связи с уже заполненными source и target.",
-        emptyOverlay:
-          "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
-        loadingSnapshot: "Загружаем snapshot графа...",
-        conceptSummaryFallback:
-          "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
-        updatingPosition: "Обновляем позицию на canvas...",
-        positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
-        ghostCreateFailed:
-          "Не удалось создать Концепт из этого ghost. Попробуйте ещё раз.",
-        zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
-      },
+      emptyOverlay:
+        "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем кликните по canvas или нажмите Enter на сфокусированном canvas.",
+      loadingSnapshot: "Загружаем snapshot графа...",
+      conceptSummaryFallback:
+        "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
+      updatingPosition: "Обновляем позицию на canvas...",
+      positionSaveFailed:
+        "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
+      ghostCreateFailed:
+        "Не удалось создать Концепт из этого ghost. Попробуйте ещё раз.",
+      zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
+    },
     guided: buildGuidedMessages("ru"),
     inspector: {
-      placeConceptTitle: "Кликните по canvas, чтобы поставить Концепт",
+      placeConceptTitle: "Поставьте следующий Концепт на canvas",
       placeConceptDescription:
-        "Следующий клик задаёт позицию, после чего Инспектор откроет короткую форму Концепта.",
+        "Кликните по canvas или переведите на него фокус и нажмите Enter или Space. Постановка с клавиатуры использует центр видимой области canvas, после чего Инспектор откроет короткую форму Концепта.",
       connectLinkSourceTitle: "Выберите исходный Концепт",
       connectLinkSourceDescription:
         "Первый клик определяет, откуда начинается влияние.",

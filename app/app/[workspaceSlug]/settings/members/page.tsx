@@ -37,13 +37,17 @@ export default async function MembersPage({ params }: MembersPageProps) {
             columns={["User", "Role", "Joined", "Change role"]}
             rows={members.map((member) => [
               `${member.fullName ?? "Unnamed"} (${member.email})`,
-              <StatusBadge key={`${member.userId}-role`} status={member.role} />,
+              <StatusBadge
+                key={`${member.userId}-role`}
+                status={member.role}
+              />,
               member.joinedAt.toLocaleDateString(),
               <MemberRoleForm
                 key={`${member.userId}-form`}
                 workspaceSlug={workspaceSlug}
                 userId={member.userId}
                 currentRole={member.role}
+                memberLabel={`${member.fullName ?? "Unnamed"} (${member.email})`}
               />,
             ])}
           />

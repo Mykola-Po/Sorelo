@@ -141,7 +141,122 @@ async function createWorkspaceAndOpenMap(page: Page) {
   };
 }
 
+async function isFocusInsideDialog(page: Page) {
+  return page.evaluate(() => {
+    const activeElement =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    return (
+      activeElement?.closest('[role="dialog"]') !== null &&
+      activeElement?.closest(".map-bottom-dock") === null
+    );
+  });
+}
+
 test.describe("Map workspace canvas interactions", () => {
+  test("map switcher is labeled and scenario seeds expose pressed state", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createWorkspaceAndOpenMap(page);
+
+    await expect(page.getByLabel("Switch map")).toBeVisible();
+
+    await page
+      .locator(".map-bottom-dock")
+      .getByRole("button", { name: "New Concept" })
+      .click();
+    await page.locator(".map-canvas-layer").click({
+      position: { x: 180, y: 180 },
+    });
+    await page.getByLabel("Title").fill("Seed Node");
+    await page.getByRole("button", { name: "Create Concept" }).click();
+    await expect(page.getByRole("button", { name: /Seed Node/ })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.reload();
+    await expect(page.locator(".map-screen").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Seed Node/ })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page
+      .locator(".map-bottom-dock")
+      .getByRole("button", { name: "Run Scenario" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Run Scenario now" })
+    ).toBeVisible();
+
+    const scenarioDialog = page.getByRole("dialog");
+    const seedToggle = scenarioDialog.getByRole("button", {
+      name: "Seed Node",
+    });
+    await expect(seedToggle).toHaveAttribute("aria-pressed", "false");
+    await seedToggle.click();
+    await expect(seedToggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("panel focus moves into the active inspector and tab stays inside the dialog", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createWorkspaceAndOpenMap(page);
+
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect.poll(() => isFocusInsideDialog(page)).toBe(true);
+
+    const focusedInsidePanelContent = await page.evaluate(() => {
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+
+      return activeElement?.closest(".panel-content") !== null;
+    });
+    expect(focusedInsidePanelContent).toBe(true);
+
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press("Tab");
+      await expect.poll(() => isFocusInsideDialog(page)).toBe(true);
+    }
+
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => isFocusInsideDialog(page)).toBe(true);
+  });
+
+  test("keyboard users can place the first concept from the canvas flow", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createWorkspaceAndOpenMap(page);
+
+    const newConceptButton = page
+      .locator(".map-bottom-dock")
+      .getByRole("button", { name: "New Concept" });
+    await newConceptButton.focus();
+    await newConceptButton.press("Enter");
+
+    const placementCanvas = page.getByRole("button", {
+      name: /place the next concept/i,
+    });
+    await expect(placementCanvas).toBeFocused();
+
+    await page.keyboard.press("Space");
+
+    await expect(
+      page.getByRole("heading", { name: "New Concept" })
+    ).toBeVisible();
+    await expect(page.getByText("Position:")).toBeVisible();
+    await expect(page.getByLabel("Title")).toBeVisible();
+  });
+
   test("place concept mode still allows clicking the canvas while the Inspector is open", async ({
     page,
   }) => {
@@ -153,9 +268,7 @@ test.describe("Map workspace canvas interactions", () => {
       .locator(".map-bottom-dock")
       .getByRole("button", { name: "New Concept" })
       .click();
-    await expect(
-      page.getByText("Click on the canvas to place the Concept")
-    ).toBeVisible();
+    await expect(page.getByText(/place the next concept/i)).toBeVisible();
 
     await page.locator(".map-canvas-layer").click({
       position: { x: 180, y: 180 },
@@ -204,15 +317,19 @@ test.describe("Map workspace canvas interactions", () => {
 
     await page.getByLabel("Title").fill("Stable Node");
     await page.getByRole("button", { name: "Create Concept" }).click();
-    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible(
+      {
+        timeout: 30_000,
+      }
+    );
 
     await page.reload();
     await expect(page.locator(".map-screen").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible(
+      {
+        timeout: 30_000,
+      }
+    );
 
     const inspectorResponsePromise = page.waitForResponse((response) => {
       return (
@@ -224,7 +341,9 @@ test.describe("Map workspace canvas interactions", () => {
 
     await page.getByRole("button", { name: /Stable Node/ }).click();
     await inspectorResponsePromise;
-    await expect(page.getByRole("heading", { name: "Stable Node" })).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: "Stable Node" })
+    ).toBeVisible({
       timeout: 30_000,
     });
     expect(failingRuntimeReads).toEqual([]);

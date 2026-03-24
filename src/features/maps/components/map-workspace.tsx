@@ -1,6 +1,15 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronLeftIcon,
   Cross2Icon,
@@ -37,7 +46,10 @@ const GraphCanvasRuntime = dynamic(
     ),
   { ssr: false }
 );
-import { MapStoreProvider, useMapStore } from "@/features/map-runtime/store/map-store-provider";
+import {
+  MapStoreProvider,
+  useMapStore,
+} from "@/features/map-runtime/store/map-store-provider";
 import { useConceptCatalog } from "@/features/map-runtime/hooks/use-concept-catalog";
 import {
   deriveLodThresholds,
@@ -60,6 +72,35 @@ import {
 } from "@/shared/i18n/messages/map-workspace";
 
 type PanelTab = "inspector" | "scenario" | "learning";
+
+const PANEL_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function isFocusableElementVisible(element: HTMLElement) {
+  return (
+    element.getAttribute("aria-hidden") !== "true" &&
+    !element.hasAttribute("hidden") &&
+    (element.offsetWidth > 0 ||
+      element.offsetHeight > 0 ||
+      element.getClientRects().length > 0)
+  );
+}
+
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(PANEL_FOCUSABLE_SELECTOR)
+  ).filter((element) => isFocusableElementVisible(element));
+}
 
 export function MapWorkspace(props: MapWorkspaceProps) {
   return (
@@ -91,6 +132,10 @@ function MapWorkspaceContent({
   const [panelTab, setPanelTab] = useState<PanelTab>("inspector");
   const [mutationFeedback, setMutationFeedback] =
     useState<InspectorMutationFeedback | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const panelContentRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const lastPanelOpenRef = useRef(false);
   const selection = useMapStore((state) => state.selection);
   const setSelection = useMapStore((state) => state.setSelection);
   const interactionMode = useMapStore((state) => state.interactionMode);
@@ -148,7 +193,7 @@ function MapWorkspaceContent({
   });
 
   const linkingSourceConceptTitle = connectLinkSourceId
-    ? conceptCatalogById.get(connectLinkSourceId)?.title ?? null
+    ? (conceptCatalogById.get(connectLinkSourceId)?.title ?? null)
     : null;
   const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
   const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
@@ -160,8 +205,10 @@ function MapWorkspaceContent({
 
     setZoomState((prevState) => {
       const sameRatio = Math.abs(prevState.ratio - nextState.ratio) < 0.01;
-      const sameMin = Math.abs(prevState.minRatio - nextState.minRatio) < 0.0001;
-      const sameMax = Math.abs(prevState.maxRatio - nextState.maxRatio) < 0.0001;
+      const sameMin =
+        Math.abs(prevState.minRatio - nextState.minRatio) < 0.0001;
+      const sameMax =
+        Math.abs(prevState.maxRatio - nextState.maxRatio) < 0.0001;
       const sameEnter =
         Math.abs(prevState.dotEnterRatio - nextState.dotEnterRatio) < 0.0001;
       const sameExit =
@@ -173,19 +220,13 @@ function MapWorkspaceContent({
     });
   }, []);
 
-  const isInteractionGuidanceActive =
-    panelTab === "inspector" && interactionMode !== "inspect";
-  const dialogOpen = panelOpen || isInteractionGuidanceActive;
+  const dialogOpen = panelOpen;
 
   const handlePanelOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (!nextOpen && isInteractionGuidanceActive) {
-        return;
-      }
-
       setPanelOpen(nextOpen);
     },
-    [isInteractionGuidanceActive]
+    []
   );
 
   const openInspectorPanel = () => {
@@ -357,6 +398,116 @@ function MapWorkspaceContent({
   const panelTitleId = useId();
   const panelDescriptionId = useId();
 
+  const handleDialogKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (!panelOpen || event.key !== "Tab") {
+        return;
+      }
+
+      const dialogElement = dialogRef.current;
+      if (!dialogElement) {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(dialogElement);
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialogElement.focus({ preventScroll: true });
+        return;
+      }
+
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      const currentIndex = activeElement
+        ? focusableElements.indexOf(activeElement)
+        : -1;
+
+      if (event.shiftKey) {
+        if (currentIndex <= 0) {
+          event.preventDefault();
+          focusableElements[focusableElements.length - 1]?.focus({
+            preventScroll: true,
+          });
+        }
+        return;
+      }
+
+      if (
+        currentIndex === -1 ||
+        currentIndex === focusableElements.length - 1
+      ) {
+        event.preventDefault();
+        focusableElements[0]?.focus({ preventScroll: true });
+      }
+    },
+    [panelOpen]
+  );
+
+  useEffect(() => {
+    if (!panelOpen) {
+      if (lastPanelOpenRef.current) {
+        const restoreTarget = previousFocusRef.current;
+        previousFocusRef.current = null;
+
+        if (restoreTarget?.isConnected) {
+          const restoreHandle = window.requestAnimationFrame(() => {
+            restoreTarget.focus({ preventScroll: true });
+          });
+          lastPanelOpenRef.current = false;
+
+          return () => {
+            window.cancelAnimationFrame(restoreHandle);
+          };
+        }
+      }
+
+      lastPanelOpenRef.current = false;
+      return;
+    }
+
+    const dialogElement = dialogRef.current;
+    if (!dialogElement) {
+      lastPanelOpenRef.current = true;
+      return;
+    }
+
+    const activeElement =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    if (activeElement && !dialogElement.contains(activeElement)) {
+      previousFocusRef.current = activeElement;
+    }
+
+    const focusHandle = window.requestAnimationFrame(() => {
+      const currentActiveElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      if (
+        currentActiveElement &&
+        dialogElement.contains(currentActiveElement)
+      ) {
+        return;
+      }
+
+      const nextFocusTarget =
+        getFocusableElements(panelContentRef.current)[0] ??
+        getFocusableElements(dialogElement)[0] ??
+        dialogElement;
+
+      nextFocusTarget.focus({ preventScroll: true });
+    });
+
+    lastPanelOpenRef.current = true;
+
+    return () => {
+      window.cancelAnimationFrame(focusHandle);
+    };
+  }, [panelOpen, panelTab]);
+
   return (
     <div className="map-screen">
       <div className="page-stack map-screen-stack">
@@ -416,7 +567,10 @@ function MapWorkspaceContent({
               stepBadgeLabel={
                 guidedStep === "done"
                   ? messages.mapReadyBadge
-                  : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)
+                  : messages.stepLabel(
+                      guidedCopy.stepNumber,
+                      guidedCopy.totalSteps
+                    )
               }
               stepBadgeReady={guidedStep === "done"}
               zoomState={zoomState}
@@ -444,11 +598,16 @@ function MapWorkspaceContent({
         <div className="map-dialog-container">
           {dialogOpen ? (
             <section
+              ref={dialogRef}
               role="dialog"
-              aria-modal="false"
+              aria-modal={panelOpen ? "true" : "false"}
               aria-labelledby={panelTitleId}
               aria-describedby={panelDescriptionId}
-              className={isMobileViewport ? "map-mobile-dialog" : "map-overlay-dialog"}
+              tabIndex={panelOpen ? -1 : undefined}
+              className={
+                isMobileViewport ? "map-mobile-dialog" : "map-overlay-dialog"
+              }
+              onKeyDown={handleDialogKeyDown}
             >
               <div className="map-dialog-shell">
                 <Flex
@@ -489,9 +648,13 @@ function MapWorkspaceContent({
                         type="button"
                         size="1"
                         variant={
-                          selection.kind === "map-settings" ? "solid" : "surface"
+                          selection.kind === "map-settings"
+                            ? "solid"
+                            : "surface"
                         }
-                        color={selection.kind === "map-settings" ? "gray" : "gray"}
+                        color={
+                          selection.kind === "map-settings" ? "gray" : "gray"
+                        }
                         onClick={openMapSettings}
                       >
                         {messages.topBar.mapSettings}
@@ -541,7 +704,9 @@ function MapWorkspaceContent({
                 </Flex>
 
                 <div className="map-dialog-body">
-                  <div className="panel-content">{renderPanelContent()}</div>
+                  <div ref={panelContentRef} className="panel-content">
+                    {renderPanelContent()}
+                  </div>
                 </div>
               </div>
             </section>
@@ -620,11 +785,15 @@ type MapScaleRulerProps = {
 function MapScaleRuler({ zoomState }: MapScaleRulerProps) {
   const safeMinRatio = Math.max(zoomState.minRatio, 0.0001);
   const safeMaxRatio = Math.max(zoomState.maxRatio, safeMinRatio + 0.0001);
-  const safeRatio = Math.min(Math.max(zoomState.ratio, safeMinRatio), safeMaxRatio);
+  const safeRatio = Math.min(
+    Math.max(zoomState.ratio, safeMinRatio),
+    safeMaxRatio
+  );
   const minLog = Math.log(safeMinRatio);
   const maxLog = Math.log(safeMaxRatio);
   const logRange = Math.max(maxLog - minLog, 0.0001);
-  const thumbPositionPercent = ((Math.log(safeRatio) - minLog) / logRange) * 100;
+  const thumbPositionPercent =
+    ((Math.log(safeRatio) - minLog) / logRange) * 100;
   const zoomPercent = Math.round((1 / safeRatio) * 100);
 
   return (
@@ -667,7 +836,12 @@ function MapModeIndicator({
 
   return (
     <Flex gap="2" wrap="wrap" align="center" className="map-mode-indicator">
-      <Badge radius="full" variant="surface" color="gray" className="map-mode-indicator-badge">
+      <Badge
+        radius="full"
+        variant="surface"
+        color="gray"
+        className="map-mode-indicator-badge"
+      >
         <span className="map-mode-indicator-icon" aria-hidden="true">
           {interactionMode === "placeConcept" ? (
             <PlusIcon />
@@ -681,7 +855,12 @@ function MapModeIndicator({
       </Badge>
 
       {interactionMode === "connectLink" && linkingSourceConceptTitle ? (
-        <Badge color="gray" radius="full" variant="surface" className="map-mode-context">
+        <Badge
+          color="gray"
+          radius="full"
+          variant="surface"
+          className="map-mode-context"
+        >
           {linkingSourceConceptTitle}
         </Badge>
       ) : null}
@@ -789,7 +968,7 @@ function MapBottomDock({
           <div className="map-bottom-map-select">
             <div className="map-inline-select">
               <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
-                <Select.Trigger />
+                <Select.Trigger aria-label={messages.topBar.switchMap} />
                 <Select.Content>
                   {availableMaps.map((candidate) => (
                     <Select.Item key={candidate.id} value={candidate.id}>
@@ -825,7 +1004,11 @@ function MapBottomDock({
       <div className="map-bottom-dock-center">
         <div className="map-bottom-dock-group">
           <MapIconAction
-            label={isGravityEnabled ? "Stop Semantic Gravity" : "Start Semantic Gravity"}
+            label={
+              isGravityEnabled
+                ? "Stop Semantic Gravity"
+                : "Start Semantic Gravity"
+            }
             active={isGravityEnabled}
             onClick={onToggleGravity}
             mobileHint="Gravity"
@@ -854,7 +1037,8 @@ function MapBottomDock({
           <MapIconAction
             label={messages.topBar.createLink}
             active={
-              interactionMode === "connectLink" || selectionKind === "create-link"
+              interactionMode === "connectLink" ||
+              selectionKind === "create-link"
             }
             onClick={onStartCreateLink}
             mobileHint={messages.topBar.createLink}
@@ -864,7 +1048,8 @@ function MapBottomDock({
           <MapIconAction
             label={messages.topBar.newConcept}
             active={
-              interactionMode === "placeConcept" || selectionKind === "create-concept"
+              interactionMode === "placeConcept" ||
+              selectionKind === "create-concept"
             }
             onClick={onStartCreateConcept}
             mobileHint={messages.topBar.newConcept}
@@ -891,4 +1076,3 @@ function MapBottomDock({
     </div>
   );
 }
-

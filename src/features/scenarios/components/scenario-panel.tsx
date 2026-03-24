@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import {
   Badge,
   Button,
@@ -706,6 +706,7 @@ function SeedConceptPicker({
   onToggle,
 }: SeedConceptPickerProps) {
   const messages = getMapWorkspaceMessages(locale);
+  const labelId = useId();
 
   if (isLoading) {
     return (
@@ -729,7 +730,7 @@ function SeedConceptPicker({
 
   return (
     <Flex direction="column" gap="2">
-      <Text size="2" weight="medium">
+      <Text id={labelId} size="2" weight="medium">
         {messages.scenario.seedConceptsLabel}
       </Text>
       {concepts.length === 0 ? (
@@ -737,7 +738,7 @@ function SeedConceptPicker({
           {messages.scenario.seedConceptsEmpty}
         </Text>
       ) : (
-        <Flex gap="2" wrap="wrap">
+        <Flex gap="2" wrap="wrap" role="group" aria-labelledby={labelId}>
           {concepts.map((concept) => {
             const selected = selectedIds.includes(concept.id);
             return (
@@ -747,6 +748,7 @@ function SeedConceptPicker({
                 size="2"
                 variant={selected ? "solid" : "surface"}
                 color={selected ? "blue" : "gray"}
+                aria-pressed={selected}
                 onClick={() => onToggle(concept.id)}
               >
                 {concept.title}
