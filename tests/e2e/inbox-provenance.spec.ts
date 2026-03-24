@@ -419,7 +419,7 @@ test.describe("Inbox canonical provenance", () => {
     await expect
       .poll(async () => {
         const graphResponse = await page.request.get(
-          `/api/maps/${mapId}/graph?width=1280&height=720`
+          `/api/maps/${mapId}/graph`
         );
         if (!graphResponse.ok()) {
           return 0;

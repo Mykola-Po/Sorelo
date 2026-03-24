@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   INITIAL_POSITION_PERSISTENCE_STATE,
-  deriveStableSigmaBBox,
+  deriveGraphSigmaBBox,
   deriveEdgeAutoPanIntent,
   getPointerTravelDistance,
   reducePositionPersistenceState,
@@ -93,29 +93,71 @@ describe("concept drag helpers", () => {
     expect(rightBottomIntent.y).toBeGreaterThan(0);
   });
 
-  it("derives a stable Sigma bounding box from viewport bounds", () => {
+  it("derives a stable Sigma bounding box from graph coordinates", () => {
     expect(
-      deriveStableSigmaBBox({
-        x: 120,
-        y: 240,
-        width: 1280,
-        height: 860,
+      deriveGraphSigmaBBox({
+        snapshot: {
+          revision: 1,
+          counts: {
+            conceptCount: 2,
+            linkCount: 0,
+          },
+          concepts: [
+            {
+              id: "concept-a",
+              title: "Concept A",
+              conceptType: "custom",
+              summary: null,
+              description: null,
+              x: 120,
+              y: 240,
+              updatedAt: "2026-03-24T00:00:00.000Z",
+            },
+            {
+              id: "concept-b",
+              title: "Concept B",
+              conceptType: "custom",
+              summary: null,
+              description: null,
+              x: 1400,
+              y: 1100,
+              updatedAt: "2026-03-24T00:00:00.000Z",
+            },
+          ],
+          links: [],
+        },
       })
     ).toEqual({
-      x: [120, 1400],
-      y: [240, 1100],
+      x: [-200, 1720],
+      y: [25, 1315],
     });
 
     expect(
-      deriveStableSigmaBBox({
-        x: 0,
-        y: 0,
-        width: 640,
-        height: 480,
+      deriveGraphSigmaBBox({
+        snapshot: {
+          revision: 1,
+          counts: {
+            conceptCount: 1,
+            linkCount: 0,
+          },
+          concepts: [
+            {
+              id: "concept-a",
+              title: "Concept A",
+              conceptType: "custom",
+              summary: null,
+              description: null,
+              x: 0,
+              y: 0,
+              updatedAt: "2026-03-24T00:00:00.000Z",
+            },
+          ],
+          links: [],
+        },
       })
     ).toEqual({
-      x: [0, 640],
-      y: [0, 480],
+      x: [-120.5, 120.5],
+      y: [-120.5, 120.5],
     });
   });
 

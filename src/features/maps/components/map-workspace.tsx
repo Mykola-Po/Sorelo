@@ -63,7 +63,11 @@ type PanelTab = "inspector" | "scenario" | "learning";
 
 export function MapWorkspace(props: MapWorkspaceProps) {
   return (
-    <MapStoreProvider key={props.map.id} mapId={props.map.id}>
+    <MapStoreProvider
+      key={props.map.id}
+      mapId={props.map.id}
+      initialSnapshot={props.initialSnapshot}
+    >
       <MapWorkspaceContent {...props} />
     </MapStoreProvider>
   );

@@ -139,7 +139,7 @@ async function readGraphSnapshot(page: Page) {
   expect(mapId).not.toBe("");
 
   const response = await page.request.get(
-    `/api/maps/${mapId}/graph?width=1280&height=720`
+    `/api/maps/${mapId}/graph`
   );
   if (!response.ok()) {
     throw new Error(

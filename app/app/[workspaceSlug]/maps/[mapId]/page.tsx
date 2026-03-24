@@ -37,6 +37,7 @@ export default async function MapWorkspacePage({
       workspaceRole={access.role}
       map={detail.map}
       availableMaps={detail.availableMaps}
+      initialSnapshot={detail.initialSnapshot}
       graphMetrics={detail.graphMetrics}
       scenarios={detail.scenarios}
       runs={detail.runs}

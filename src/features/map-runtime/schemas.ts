@@ -9,14 +9,6 @@ const roundedCoordinateSchema = z
   .max(100000)
   .transform((value) => Math.round(value));
 
-export const graphViewportSchema = z.object({
-  x: z.coerce.number().min(0),
-  y: z.coerce.number().min(0),
-  width: z.coerce.number().min(1),
-  height: z.coerce.number().min(1),
-  overscan: z.coerce.number().min(0).max(2000).default(240),
-});
-
 export const createConceptRouteSchema = z.object({
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum(conceptTypeEnum.enumValues),

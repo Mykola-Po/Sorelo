@@ -4,6 +4,8 @@ export const TOUCH_LONG_PRESS_CANCEL_THRESHOLD_PX = 8;
 export const SOFT_SNAP_THRESHOLD_PX = 10;
 export const EDGE_AUTO_PAN_HOT_ZONE_PX = 56;
 export const POSITION_SAVE_RETRY_DELAY_MS = 2000;
+const MIN_SIGMA_BBOX_PADDING = 120;
+const SIGMA_BBOX_PADDING_RATIO = 0.25;
 
 export type DragPointerType = "mouse" | "touch" | "pen";
 
@@ -34,6 +36,11 @@ export type EdgeAutoPanIntent = {
   isActive: boolean;
 };
 
+import type {
+  GraphConceptNode,
+  GraphSnapshot,
+} from "@/features/map-runtime/types";
+
 export type StableSigmaBBox = {
   x: [number, number];
   y: [number, number];
@@ -60,24 +67,68 @@ export const INITIAL_POSITION_PERSISTENCE_STATE: PositionPersistenceState = {
   errorMessage: null,
 };
 
-export function deriveStableSigmaBBox(input: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export function deriveGraphSigmaBBox(input: {
+  snapshot: GraphSnapshot;
+  ghosts?: GraphConceptNode[];
+  positions?: Record<string, DragViewportPoint>;
 }): StableSigmaBBox | null {
-  if (!Number.isFinite(input.x) || !Number.isFinite(input.y)) {
+  const positions = input.positions ?? {};
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let hasFiniteCoordinate = false;
+
+  const collectPoint = (id: string, x: number, y: number) => {
+    const override = positions[id];
+    const nextX = override?.x ?? x;
+    const nextY = override?.y ?? y;
+
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
+      return;
+    }
+
+    hasFiniteCoordinate = true;
+    minX = Math.min(minX, nextX);
+    maxX = Math.max(maxX, nextX);
+    minY = Math.min(minY, nextY);
+    maxY = Math.max(maxY, nextY);
+  };
+
+  for (const concept of input.snapshot.concepts) {
+    collectPoint(concept.id, concept.x, concept.y);
+  }
+
+  for (const ghost of input.ghosts ?? []) {
+    collectPoint(ghost.id, ghost.x, ghost.y);
+  }
+
+  if (!hasFiniteCoordinate) {
     return null;
   }
 
-  const width =
-    Number.isFinite(input.width) && input.width > 0 ? input.width : 1;
-  const height =
-    Number.isFinite(input.height) && input.height > 0 ? input.height : 1;
+  if (minX === maxX) {
+    minX -= 0.5;
+    maxX += 0.5;
+  }
+
+  if (minY === maxY) {
+    minY -= 0.5;
+    maxY += 0.5;
+  }
+
+  const paddingX = Math.max(
+    (maxX - minX) * SIGMA_BBOX_PADDING_RATIO,
+    MIN_SIGMA_BBOX_PADDING
+  );
+  const paddingY = Math.max(
+    (maxY - minY) * SIGMA_BBOX_PADDING_RATIO,
+    MIN_SIGMA_BBOX_PADDING
+  );
 
   return {
-    x: [input.x, input.x + width],
-    y: [input.y, input.y + height],
+    x: [minX - paddingX, maxX + paddingX],
+    y: [minY - paddingY, maxY + paddingY],
   };
 }
 

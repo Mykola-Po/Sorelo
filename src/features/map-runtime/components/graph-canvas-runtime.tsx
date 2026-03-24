@@ -20,7 +20,6 @@ import type { GraphMetrics, MapDetail } from "@/features/maps/types";
 import type {
   GraphConceptNode,
   GraphSnapshot,
-  GraphViewport,
 } from "@/features/map-runtime/types";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
@@ -37,31 +36,25 @@ import {
   type CanvasZoomState,
 } from "../renderers/zoom-policy";
 import {
-  deriveGraphViewportFromSigma,
-  type GraphViewportBounds,
-} from "../renderers/viewport-sync";
-import {
   EDGE_AUTO_PAN_HOT_ZONE_PX,
   INITIAL_POSITION_PERSISTENCE_STATE,
   POSITION_SAVE_RETRY_DELAY_MS,
   TOUCH_LONG_PRESS_MS,
+  deriveGraphSigmaBBox,
   deriveEdgeAutoPanIntent,
-  deriveStableSigmaBBox,
   getPointerTravelDistance,
   reducePositionPersistenceState,
   resolveConceptSoftSnap,
   shouldCancelTouchLongPress,
   shouldStartPointerDrag,
   type DragPointerType,
-  type StableSigmaBBox,
   type DragViewportPoint,
+  type StableSigmaBBox,
 } from "../renderers/concept-drag";
 import type { Sigma } from "sigma";
 import { IDLE_DRAG_STATE } from "../store/map-store";
 import { useSemanticGravity } from "../hooks/use-semantic-gravity";
 const MUTATION_FEEDBACK_DURATION_MS = 2400;
-const VIEWPORT_SYNC_INTERVAL_MS = 240;
-const VIEWPORT_FETCH_IDLE_MS = 180;
 const EDGE_AUTO_PAN_START_DELAY_MS = 220;
 
 const EMPTY_GRAPH_SNAPSHOT: GraphSnapshot = {
@@ -120,26 +113,6 @@ type ConceptDragSession = {
   pendingLongPress: boolean;
   isDragging: boolean;
 };
-
-function areStableSigmaBoundsEqual(
-  left: StableSigmaBBox | null,
-  right: StableSigmaBBox | null
-): boolean {
-  if (left === right) {
-    return true;
-  }
-
-  if (!left || !right) {
-    return false;
-  }
-
-  return (
-    Math.abs(left.x[0] - right.x[0]) < 0.0001 &&
-    Math.abs(left.x[1] - right.x[1]) < 0.0001 &&
-    Math.abs(left.y[0] - right.y[0]) < 0.0001 &&
-    Math.abs(left.y[1] - right.y[1]) < 0.0001
-  );
-}
 
 function deriveGesturePointerType(event: Event): DragPointerType {
   if ("pointerType" in event && typeof event.pointerType === "string") {
@@ -229,6 +202,9 @@ export function GraphCanvasRuntime({
   const dragSessionRef = useRef<ConceptDragSession | null>(null);
   const conceptViewportPositionsRef = useRef<Map<string, ViewportNodePosition>>(new Map());
   const zoomPolicyRef = useRef<Omit<CanvasZoomState, "ratio"> | null>(null);
+  const stableSigmaBBoxRef = useRef<StableSigmaBBox | null>(null);
+  const lastHydratedSnapshotRef = useRef<GraphSnapshot | null>(null);
+  const lastHydratedGhostsRef = useRef<GraphConceptNode[] | null>(null);
 
   const [isZoomedOut, setIsZoomedOut] = useState(false);
   const isZoomedOutRef = useRef(isZoomedOut);
@@ -241,8 +217,6 @@ export function GraphCanvasRuntime({
   const isGravityEnabled = useMapStore((s) => s.isGravityEnabled);
   
   useSemanticGravity(sigmaRef.current, isGravityEnabled);
-  const viewport = useMapStore((s) => s.viewport);
-  const updateViewport = useMapStore((s) => s.updateViewport);
   const positions = useMapStore((s) => s.positions);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
   const dragState = useMapStore((s) => s.dragState);
@@ -251,20 +225,14 @@ export function GraphCanvasRuntime({
   const ghosts = useMapStore((s) => s.ghosts);
   const setGhosts = useMapStore((s) => s.setGhosts);
   const snapshotRef = useRef(snapshot);
-  const viewportRef = useRef(viewport);
   const positionsRef = useRef(positions);
   const dragStateRef = useRef(dragState);
   const ghostsRef = useRef(ghosts);
-  const pendingViewportSyncRef = useRef<GraphViewportBounds | null>(null);
-  const viewportSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const viewportFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapshotRequestControllerRef = useRef<AbortController | null>(null);
   const snapshotRequestIdRef = useRef(0);
   const positionSaveRequestIdRef = useRef(0);
   const ghostCreateControllersRef = useRef<Map<string, AbortController>>(new Map());
   const ghostCreateInFlightIdsRef = useRef<Set<string>>(new Set());
-  const hasHydratedSigmaGraphRef = useRef(false);
-  const lastViewportSyncAtRef = useRef(0);
   const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -360,10 +328,6 @@ export function GraphCanvasRuntime({
   }, [isZoomedOut]);
 
   useEffect(() => {
-    viewportRef.current = viewport;
-  }, [viewport]);
-
-  useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
 
@@ -379,12 +343,6 @@ export function GraphCanvasRuntime({
     const ghostCreateInFlightIds = ghostCreateInFlightIdsRef.current;
 
     return () => {
-      if (viewportSyncTimerRef.current !== null) {
-        clearTimeout(viewportSyncTimerRef.current);
-      }
-      if (viewportFetchTimerRef.current !== null) {
-        clearTimeout(viewportFetchTimerRef.current);
-      }
       snapshotRequestControllerRef.current?.abort();
       if (feedbackMessageTimerRef.current !== null) {
         clearTimeout(feedbackMessageTimerRef.current);
@@ -414,7 +372,6 @@ export function GraphCanvasRuntime({
       }
       ghostCreateControllers.clear();
       ghostCreateInFlightIds.clear();
-      viewportSyncTimerRef.current = null;
       feedbackMessageTimerRef.current = null;
       feedbackConceptTimerRef.current = null;
       feedbackEdgeTimerRef.current = null;
@@ -423,8 +380,6 @@ export function GraphCanvasRuntime({
       autoPanDelayTimerRef.current = null;
       autoPanFrameRef.current = null;
       restoreEdgeStyleRef.current = null;
-      pendingViewportSyncRef.current = null;
-      viewportFetchTimerRef.current = null;
       snapshotRequestControllerRef.current = null;
       teardownTouchDragRef.current = null;
       dragSessionRef.current = null;
@@ -432,11 +387,51 @@ export function GraphCanvasRuntime({
   }, []);
 
   // Local fetch states
-  const [isSnapshotLoading, setIsSnapshotLoading] = useState(true);
+  const [isSnapshotLoading, setIsSnapshotLoading] = useState(snapshot === null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
-  const fetchSnapshotForViewport = useCallback(
-    async (targetViewport: GraphViewport) => {
+  const syncLocalConceptPosition = useCallback(
+    (conceptId: string, position: DragViewportPoint) => {
+      positionsRef.current = {
+        ...positionsRef.current,
+        [conceptId]: position,
+      };
+      updateConceptPosition(conceptId, position);
+    },
+    [updateConceptPosition]
+  );
+
+  const ensureStableSigmaBBox = useCallback(
+    (
+      nextSigma: Sigma,
+      nextSnapshot: GraphSnapshot,
+      nextGhosts: GraphConceptNode[],
+      nextPositions?: Record<string, DragViewportPoint>
+    ) => {
+      if (stableSigmaBBoxRef.current === null) {
+        stableSigmaBBoxRef.current = deriveGraphSigmaBBox(
+          nextPositions
+            ? {
+                snapshot: nextSnapshot,
+                ghosts: nextGhosts,
+                positions: nextPositions,
+              }
+            : {
+                snapshot: nextSnapshot,
+                ghosts: nextGhosts,
+              }
+        );
+      }
+
+      if (stableSigmaBBoxRef.current !== null) {
+        nextSigma.setCustomBBox(stableSigmaBBoxRef.current);
+      }
+    },
+    []
+  );
+
+  const fetchLatestSnapshot = useCallback(
+    async () => {
       const requestId = snapshotRequestIdRef.current + 1;
       snapshotRequestIdRef.current = requestId;
 
@@ -444,29 +439,24 @@ export function GraphCanvasRuntime({
       const controller = new AbortController();
       snapshotRequestControllerRef.current = controller;
 
-      setIsSnapshotLoading(true);
+      const shouldShowLoadingState = snapshotRef.current === null;
+      if (shouldShowLoadingState) {
+        setIsSnapshotLoading(true);
+      }
       setSnapshotError(null);
 
       try {
-        const searchParams = new URLSearchParams({
-          x: String(targetViewport.x),
-          y: String(targetViewport.y),
-          width: String(targetViewport.width),
-          height: String(targetViewport.height),
-          overscan: String(targetViewport.overscan),
+        const response = await fetch(`/api/maps/${map.id}/graph`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
         });
 
-        const response = await fetch(
-          `/api/maps/${map.id}/graph?${searchParams.toString()}`,
-          {
-            method: "GET",
-            cache: "no-store",
-            signal: controller.signal,
-          }
-        );
-
         if (!response.ok) {
-          throw new Error("Unable to load graph snapshot.");
+          const body = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(body?.error ?? "Unable to load graph snapshot.");
         }
 
         const nextSnapshot = (await response.json()) as GraphSnapshot;
@@ -474,6 +464,7 @@ export function GraphCanvasRuntime({
           return;
         }
 
+        snapshotRef.current = nextSnapshot;
         setSnapshot(nextSnapshot);
       } catch (fetchError) {
         if (controller.signal.aborted || requestId !== snapshotRequestIdRef.current) {
@@ -492,35 +483,14 @@ export function GraphCanvasRuntime({
     [map.id, setSnapshot]
   );
 
-  const scheduleViewportSnapshotFetch = useCallback(
-    (targetViewport: GraphViewport, options?: { immediate?: boolean }) => {
-      if (viewportFetchTimerRef.current !== null) {
-        clearTimeout(viewportFetchTimerRef.current);
-        viewportFetchTimerRef.current = null;
-      }
-
-      if (options?.immediate) {
-        void fetchSnapshotForViewport(targetViewport);
-        return;
-      }
-
-      viewportFetchTimerRef.current = setTimeout(() => {
-        viewportFetchTimerRef.current = null;
-        void fetchSnapshotForViewport(targetViewport);
-      }, VIEWPORT_FETCH_IDLE_MS);
-    },
-    [fetchSnapshotForViewport]
-  );
-
-  // --- Network Fetching ---
   useEffect(() => {
-    if (dragSessionRef.current?.isDragging || dragState.phase === "saving") {
+    if (snapshot !== null) {
+      setIsSnapshotLoading(false);
       return;
     }
 
-    const shouldLoadImmediately = snapshotRef.current === null;
-    scheduleViewportSnapshotFetch(viewport, { immediate: shouldLoadImmediately });
-  }, [dragState.phase, scheduleViewportSnapshotFetch, viewport]);
+    void fetchLatestSnapshot();
+  }, [fetchLatestSnapshot, snapshot]);
 
   // --- Map Coordinates Save Logic ---
   const clearPositionRetryTimer = useCallback(() => {
@@ -623,7 +593,7 @@ export function GraphCanvasRuntime({
         ])
       );
 
-      setSnapshot({
+      const nextSnapshot: GraphSnapshot = {
         ...activeSnapshot,
         revision:
           typeof result?.revision === "number"
@@ -641,7 +611,10 @@ export function GraphCanvasRuntime({
             y: savedPosition.y,
           };
         }),
-      });
+      };
+
+      snapshotRef.current = nextSnapshot;
+      setSnapshot(nextSnapshot);
     },
     [setSnapshot]
   );
@@ -820,87 +793,6 @@ export function GraphCanvasRuntime({
     [onZoomStateChange]
   );
 
-  const syncViewportWithCamera = useCallback(
-    (options?: { immediate?: boolean }) => {
-      const sigma = sigmaRef.current;
-      const container = containerRef.current;
-      if (!sigma || !container) {
-        return;
-      }
-
-      if (!hasHydratedSigmaGraphRef.current) {
-        return;
-      }
-
-      const containerRect = container.getBoundingClientRect();
-      const projectedViewport = deriveGraphViewportFromSigma(sigma, {
-        width: containerRect.width,
-        height: containerRect.height,
-      });
-
-      if (!projectedViewport) {
-        return;
-      }
-
-      const commitViewport = (nextViewport: GraphViewportBounds) => {
-        const currentViewport = viewportRef.current;
-        const isUnchanged =
-          currentViewport.x === nextViewport.x &&
-          currentViewport.y === nextViewport.y &&
-          currentViewport.width === nextViewport.width &&
-          currentViewport.height === nextViewport.height;
-
-        if (isUnchanged) {
-          return;
-        }
-
-        viewportRef.current = { ...currentViewport, ...nextViewport };
-        updateViewport(nextViewport);
-      };
-
-      if (options?.immediate) {
-        pendingViewportSyncRef.current = null;
-        if (viewportSyncTimerRef.current !== null) {
-          clearTimeout(viewportSyncTimerRef.current);
-          viewportSyncTimerRef.current = null;
-        }
-
-        lastViewportSyncAtRef.current = Date.now();
-        commitViewport(projectedViewport);
-        return;
-      }
-
-      pendingViewportSyncRef.current = projectedViewport;
-      const now = Date.now();
-      const elapsed = now - lastViewportSyncAtRef.current;
-
-      if (elapsed >= VIEWPORT_SYNC_INTERVAL_MS) {
-        pendingViewportSyncRef.current = null;
-        lastViewportSyncAtRef.current = now;
-        commitViewport(projectedViewport);
-        return;
-      }
-
-      if (viewportSyncTimerRef.current !== null) {
-        return;
-      }
-
-      viewportSyncTimerRef.current = setTimeout(() => {
-        viewportSyncTimerRef.current = null;
-        const pendingViewport = pendingViewportSyncRef.current;
-        pendingViewportSyncRef.current = null;
-
-        if (!pendingViewport) {
-          return;
-        }
-
-        lastViewportSyncAtRef.current = Date.now();
-        commitViewport(pendingViewport);
-      }, VIEWPORT_SYNC_INTERVAL_MS - elapsed);
-    },
-    [updateViewport]
-  );
-
   const syncConceptPresentation = useCallback(() => {
     const sigma = sigmaRef.current;
     const layer = cardsLayerRef.current;
@@ -1011,33 +903,6 @@ export function GraphCanvasRuntime({
     hoverCardElement.style.pointerEvents = "none";
     hoverCardElement.style.setProperty("--sl-concept-card-accent", accentColor);
   }, []);
-
-  const syncStableSigmaBounds = useCallback(
-    (activeViewport: GraphViewport = viewportRef.current) => {
-      const sigma = sigmaRef.current;
-      if (!sigma) {
-        return;
-      }
-
-      const nextBounds = deriveStableSigmaBBox({
-        x: activeViewport.x,
-        y: activeViewport.y,
-        width: activeViewport.width,
-        height: activeViewport.height,
-      });
-      if (!nextBounds) {
-        return;
-      }
-
-      const currentBounds = sigma.getCustomBBox();
-      if (areStableSigmaBoundsEqual(currentBounds, nextBounds)) {
-        return;
-      }
-
-      sigma.setCustomBBox(nextBounds);
-    },
-    []
-  );
 
   const refreshDraggedConceptScene = useCallback((conceptId: string) => {
     const sigma = sigmaRef.current;
@@ -1230,8 +1095,8 @@ export function GraphCanvasRuntime({
       feedbackMessageTimerRef.current = null;
     }, MUTATION_FEEDBACK_DURATION_MS);
 
-    void fetchSnapshotForViewport(viewportRef.current);
-  }, [fetchSnapshotForViewport, mutationFeedback]);
+    void fetchLatestSnapshot();
+  }, [fetchLatestSnapshot, mutationFeedback]);
 
   useEffect(() => {
     if (!activeMutationFeedback) {
@@ -1310,7 +1175,7 @@ export function GraphCanvasRuntime({
 
       sigma.getGraph().setNodeAttribute(session.conceptId, "x", nextGraphPosition.x);
       sigma.getGraph().setNodeAttribute(session.conceptId, "y", nextGraphPosition.y);
-      updateConceptPosition(session.conceptId, nextGraphPosition);
+      syncLocalConceptPosition(session.conceptId, nextGraphPosition);
       refreshDraggedConceptScene(session.conceptId);
       syncConceptPresentation();
 
@@ -1334,8 +1199,8 @@ export function GraphCanvasRuntime({
     [
       refreshDraggedConceptScene,
       setDragState,
+      syncLocalConceptPosition,
       syncConceptPresentation,
-      updateConceptPosition,
     ]
   );
 
@@ -1473,7 +1338,7 @@ export function GraphCanvasRuntime({
           sigma
             .getGraph()
             .setNodeAttribute(session.conceptId, "y", persistedGraphPosition.y);
-          updateConceptPosition(session.conceptId, persistedGraphPosition);
+          syncLocalConceptPosition(session.conceptId, persistedGraphPosition);
           refreshDraggedConceptScene(session.conceptId);
           syncConceptPresentation();
 
@@ -1497,9 +1362,9 @@ export function GraphCanvasRuntime({
       persistConceptPosition,
       refreshDraggedConceptScene,
       resetDragState,
+      syncLocalConceptPosition,
       syncConceptPresentation,
       stopAutoPan,
-      updateConceptPosition,
     ]
   );
 
@@ -1515,6 +1380,10 @@ export function GraphCanvasRuntime({
         return;
       }
 
+      if (pointerType !== "touch") {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+
       const sigma = sigmaRef.current;
       if (!sigma || !sigma.getGraph().hasNode(conceptId)) {
         return;
@@ -1524,10 +1393,6 @@ export function GraphCanvasRuntime({
       clearPositionRetryTimer();
       clearAutoPanDelayTimer();
       stopAutoPan();
-      if (viewportFetchTimerRef.current !== null) {
-        clearTimeout(viewportFetchTimerRef.current);
-        viewportFetchTimerRef.current = null;
-      }
       snapshotRequestControllerRef.current?.abort();
       positionSaveRequestIdRef.current += 1;
 
@@ -1827,13 +1692,18 @@ export function GraphCanvasRuntime({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const graph = buildGraphologyInstance(EMPTY_GRAPH_SNAPSHOT, undefined, ghostsRef.current);
+    const initialSnapshot = snapshotRef.current ?? EMPTY_GRAPH_SNAPSHOT;
+    const initialGhosts = ghostsRef.current;
+    const graph = buildGraphologyInstance(initialSnapshot, undefined, initialGhosts);
 
     const sigma = createSigmaInstance({
       container: containerRef.current,
       graph,
     });
     sigmaRef.current = sigma;
+    ensureStableSigmaBBox(sigma, initialSnapshot, initialGhosts);
+    lastHydratedSnapshotRef.current = initialSnapshot;
+    lastHydratedGhostsRef.current = initialGhosts;
 
     const camera = sigma.getCamera();
     const baseRatio = camera.getState().ratio;
@@ -1908,7 +1778,7 @@ export function GraphCanvasRuntime({
             ghostsRef.current = nextGhosts;
             setGhosts(nextGhosts);
 
-            void fetchSnapshotForViewport(viewportRef.current);
+            void fetchLatestSnapshot();
             onOpenConceptInspectorRef.current(data.concept.id);
           })
           .catch((error) => {
@@ -1947,7 +1817,6 @@ export function GraphCanvasRuntime({
     });
 
     const handleCameraUpdated = () => {
-      syncViewportWithCamera();
       const ratio = sigma.getCamera().getState().ratio;
       updateZoomMode(ratio);
       syncConceptPresentation();
@@ -1957,7 +1826,6 @@ export function GraphCanvasRuntime({
     const resizeObserver =
       typeof ResizeObserver !== "undefined" && observedContainer
         ? new ResizeObserver(() => {
-            syncViewportWithCamera({ immediate: true });
             syncConceptPresentation();
           })
         : null;
@@ -1968,13 +1836,10 @@ export function GraphCanvasRuntime({
 
     sigma.on("afterRender", syncConceptPresentation);
     sigma.getCamera().on("updated", handleCameraUpdated);
-    syncStableSigmaBounds(viewportRef.current);
-    syncViewportWithCamera({ immediate: true });
     handleCameraUpdated();
 
     return () => {
       zoomPolicyRef.current = null;
-      hasHydratedSigmaGraphRef.current = false;
       resizeObserver?.disconnect();
       if (typeof window !== "undefined" && window.__SIGMA__ === sigma) {
         delete window.__SIGMA__;
@@ -1984,20 +1849,25 @@ export function GraphCanvasRuntime({
     };
   }, [
     clearGhostCreateErrorTimer,
-    fetchSnapshotForViewport,
+    ensureStableSigmaBBox,
+    fetchLatestSnapshot,
     handleConceptActivation,
     map.id,
     mergeCreatedConceptIntoSnapshot,
     setGhosts,
     showGhostCreateError,
     syncConceptPresentation,
-    syncStableSigmaBounds,
-    syncViewportWithCamera,
     updateZoomMode,
   ]);
 
   useEffect(() => {
     if (!snapshot) {
+      return;
+    }
+
+    const snapshotChanged = lastHydratedSnapshotRef.current !== snapshot;
+    const ghostsChanged = lastHydratedGhostsRef.current !== ghosts;
+    if (!snapshotChanged && !ghostsChanged) {
       return;
     }
 
@@ -2017,8 +1887,10 @@ export function GraphCanvasRuntime({
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
     const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghosts);
-    syncStableSigmaBounds(viewportRef.current);
+    ensureStableSigmaBBox(sigma, snapshot, ghosts, positionsRef.current);
     sigma.setGraph(nextGraph);
+    lastHydratedSnapshotRef.current = snapshot;
+    lastHydratedGhostsRef.current = ghosts;
 
     const boundedRatio = camera.getBoundedRatio(previousCameraState.ratio);
     camera.setState({
@@ -2028,17 +1900,14 @@ export function GraphCanvasRuntime({
       ratio: boundedRatio,
     });
 
-    hasHydratedSigmaGraphRef.current = true;
-    syncViewportWithCamera({ immediate: true });
     updateZoomMode(boundedRatio);
     syncConceptPresentation();
   }, [
     dragState.phase,
+    ensureStableSigmaBBox,
     ghosts,
     snapshot,
     syncConceptPresentation,
-    syncStableSigmaBounds,
-    syncViewportWithCamera,
     updateZoomMode,
   ]);
 
@@ -2076,6 +1945,8 @@ export function GraphCanvasRuntime({
       ? mutationStatusMessage
       : ghostCreateErrorMessage
       ? ghostCreateErrorMessage
+      : snapshotError
+      ? snapshotError
       : isSnapshotLoading && !snapshot
       ? messages.canvas.loadingSnapshot
       : dragState.phase === "saving"
@@ -2101,7 +1972,7 @@ export function GraphCanvasRuntime({
         </div>
       ) : null}
 
-      {snapshotError ? (
+      {snapshotError && !snapshot ? (
         <div className="canvas-empty-overlay is-error" style={{ zIndex: 10 }}>
           <Text size="2" color="red">
             {snapshotError}
@@ -2114,7 +1985,7 @@ export function GraphCanvasRuntime({
           className={
             mutationStatusMessage
               ? "canvas-runtime-status is-success"
-              : ghostCreateErrorMessage || dragState.phase === "error"
+              : ghostCreateErrorMessage || snapshotError || dragState.phase === "error"
                 ? "canvas-runtime-status is-error"
                 : "canvas-runtime-status"
           }
@@ -2124,7 +1995,7 @@ export function GraphCanvasRuntime({
             color={
               mutationStatusMessage
                 ? "green"
-                : ghostCreateErrorMessage || dragState.phase === "error"
+                : ghostCreateErrorMessage || snapshotError || dragState.phase === "error"
                   ? "red"
                   : "gray"
             }

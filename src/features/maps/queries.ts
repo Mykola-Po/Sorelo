@@ -5,11 +5,9 @@ import {
   count,
   desc,
   eq,
-  gte,
   ilike,
   inArray,
   isNull,
-  lte,
 } from "drizzle-orm";
 
 import {
@@ -30,7 +28,6 @@ import {
   workspaceMembers,
   workspaces,
 } from "@/shared/db/schema";
-import type { GraphViewport } from "@/features/map-runtime/types";
 import type { InspectorSelection } from "@/features/inspector/types";
 
 function normalizeLearningBatchType(batchType: string) {
@@ -275,6 +272,70 @@ export async function getMapGraphMetrics(mapId: string, workspaceId: string) {
   };
 }
 
+async function listFullGraphRecords(mapId: string, workspaceId: string) {
+  const [graphConcepts, graphLinks] = await Promise.all([
+    db
+      .select({
+        id: concepts.id,
+        title: concepts.title,
+        conceptType: concepts.conceptType,
+        summary: concepts.summary,
+        description: concepts.description,
+        x: concepts.x,
+        y: concepts.y,
+        updatedAt: concepts.updatedAt,
+      })
+      .from(concepts)
+      .where(
+        and(
+          eq(concepts.mapId, mapId),
+          eq(concepts.workspaceId, workspaceId),
+          isNull(concepts.archivedAt)
+        )
+      )
+      .orderBy(desc(concepts.updatedAt), concepts.title),
+    db
+      .select({
+        id: links.id,
+        sourceConceptId: links.sourceConceptId,
+        targetConceptId: links.targetConceptId,
+        relationType: links.relationType,
+        strength: links.strength,
+        description: links.description,
+        updatedAt: links.updatedAt,
+      })
+      .from(links)
+      .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId)))
+      .orderBy(desc(links.updatedAt)),
+  ]);
+
+  return {
+    concepts: graphConcepts,
+    links: graphLinks,
+  };
+}
+
+function serializeFullGraphSnapshot(
+  revision: number,
+  graphRecords: Awaited<ReturnType<typeof listFullGraphRecords>>
+) {
+  return {
+    revision,
+    counts: {
+      conceptCount: graphRecords.concepts.length,
+      linkCount: graphRecords.links.length,
+    },
+    concepts: graphRecords.concepts.map((concept) => ({
+      ...concept,
+      updatedAt: concept.updatedAt.toISOString(),
+    })),
+    links: graphRecords.links.map((link) => ({
+      ...link,
+      updatedAt: link.updatedAt.toISOString(),
+    })),
+  };
+}
+
 export async function getMapRevision(mapId: string, workspaceId: string) {
   const rows = await db
     .select({
@@ -366,10 +427,10 @@ export async function getMapWorkspaceChromeData(
     return null;
   }
 
-  const [availableMaps, graphMetrics, mapScenarios, mapRuns, learningFeed] =
+  const [availableMaps, graphRecords, mapScenarios, mapRuns, learningFeed] =
     await Promise.all([
       listMapsForWorkspace(workspaceId),
-      getMapGraphMetrics(mapId, workspaceId),
+      listFullGraphRecords(mapId, workspaceId),
       listScenarioSummariesForMap(mapId, workspaceId),
       listScenarioRunsForMap(mapId, workspaceId, {
         limit: 8,
@@ -378,14 +439,20 @@ export async function getMapWorkspaceChromeData(
       listSuggestionFeedForMap(workspaceId, mapId, 80),
     ]);
 
-  if (!graphMetrics) {
-    return null;
-  }
+  const initialSnapshot = serializeFullGraphSnapshot(
+    map.graphRevision,
+    graphRecords
+  );
 
   return {
     map,
     availableMaps,
-    graphMetrics,
+    graphMetrics: {
+      revision: initialSnapshot.revision,
+      conceptCount: initialSnapshot.counts.conceptCount,
+      linkCount: initialSnapshot.counts.linkCount,
+    },
+    initialSnapshot,
     scenarios: mapScenarios,
     runs: mapRuns,
     learningSuggestions: learningFeed.map((item) => ({
@@ -423,88 +490,15 @@ export async function getMapWorkspaceChromeData(
   };
 }
 
-export async function getGraphSnapshot(
-  mapId: string,
-  workspaceId: string,
-  viewport: GraphViewport
-) {
-  const metrics = await getMapGraphMetrics(mapId, workspaceId);
+export async function getFullGraphSnapshot(mapId: string, workspaceId: string) {
+  const map = await getMapWorkspace(mapId, workspaceId);
 
-  if (!metrics) {
+  if (!map) {
     return null;
   }
 
-  const minX = Math.max(0, viewport.x - viewport.overscan);
-  const minY = Math.max(0, viewport.y - viewport.overscan);
-  const maxX = viewport.x + viewport.width + viewport.overscan;
-  const maxY = viewport.y + viewport.height + viewport.overscan;
-
-  const visibleConcepts = await db
-    .select({
-      id: concepts.id,
-      title: concepts.title,
-      conceptType: concepts.conceptType,
-      summary: concepts.summary,
-      description: concepts.description,
-      x: concepts.x,
-      y: concepts.y,
-      updatedAt: concepts.updatedAt,
-    })
-    .from(concepts)
-    .where(
-      and(
-        eq(concepts.mapId, mapId),
-        eq(concepts.workspaceId, workspaceId),
-        isNull(concepts.archivedAt),
-        gte(concepts.x, minX),
-        lte(concepts.x, maxX),
-        gte(concepts.y, minY),
-        lte(concepts.y, maxY)
-      )
-    )
-    .orderBy(desc(concepts.updatedAt), concepts.title);
-
-  const visibleConceptIds = visibleConcepts.map((concept) => concept.id);
-
-  const visibleLinks =
-    visibleConceptIds.length > 0
-      ? await db
-          .select({
-            id: links.id,
-            sourceConceptId: links.sourceConceptId,
-            targetConceptId: links.targetConceptId,
-            relationType: links.relationType,
-            strength: links.strength,
-            description: links.description,
-            updatedAt: links.updatedAt,
-          })
-          .from(links)
-          .where(
-            and(
-              eq(links.mapId, mapId),
-              eq(links.workspaceId, workspaceId),
-              inArray(links.sourceConceptId, visibleConceptIds),
-              inArray(links.targetConceptId, visibleConceptIds)
-            )
-          )
-          .orderBy(desc(links.updatedAt))
-      : [];
-
-  return {
-    revision: metrics.revision,
-    counts: {
-      conceptCount: metrics.conceptCount,
-      linkCount: metrics.linkCount,
-    },
-    concepts: visibleConcepts.map((concept) => ({
-      ...concept,
-      updatedAt: concept.updatedAt.toISOString(),
-    })),
-    links: visibleLinks.map((link) => ({
-      ...link,
-      updatedAt: link.updatedAt.toISOString(),
-    })),
-  };
+  const graphRecords = await listFullGraphRecords(mapId, workspaceId);
+  return serializeFullGraphSnapshot(map.graphRevision, graphRecords);
 }
 
 export async function listConceptCatalogForMap(

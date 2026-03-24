@@ -134,6 +134,11 @@ async function createWorkspaceAndOpenMap(page: Page) {
   await page.goto(`/app/${workspaceSlug}/maps/${map.data.id}`);
 
   await expect(page.locator(".map-screen").first()).toBeVisible();
+
+  return {
+    mapId: map.data.id,
+    workspaceSlug,
+  };
 }
 
 test.describe("Map workspace canvas interactions", () => {
@@ -163,5 +168,65 @@ test.describe("Map workspace canvas interactions", () => {
     await expect(page.getByLabel("Title")).toBeVisible();
     await expect(page.getByLabel("Description")).toBeVisible();
     await expect(page.getByLabel("Concept type")).toBeVisible();
+  });
+
+  test("existing concepts stay visible after reload and inspector reads do not 500", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const { mapId } = await createWorkspaceAndOpenMap(page);
+    const failingRuntimeReads: Array<{ url: string; status: number }> = [];
+    page.on("response", (response) => {
+      if (!response.url().includes(`/api/maps/${mapId}/`)) {
+        return;
+      }
+
+      if (
+        (response.url().includes("/graph") ||
+          response.url().includes("/inspector")) &&
+        response.status() >= 500
+      ) {
+        failingRuntimeReads.push({
+          url: response.url(),
+          status: response.status(),
+        });
+      }
+    });
+
+    await page
+      .locator(".map-bottom-dock")
+      .getByRole("button", { name: "New Concept" })
+      .click();
+    await page.locator(".map-canvas-layer").click({
+      position: { x: 220, y: 220 },
+    });
+
+    await page.getByLabel("Title").fill("Stable Node");
+    await page.getByRole("button", { name: "Create Concept" }).click();
+    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.reload();
+    await expect(page.locator(".map-screen").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Stable Node/ })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const inspectorResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.url().includes(`/api/maps/${mapId}/inspector`) &&
+        response.url().includes("kind=concept") &&
+        response.status() === 200
+      );
+    });
+
+    await page.getByRole("button", { name: /Stable Node/ }).click();
+    await inspectorResponsePromise;
+    await expect(page.getByRole("heading", { name: "Stable Node" })).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(failingRuntimeReads).toEqual([]);
   });
 });

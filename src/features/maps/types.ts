@@ -9,6 +9,7 @@ import type {
   GraphCounts,
   GraphConceptNode,
   GraphLinkEdge,
+  GraphSnapshot,
   ScenarioPanelSummary,
   ScenarioRunPanelSummary,
 } from "@/features/map-runtime/types";
@@ -104,6 +105,7 @@ export type MapWorkspaceProps = {
   workspaceRole: WorkspaceRole;
   map: MapDetail;
   availableMaps: MapSummary[];
+  initialSnapshot: GraphSnapshot;
   graphMetrics: GraphMetrics;
   scenarios: ScenarioSummary[];
   runs: ScenarioRunSummary[];

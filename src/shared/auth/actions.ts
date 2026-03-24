@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
 
@@ -10,6 +10,7 @@ import {
   E2E_AUTH_USER_COOKIE,
   isE2EAuthBypassEnabled,
 } from "@/shared/auth/e2e";
+import { resolveAppOrigin } from "@/shared/auth/origin";
 import { createServerSupabaseClient } from "@/shared/auth/supabase/server";
 
 export async function signInWithGoogleAction() {
@@ -30,10 +31,20 @@ export async function signInWithGoogleAction() {
   }
 
   const supabase = await createServerSupabaseClient();
+  const headerStore = await headers();
+  const appOrigin = resolveAppOrigin(
+    {
+      origin: headerStore.get("origin"),
+      host: headerStore.get("host"),
+      xForwardedHost: headerStore.get("x-forwarded-host"),
+      xForwardedProto: headerStore.get("x-forwarded-proto"),
+    },
+    env.NEXT_PUBLIC_APP_URL
+  );
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+      redirectTo: `${appOrigin}/auth/callback`,
       queryParams: {
         access_type: "offline",
         prompt: "select_account",

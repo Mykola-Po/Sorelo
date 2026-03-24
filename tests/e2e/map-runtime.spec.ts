@@ -1,29 +1,46 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { GraphSnapshot } from "@/features/map-runtime/types";
 
-function createMockGraphSnapshot() {
+function createMockGraphSnapshot(): GraphSnapshot {
   return {
     revision: 1,
+    counts: {
+      conceptCount: 2,
+      linkCount: 1,
+    },
     concepts: [
       {
         id: "node-a",
-        mapId: "test-map",
         conceptType: "custom",
         title: "Node A",
         summary: null,
+        description: null,
         x: 100,
         y: 100,
+        updatedAt: "2026-03-24T00:00:00.000Z",
       },
       {
         id: "node-b",
-        mapId: "test-map",
         conceptType: "custom",
         title: "Node B",
         summary: null,
+        description: null,
         x: 300,
         y: 300,
+        updatedAt: "2026-03-24T00:00:00.000Z",
       },
     ],
-    links: [],
+    links: [
+      {
+        id: "link-a-b",
+        sourceConceptId: "node-a",
+        targetConceptId: "node-b",
+        relationType: "causes",
+        strength: 3,
+        description: null,
+        updatedAt: "2026-03-24T00:00:00.000Z",
+      },
+    ],
   };
 }
 
@@ -33,14 +50,6 @@ type CameraSnapshot = {
   ratio: number;
   minRatio: number;
   maxRatio: number;
-};
-
-type GraphRequestViewport = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  overscan: number;
 };
 
 type PositionSavePayload = {
@@ -263,27 +272,20 @@ async function dispatchTouchSequence(
 }
 
 test.describe("Map Runtime WebGL Canvas", () => {
-  let graphRequestViewports: GraphRequestViewport[] = [];
+  let graphRequestCount = 0;
   let positionSavePayloads: PositionSavePayload[] = [];
   let positionSaveFailuresRemaining = 0;
   let currentGraphSnapshot = createMockGraphSnapshot();
 
   test.beforeEach(async ({ page }) => {
-    graphRequestViewports = [];
+    graphRequestCount = 0;
     positionSavePayloads = [];
     positionSaveFailuresRemaining = 0;
     currentGraphSnapshot = createMockGraphSnapshot();
 
     // Intercept network requests made by GraphCanvasRuntime React component
     await page.route("**/api/maps/test-map/graph*", async (route) => {
-      const requestUrl = new URL(route.request().url());
-      graphRequestViewports.push({
-        x: Number(requestUrl.searchParams.get("x") ?? 0),
-        y: Number(requestUrl.searchParams.get("y") ?? 0),
-        width: Number(requestUrl.searchParams.get("width") ?? 0),
-        height: Number(requestUrl.searchParams.get("height") ?? 0),
-        overscan: Number(requestUrl.searchParams.get("overscan") ?? 0),
-      });
+      graphRequestCount += 1;
 
       await route.fulfill({
         status: 200,
@@ -377,25 +379,18 @@ test.describe("Map Runtime WebGL Canvas", () => {
     await page.waitForTimeout(500); 
   });
 
-  test("Initial graph fetch keeps baseline viewport dimensions", async () => {
-    expect(graphRequestViewports.length).toBeGreaterThan(0);
+  test("server-seeded snapshot renders without camera-driven graph fetches", async ({
+    page,
+  }) => {
+    await expect(page.getByRole("button", { name: /Node A/ }).first()).toBeVisible();
+    expect(graphRequestCount).toBe(0);
 
-    const initialViewport = graphRequestViewports[0];
-    expect(initialViewport).toBeDefined();
-    if (!initialViewport) {
-      return;
-    }
+    const before = graphRequestCount;
+    const { maxRatio } = await getCameraSnapshot(page);
+    await setCameraRatio(page, maxRatio);
+    await page.waitForTimeout(160);
 
-    expect(initialViewport.x).toBe(0);
-    expect(initialViewport.y).toBe(0);
-    expect(initialViewport.width).toBe(1280);
-    expect(initialViewport.height).toBe(860);
-    expect(initialViewport.overscan).toBe(320);
-
-    const hasCollapsedViewport = graphRequestViewports.some(
-      (viewport) => viewport.width <= 2 || viewport.height <= 2
-    );
-    expect(hasCollapsedViewport).toBe(false);
+    expect(graphRequestCount).toBe(before);
   });
 
   test("Clicking a Node opens the inspector", async ({ page }) => {
