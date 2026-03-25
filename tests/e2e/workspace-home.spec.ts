@@ -148,9 +148,7 @@ test.describe("workspace home", () => {
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}/inbox$`), {
       timeout: 30_000,
     });
-    await expect(
-      page.getByRole("heading", { name: "Inbox Workbench" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
     await page.getByRole("link", { name: "Overview" }).click();
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
       timeout: 30_000,

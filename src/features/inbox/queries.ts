@@ -18,7 +18,7 @@ import {
 import type {
   InboxItemDetailRecord,
   InboxItemRecord,
-  InboxOwnedClarificationRequestRecord,
+  InboxWorkspaceClarificationRequestRecord,
 } from "@/features/inbox/types";
 import { db } from "@/shared/db/client";
 import {
@@ -250,39 +250,45 @@ function sortInboxItemsDescending(items: InboxItemRecord[]) {
   });
 }
 
-export async function listInboxItemsForUserQuery(userId: string, limit = 50) {
+export async function listInboxItemsForWorkspaceQuery(
+  workspaceId: string,
+  limit = 50
+) {
   const itemRows = await db
     .select()
     .from(inboxItems)
-    .where(eq(inboxItems.userId, userId))
+    .where(eq(inboxItems.workspaceId, workspaceId))
     .orderBy(desc(inboxItems.updatedAt), desc(inboxItems.createdAt));
 
   return sortInboxItemsDescending(
     itemRows
       .map(mapInboxItemRecord)
-      .filter((item) => item.userId === userId)
+      .filter((item) => item.workspaceId === workspaceId)
   ).slice(0, limit);
 }
 
-export async function getInboxItemForUserQuery(userId: string, itemId: string) {
+export async function getInboxItemForWorkspaceQuery(
+  workspaceId: string,
+  itemId: string
+) {
   const [itemRow] = await db
     .select()
     .from(inboxItems)
     .where(eq(inboxItems.id, itemId))
     .limit(1);
 
-  if (!itemRow || itemRow.userId !== userId) {
+  if (!itemRow || itemRow.workspaceId !== workspaceId) {
     return null;
   }
 
   return mapInboxItemRecord(itemRow);
 }
 
-export async function getInboxItemDetailForUserQuery(
-  userId: string,
+export async function getInboxItemDetailForWorkspaceQuery(
+  workspaceId: string,
   itemId: string
 ) {
-  const item = await getInboxItemForUserQuery(userId, itemId);
+  const item = await getInboxItemForWorkspaceQuery(workspaceId, itemId);
   if (!item) {
     return null;
   }
@@ -290,8 +296,8 @@ export async function getInboxItemDetailForUserQuery(
   return getInboxItemDetailQuery(itemId);
 }
 
-export async function getInboxClarificationRequestForUserQuery(
-  userId: string,
+export async function getInboxClarificationRequestForWorkspaceQuery(
+  workspaceId: string,
   requestId: string
 ) {
   const [requestRow] = await db
@@ -310,14 +316,14 @@ export async function getInboxClarificationRequestForUserQuery(
     .where(eq(inboxItems.id, requestRow.itemId))
     .limit(1);
 
-  if (!itemRow || itemRow.userId !== userId) {
+  if (!itemRow || itemRow.workspaceId !== workspaceId) {
     return null;
   }
 
-  const request: InboxOwnedClarificationRequestRecord = {
+  const request: InboxWorkspaceClarificationRequestRecord = {
     id: requestRow.id,
     itemId: requestRow.itemId,
-    userId: itemRow.userId,
+    workspaceId,
     question: requestRow.question,
     reason: requestRow.reason,
     status: requestRow.status,

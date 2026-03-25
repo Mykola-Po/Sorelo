@@ -14,6 +14,9 @@ type WorkspaceSectionNavProps = {
   currentSection: WorkspaceSectionKey;
 };
 
+// Inbox is intentionally visible here as a workspace section in the current
+// release. Review/apply continue in the target map's Learning panel, so Inbox
+// stays secondary to the primary map navigation rather than replacing it.
 const workspaceSections: Array<{
   key: WorkspaceSectionKey;
   label: string;

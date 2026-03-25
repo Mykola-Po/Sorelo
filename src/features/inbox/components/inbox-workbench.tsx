@@ -1247,8 +1247,8 @@ export function InboxWorkbench({
       />
 
       <PageHeader
-        title="Inbox Workbench"
-        description={`Internal triage surface for raw Inbox items in ${workspaceName}. Data is scoped to the current signed-in user.`}
+        title="Inbox"
+        description={`Workspace intake queue for raw notes, transcripts, and clarification reruns in ${workspaceName}. Review and apply happen in the Learning panel after promotion.`}
       />
 
       <div className="sl-inbox-grid">
@@ -1264,13 +1264,13 @@ export function InboxWorkbench({
           </SectionCard>
 
           <SectionCard
-            title="Latest items"
-            description="The latest 50 user-scoped Inbox items ordered by recent activity."
+            title="Workspace queue"
+            description="The latest 50 Inbox items in this workspace ordered by recent activity."
           >
             {items.length === 0 ? (
               <EmptyState
                 title="No inbox items yet"
-                description="Create the first Inbox item from the composer to start the internal triage flow."
+                description="Create the first Inbox item from the composer to start the workspace intake flow."
               />
             ) : (
               <ScrollArea

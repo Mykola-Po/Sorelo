@@ -246,9 +246,7 @@ test.describe("Inbox canonical provenance", () => {
     const { workspaceSlug, mapId } = await createWorkspaceAndOpenMap(page, userId);
 
     await page.goto(`/app/${workspaceSlug}/inbox`);
-    await expect(
-      page.getByRole("heading", { name: "Inbox Workbench" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
     await page.locator('textarea[name="rawText"]').fill(rawText);
     await page.getByRole("button", { name: "Create inbox item" }).click();

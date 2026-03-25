@@ -234,10 +234,10 @@ export type InboxItemDetailRecord = {
   workflowEvents: InboxWorkflowEventRecord[];
 };
 
-export type InboxOwnedClarificationRequestRecord = {
+export type InboxWorkspaceClarificationRequestRecord = {
   id: string;
   itemId: string;
-  userId: string;
+  workspaceId: string;
   question: string;
   reason: string;
   status: InboxClarificationStatus;

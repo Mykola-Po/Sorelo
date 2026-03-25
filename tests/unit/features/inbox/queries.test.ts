@@ -64,16 +64,17 @@ vi.mock("@/shared/db/client", () => ({
 }));
 
 import {
-  getInboxClarificationRequestForUserQuery,
-  getInboxItemDetailForUserQuery,
+  getInboxClarificationRequestForWorkspaceQuery,
+  getInboxItemDetailForWorkspaceQuery,
   getInboxItemDetailQuery,
-  getInboxItemForUserQuery,
-  listInboxItemsForUserQuery,
+  getInboxItemForWorkspaceQuery,
+  listInboxItemsForWorkspaceQuery,
 } from "@/features/inbox/queries";
 
 function createItemRow(input: {
   id: string;
   userId: string;
+  workspaceId?: string;
   rawText?: string;
   normalizedText?: string | null;
   status?: string;
@@ -84,6 +85,9 @@ function createItemRow(input: {
   return {
     id: input.id,
     userId: input.userId,
+    workspaceId:
+      input.workspaceId ?? "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    mapId: null,
     sourceType: "manual_note",
     sourceRef: null,
     rawText: input.rawText ?? `raw-${input.id}`,
@@ -427,8 +431,8 @@ describe("inbox queries", () => {
     ).toBe("inbox-routing.v1");
   });
 
-  it("lists only the current user's items in newest-first order", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  it("lists only the current workspace's items in newest-first order", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const olderCreatedAt = new Date("2026-03-20T10:00:00.000Z");
     const newerCreatedAt = new Date("2026-03-20T11:00:00.000Z");
     const newestUpdatedAt = new Date("2026-03-20T13:00:00.000Z");
@@ -436,59 +440,64 @@ describe("inbox queries", () => {
     tableResults.set(inboxItems, [
       createItemRow({
         id: "11111111-1111-4111-8111-111111111111",
-        userId,
+        userId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        workspaceId,
         createdAt: olderCreatedAt,
         updatedAt: olderCreatedAt,
       }),
       createItemRow({
         id: "22222222-2222-4222-8222-222222222222",
-        userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        userId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         createdAt: newerCreatedAt,
         updatedAt: newestUpdatedAt,
       }),
       createItemRow({
         id: "33333333-3333-4333-8333-333333333333",
-        userId,
+        userId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        workspaceId,
         createdAt: newerCreatedAt,
         updatedAt: newestUpdatedAt,
       }),
     ]);
 
-    const items = await listInboxItemsForUserQuery(userId);
+    const items = await listInboxItemsForWorkspaceQuery(workspaceId);
 
     expect(items.map((item) => item.id)).toEqual([
       "33333333-3333-4333-8333-333333333333",
       "11111111-1111-4111-8111-111111111111",
     ]);
-    expect(items.every((item) => item.userId === userId)).toBe(true);
+    expect(items.every((item) => item.workspaceId === workspaceId)).toBe(true);
   });
 
-  it("returns null when a foreign inbox item is requested", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  it("returns null when an inbox item from another workspace is requested", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const itemId = "11111111-1111-4111-8111-111111111111";
 
     tableResults.set(inboxItems, [
       createItemRow({
         id: itemId,
         userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        workspaceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       }),
     ]);
 
-    const item = await getInboxItemForUserQuery(userId, itemId);
-    const detail = await getInboxItemDetailForUserQuery(userId, itemId);
+    const item = await getInboxItemForWorkspaceQuery(workspaceId, itemId);
+    const detail = await getInboxItemDetailForWorkspaceQuery(workspaceId, itemId);
 
     expect(item).toBeNull();
     expect(detail).toBeNull();
   });
 
-  it("returns owned item detail when the selected item belongs to the user", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  it("returns workspace item detail when the selected item belongs to the current workspace", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const itemId = "11111111-1111-4111-8111-111111111111";
 
     tableResults.set(inboxItems, [
       createItemRow({
         id: itemId,
-        userId,
+        userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        workspaceId,
         rawText: "Owned item",
       }),
     ]);
@@ -501,15 +510,15 @@ describe("inbox queries", () => {
     tableResults.set(inboxClarificationAnswers, []);
     tableResults.set(inboxWorkflowEvents, []);
 
-    const detail = await getInboxItemDetailForUserQuery(userId, itemId);
+    const detail = await getInboxItemDetailForWorkspaceQuery(workspaceId, itemId);
 
     expect(detail?.item.id).toBe(itemId);
-    expect(detail?.item.userId).toBe(userId);
+    expect(detail?.item.workspaceId).toBe(workspaceId);
     expect(detail?.attempts).toEqual([]);
   });
 
-  it("rejects clarification requests that belong to another user", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  it("rejects clarification requests that belong to another workspace", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const itemId = "11111111-1111-4111-8111-111111111111";
     const requestId = "22222222-2222-4222-8222-222222222222";
 
@@ -527,19 +536,20 @@ describe("inbox queries", () => {
       createItemRow({
         id: itemId,
         userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        workspaceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       }),
     ]);
 
-    const request = await getInboxClarificationRequestForUserQuery(
-      userId,
+    const request = await getInboxClarificationRequestForWorkspaceQuery(
+      workspaceId,
       requestId
     );
 
     expect(request).toBeNull();
   });
 
-  it("returns owned clarification requests with the parent user id", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  it("returns workspace clarification requests with the parent workspace id", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const itemId = "11111111-1111-4111-8111-111111111111";
     const requestId = "22222222-2222-4222-8222-222222222222";
     const answeredAt = new Date("2026-03-21T09:00:00.000Z");
@@ -557,19 +567,20 @@ describe("inbox queries", () => {
     tableResults.set(inboxItems, [
       createItemRow({
         id: itemId,
-        userId,
+        userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        workspaceId,
       }),
     ]);
 
-    const request = await getInboxClarificationRequestForUserQuery(
-      userId,
+    const request = await getInboxClarificationRequestForWorkspaceQuery(
+      workspaceId,
       requestId
     );
 
     expect(request).toEqual({
       id: requestId,
       itemId,
-      userId,
+      workspaceId,
       question: "What exactly triggers the reaction first?",
       reason: "Missing trigger detail.",
       status: "answered",

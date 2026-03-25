@@ -2,28 +2,38 @@
 
 ## Purpose
 
-This document describes the current Inbox AI Core foundation that now exists in code as an internal ingestion and routing layer.
+This document describes the current Inbox AI Core foundation and the release boundary for the user-facing Inbox section.
 
 It is descriptive of the present implementation, not a promise that the full Inbox UI or orchestration runtime is already active.
 
+## Release Decision
+
+Date: 2026-03-25
+
+For the current release, Inbox is a user-facing workspace section built on top of the internal Inbox AI Core.
+
+The release decision is:
+
+- User: the signed-in workspace member who captures raw notes, transcript fragments, or imports that may become map changes.
+- Queue unit: workspace queue. `/app/[workspaceSlug]/inbox` lists Inbox items for the current workspace, not a cross-workspace personal feed.
+- Review/apply: Inbox owns intake, clarification, routing, and inspection. Review and canonical apply happen in the Learning panel inside the target map workspace after promoted packets materialize review artifacts.
+- Navigation: Inbox must stay visible in workspace section navigation. It remains outside the top-level primary product nav while Maps stays the primary working loop.
+
 ## Current Boundary
 
-Inbox AI Core is internal-only and separate from the canonical public Sorelo product model.
+Inbox AI Core remains an internal ingestion and routing layer and separate from the canonical public Sorelo product model.
 
 It does not replace Maps, Concepts, Links, Inspector, or Scenarios.
 
-The current Inbox UI at `/app/[workspaceSlug]/inbox` is also internal-only.
+The current Inbox UI at `/app/[workspaceSlug]/inbox` is user-facing for signed-in workspace members.
 
-It is a hidden workbench for ingestion tracing, clarification reruns, packet inspection, and review-bridge diagnostics.
+It is the workspace-visible intake section for ingestion tracing, clarification reruns, packet inspection, and review-bridge diagnostics before review/apply.
 
-It is not yet a workspace-visible product feature and should stay out of primary navigation until all of the following exist:
+It does not replace the map-first product loop and it does not own final canonical review/apply.
 
-- a workspace-scoped queue instead of a user-scoped latest-items list
-- role-aware review ownership and permissions
-- filters and status views that support actual review operations
-- an explicit review/apply workflow in Inbox, or a clearly productized handoff
+Today the queue is workspace-scoped and review/apply is carried by the Learning panel inside the target map workspace.
 
-Today the canonical accept/reject/apply flow is carried by the Learning review surface, while Inbox Workbench remains the internal trace surface around that bridge.
+Inbox should remain visible in workspace navigation even while the review handoff stays separate.
 
 Its current role is to define how raw input can be:
 

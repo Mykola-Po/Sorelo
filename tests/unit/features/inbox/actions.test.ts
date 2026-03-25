@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   answerInboxClarificationCommandMock,
   createInboxItemCommandMock,
-  getInboxClarificationRequestForUserQueryMock,
-  getInboxItemForUserQueryMock,
+  getInboxClarificationRequestForWorkspaceQueryMock,
+  getInboxItemForWorkspaceQueryMock,
   processInboxItemCommandMock,
   redirectMock,
   revalidatePathMock,
@@ -12,8 +12,8 @@ const {
 } = vi.hoisted(() => ({
   answerInboxClarificationCommandMock: vi.fn(),
   createInboxItemCommandMock: vi.fn(),
-  getInboxClarificationRequestForUserQueryMock: vi.fn(),
-  getInboxItemForUserQueryMock: vi.fn(),
+  getInboxClarificationRequestForWorkspaceQueryMock: vi.fn(),
+  getInboxItemForWorkspaceQueryMock: vi.fn(),
   processInboxItemCommandMock: vi.fn(),
   redirectMock: vi.fn((href: string) => {
     const error = new Error("NEXT_REDIRECT");
@@ -49,9 +49,9 @@ vi.mock("@/features/inbox/commands", () => ({
 }));
 
 vi.mock("@/features/inbox/queries", () => ({
-  getInboxClarificationRequestForUserQuery:
-    getInboxClarificationRequestForUserQueryMock,
-  getInboxItemForUserQuery: getInboxItemForUserQueryMock,
+  getInboxClarificationRequestForWorkspaceQuery:
+    getInboxClarificationRequestForWorkspaceQueryMock,
+  getInboxItemForWorkspaceQuery: getInboxItemForWorkspaceQueryMock,
 }));
 
 import {
@@ -123,8 +123,8 @@ describe("inbox workbench actions", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith("/app/demo-workspace/inbox");
   });
 
-  it("rejects process requests for foreign inbox items", async () => {
-    getInboxItemForUserQueryMock.mockResolvedValue(null);
+  it("rejects process requests for inbox items outside the current workspace", async () => {
+    getInboxItemForWorkspaceQueryMock.mockResolvedValue(null);
 
     const result = await processInboxWorkbenchItemAction(
       { status: "idle" },
@@ -141,8 +141,8 @@ describe("inbox workbench actions", () => {
     expect(processInboxItemCommandMock).not.toHaveBeenCalled();
   });
 
-  it("rejects clarification answers for foreign requests", async () => {
-    getInboxClarificationRequestForUserQueryMock.mockResolvedValue(null);
+  it("rejects clarification answers for requests outside the current workspace", async () => {
+    getInboxClarificationRequestForWorkspaceQueryMock.mockResolvedValue(null);
 
     const result = await answerInboxClarificationAction(
       { status: "idle" },
@@ -161,10 +161,10 @@ describe("inbox workbench actions", () => {
   });
 
   it("surfaces command conflicts from clarification answers as visible form errors", async () => {
-    getInboxClarificationRequestForUserQueryMock.mockResolvedValue({
+    getInboxClarificationRequestForWorkspaceQueryMock.mockResolvedValue({
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       itemId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       question: "What exactly triggers the reaction first?",
       reason: "Missing trigger detail.",
       status: "pending",

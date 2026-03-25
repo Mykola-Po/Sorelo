@@ -31,7 +31,7 @@ The landing page currently presents Sorelo as:
 
 The landing page is a positioning surface, not the product canon.
 
-## Internal Product Surfaces
+## Authenticated Product Surfaces
 
 ### App Shell
 
@@ -49,18 +49,18 @@ The maps home surface reinforces:
 
 The active map workspace positions the canvas as primary and the Inspector and Scenario panels as secondary bounded surfaces.
 
-### Inbox Workbench
+### Inbox
 
-The Inbox route is currently a hidden internal surface, not a primary product surface.
+Inbox is a workspace-visible intake section inside the authenticated product area.
 
-It is useful for internal creation, processing, clarification, and inspection of Inbox items, but it does not yet represent a complete workspace review product.
+It is user-facing for signed-in workspace members who turn raw notes, transcript snippets, and imports into reviewable structure for a map.
 
-Inbox should remain outside the primary navigation until it carries product meaning through:
+Its current release meaning is:
 
-- workspace-visible queue semantics
-- roles or ownership for review work
-- filters and status views for review operations
-- an explicit review/apply workflow instead of trace-only inspection
+- the queue is scoped to the current workspace
+- clarification, routing, provenance inspection, and packet inspection happen in Inbox
+- review/apply happen in the Learning panel inside the target map workspace
+- Inbox stays visible in workspace section navigation, but it does not need a top-level primary-nav tab while Maps remains the primary loop
 
 ## Localization Rule
 
@@ -70,6 +70,6 @@ They should preserve the canonical product meaning, not reinterpret it per local
 
 ## Current Guardrails
 
-- Public and internal surfaces should say `Sorelo`, not redefine the product through the `sorela` codename.
+- Public and authenticated surfaces should say `Sorelo`, not redefine the product through the `sorela` codename.
 - Surfaces should not revive `projects/tasks` as active product vocabulary.
 - Copy can simplify, but it must not blur explainability, structure, or deterministic Scenario behavior.

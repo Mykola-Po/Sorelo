@@ -101,7 +101,7 @@
           "status": "existing",
           "owner": "shared",
           "path": "handbook/surfaces/current-user-flows.md",
-          "summary": "Current sign-in, workspace, map, Inspector, and Scenario flows derived from the active product model.",
+          "summary": "Current sign-in, workspace, inbox, map, Inspector, and Scenario flows derived from the active product model.",
           "tags": ["surfaces", "flows", "maps", "scenarios"],
           "derivedFrom": ["product-spec", "implementation-principles"]
         },
@@ -157,7 +157,7 @@
           "status": "existing",
           "owner": "engineering",
           "path": "handbook/executable/inbox-ai-core.md",
-          "summary": "Current internal Inbox foundation for app_private persistence, worker contracts, routing state machine, and workflow definition.",
+          "summary": "Current Inbox AI Core and workspace-visible Inbox release boundary for app_private persistence, routing state machine, and the Learning review bridge.",
           "tags": ["executable", "schema", "inbox", "ai-core", "workflow"]
         },
         {

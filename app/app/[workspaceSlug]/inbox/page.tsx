@@ -2,14 +2,14 @@ import { z } from "zod";
 
 import { InboxWorkbench } from "@/features/inbox/components/inbox-workbench";
 import {
-  getInboxItemDetailForUserQuery,
-  listInboxItemsForUserQuery,
+  getInboxItemDetailForWorkspaceQuery,
+  listInboxItemsForWorkspaceQuery,
 } from "@/features/inbox/queries";
 import { listMapsForWorkspace } from "@/features/maps/queries";
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 
-// Hidden route by design: Inbox stays internal until review/apply becomes a
-// workspace-visible workflow with queue semantics and role-aware review.
+// Inbox is a workspace-visible intake section in the current release.
+// Review and canonical apply continue in the target map's Learning panel.
 export const dynamic = "force-dynamic";
 
 const searchParamsSchema = z.object({
@@ -30,9 +30,9 @@ export default async function InboxWorkbenchPage({
   searchParams,
 }: InboxWorkbenchPageProps) {
   const { workspaceSlug } = await params;
-  const { user, access } = await requireWorkspaceAccess(workspaceSlug);
+  const { access } = await requireWorkspaceAccess(workspaceSlug);
   const [items, availableMaps] = await Promise.all([
-    listInboxItemsForUserQuery(user.id),
+    listInboxItemsForWorkspaceQuery(access.workspace.id),
     listMapsForWorkspace(access.workspace.id),
   ]);
   const rawSearchParams = await searchParams;
@@ -56,17 +56,23 @@ export default async function InboxWorkbenchPage({
         selectionError =
           "The requested Inbox item id is invalid. Pick an item from the list instead.";
       } else {
-        detail = await getInboxItemDetailForUserQuery(user.id, selectedItemId);
+        detail = await getInboxItemDetailForWorkspaceQuery(
+          access.workspace.id,
+          selectedItemId
+        );
 
         if (!detail) {
           selectionError =
-            "The requested Inbox item does not exist or is not available to the current user.";
+            "The requested Inbox item does not exist or is not available in this workspace.";
         }
       }
     }
   } else if (items[0]) {
     selectedItemId = items[0].id;
-    detail = await getInboxItemDetailForUserQuery(user.id, items[0].id);
+    detail = await getInboxItemDetailForWorkspaceQuery(
+      access.workspace.id,
+      items[0].id
+    );
   }
 
   return (

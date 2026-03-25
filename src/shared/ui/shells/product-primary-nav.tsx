@@ -37,8 +37,9 @@ export function ProductPrimaryNav({
     return null;
   }
 
-  // Inbox is intentionally excluded here while it remains a hidden internal
-  // workbench rather than a workspace-visible review/apply feature.
+  // Inbox stays in workspace section navigation, not the top-level primary
+  // nav, because it is a secondary intake surface and review/apply continue
+  // in the target map's Learning panel.
   const mapsHref = workspaceMapsPath(workspaceSlug);
   const membersHref = workspaceMembersPath(workspaceSlug);
   const currentPath = normalizePath(pathname ?? "");

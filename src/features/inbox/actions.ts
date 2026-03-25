@@ -12,8 +12,8 @@ import {
   processInboxItemCommand,
 } from "@/features/inbox/commands";
 import {
-  getInboxClarificationRequestForUserQuery,
-  getInboxItemForUserQuery,
+  getInboxClarificationRequestForWorkspaceQuery,
+  getInboxItemForWorkspaceQuery,
 } from "@/features/inbox/queries";
 import {
   inboxWorkbenchAnswerActionSchema,
@@ -98,8 +98,11 @@ export async function processInboxWorkbenchItemAction(
   }
 
   try {
-    const { user } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
-    const item = await getInboxItemForUserQuery(user.id, parsed.data.itemId);
+    const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const item = await getInboxItemForWorkspaceQuery(
+      access.workspace.id,
+      parsed.data.itemId
+    );
 
     if (!item) {
       return toActionError<ProcessInboxWorkbenchActionFields>(
@@ -140,9 +143,9 @@ export async function answerInboxClarificationAction(
   }
 
   try {
-    const { user } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
-    const request = await getInboxClarificationRequestForUserQuery(
-      user.id,
+    const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const request = await getInboxClarificationRequestForWorkspaceQuery(
+      access.workspace.id,
       parsed.data.requestId
     );
 

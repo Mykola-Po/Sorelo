@@ -201,9 +201,7 @@ test.describe("Inbox workbench", () => {
       "The reaction starts when the criticism comes from a close partner in front of other people.";
 
     await page.goto(`/app/${workspaceSlug}/inbox`);
-    await expect(
-      page.getByRole("heading", { name: "Inbox Workbench" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
     await page.locator('textarea[name="rawText"]').fill(rawText);
     await page.getByRole("button", { name: "Create inbox item" }).click();
