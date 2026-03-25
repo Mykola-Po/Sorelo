@@ -1,0 +1,39 @@
+
+> sorela@0.1.0 dev
+> next dev --port 3101
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3101
+- Network:       http://10.68.9.70:3101
+- Environments: .env.local
+
+✓ Starting...
+✓ Ready in 2.7s
+ GET /e2e/map-runtime 200 in 1654ms (compile: 1241ms, render: 413ms)
+⨯ Error: Authentication required.
+    at requireMapRuntimeAccess (src\features\map-runtime\server.ts:13:11)
+    at async GET (app\api\maps\[mapId]\graph\route.ts:17:22)
+  11 |
+  12 |   if (!user) {
+> 13 |     throw new Error("Authentication required.");
+     |           ^
+  14 |   }
+  15 |
+  16 |   const access = await requireMapMembershipById(mapId, user.id);
+ GET /api/maps/test-map/graph?x=0&y=0&width=1280&height=860&overscan=320 500 in 1854ms (compile: 1528ms, render: 326ms)
+ GET / 200 in 1328ms (compile: 257ms, render: 1071ms)
+⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ GET /app 307 in 5.3s (compile: 455ms, render: 4.8s)
+ GET /app/e2e-cycle-1773520690249 200 in 5.4s (compile: 1105ms, render: 4.3s)
+ GET /app/e2e-cycle-1773520690249/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953 200 in 5.1s (compile: 1035ms, render: 4.1s)
+ GET /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/concept-catalog 200 in 4.6s (compile: 1192ms, render: 3.4s)
+ GET /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/concept-catalog 200 in 4.7s (compile: 1200ms, render: 3.5s)
+ GET /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/graph?x=0&y=0&width=1280&height=860&overscan=320 200 in 4.7s (compile: 21ms, render: 4.7s)
+ PATCH /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/concepts/positions 400 in 3.5s (compile: 1665ms, render: 1837ms)
+ PATCH /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/concepts/positions 400 in 1401ms (compile: 16ms, render: 1385ms)
+✓ Compiled in 74ms
+ GET /app/e2e-cycle-1773520690249/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953 200 in 6.4s (compile: 28ms, render: 6.4s)
+ GET /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/concept-catalog 200 in 4.5s (compile: 16ms, render: 4.5s)
+ GET /api/maps/62515783-3fc0-482c-ab7a-ac7eccd9f953/graph?x=0&y=0&width=1280&height=860&overscan=320 200 in 4.7s (compile: 16ms, render: 4.7s)
+[?25h

@@ -1,0 +1,161 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e9]: Sorelo
+      - generic [ref=e11]:
+        - combobox "Workspace" [ref=e12]:
+          - generic [ref=e13]: Provenance Workspace 1774205705699
+          - img [ref=e14]
+        - combobox [ref=e16]
+      - generic [ref=e17]:
+        - navigation "Primary navigation" [ref=e18]:
+          - link "Maps" [ref=e19] [cursor=pointer]:
+            - /url: /app/provenance-workspace-1774205705699
+          - link "Members" [ref=e20] [cursor=pointer]:
+            - /url: /app/provenance-workspace-1774205705699/settings/members
+        - button "Sorelo E2E User" [ref=e21]:
+          - generic [ref=e23]: S
+    - generic [ref=e26]:
+      - generic [ref=e28]:
+        - heading "Inbox Workbench" [level=1] [ref=e29]
+        - generic [ref=e30]: Internal triage surface for raw Inbox items in Provenance Workspace 1774205705699. Data is scoped to the current signed-in user.
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e34]:
+            - generic [ref=e36]:
+              - heading "Create Inbox item" [level=2] [ref=e37]
+              - generic [ref=e38]: Pick a target Map first, then paste a raw note or transcript snippet to start the triage loop.
+            - generic [ref=e40]:
+              - generic [ref=e41]:
+                - generic [ref=e42]: Target Map
+                - combobox [ref=e43]:
+                  - option "Provenance Map 1774205705699" [selected]
+              - generic [ref=e44]:
+                - generic [ref=e45]: Source type
+                - combobox [ref=e46]:
+                  - option "manual_note" [selected]
+                  - option "transcript"
+                  - option "chat"
+                  - option "upload"
+                  - option "import"
+              - generic [ref=e47]:
+                - generic [ref=e48]: Raw input
+                - textbox "Paste a raw note, transcript snippet, or observation." [ref=e50]
+              - button "Create inbox item" [ref=e51]
+          - generic [ref=e53]:
+            - generic [ref=e55]:
+              - heading "Latest items" [level=2] [ref=e56]
+              - generic [ref=e57]: The latest 50 user-scoped Inbox items ordered by recent activity.
+            - link "Mar 22, 2026, 08:56 PM 5bce773a-3503-4eca-b3ae-3b803e432bcd received Public criticism from close people causes withdrawal and a defensive reaction. What exactly triggers the reaction fir... manual_note raw only" [ref=e62] [cursor=pointer]:
+              - /url: /app/provenance-workspace-1774205705699/inbox?item=5bce773a-3503-4eca-b3ae-3b803e432bcd
+              - generic [ref=e63]:
+                - generic [ref=e64]:
+                  - generic [ref=e65]:
+                    - generic [ref=e66]: Mar 22, 2026, 08:56 PM
+                    - generic [ref=e67]: 5bce773a-3503-4eca-b3ae-3b803e432bcd
+                  - generic [ref=e69]: received
+                - generic [ref=e70]: Public criticism from close people causes withdrawal and a defensive reaction. What exactly triggers the reaction fir...
+                - generic [ref=e71]:
+                  - generic [ref=e72]: manual_note
+                  - generic [ref=e73]: raw only
+        - generic [ref=e77]:
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]:
+                - heading "Item detail" [level=2] [ref=e82]
+                - generic [ref=e83]: Inspect the current status, raw evidence, and processing state for the selected item.
+              - button "Process item" [ref=e85]
+            - generic [ref=e86]:
+              - generic [ref=e87]: Item ID5bce773a-3503-4eca-b3ae-3b803e432bcd
+              - generic [ref=e88]:
+                - text: Status
+                - generic [ref=e90]: received
+              - generic [ref=e91]: Sourcemanual_note
+              - generic [ref=e92]: CreatedMar 22, 2026, 08:56 PM
+              - generic [ref=e93]: UpdatedMar 22, 2026, 08:56 PM
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - generic [ref=e96]: Raw text
+                - generic [ref=e97]: Public criticism from close people causes withdrawal and a defensive reaction. What exactly triggers the reaction first? We need to know who is involved before promotion.
+              - generic [ref=e98]:
+                - generic [ref=e99]: Normalized text
+                - generic [ref=e100]: Not produced yet.
+          - generic [ref=e102]:
+            - generic [ref=e104]:
+              - heading "Fragments" [level=2] [ref=e105]
+              - generic [ref=e106]: Fragments are grouped by provenance so raw evidence stays separate from clarification answers.
+            - generic [ref=e108]:
+              - heading "No fragments yet" [level=3] [ref=e109]
+              - generic [ref=e110]: Fragments appear after the item has been segmented or rerun with clarification context.
+          - generic [ref=e112]:
+            - generic [ref=e114]:
+              - heading "Hypotheses and atoms" [level=2] [ref=e115]
+              - generic [ref=e116]: Review the current interpreted structure before any canonical handoff exists.
+            - generic [ref=e117]:
+              - generic [ref=e118]:
+                - heading "Hypotheses" [level=3] [ref=e119]
+                - generic [ref=e120]: No hypotheses have been produced yet.
+              - generic [ref=e121]:
+                - heading "Atoms" [level=3] [ref=e122]
+                - generic [ref=e123]: No atoms have been produced yet.
+          - generic [ref=e125]:
+            - generic [ref=e127]:
+              - heading "Structured packets" [level=2] [ref=e128]
+              - generic [ref=e129]: Packets stay as routed evidence containers. Canonical changes now depend on explicit review artifacts in the bridge below.
+            - generic [ref=e131]:
+              - heading "No structured packet yet" [level=3] [ref=e132]
+              - generic [ref=e133]: Packets appear once the item reaches a non-discard route.
+          - generic [ref=e135]:
+            - generic [ref=e137]:
+              - heading "Review bridge" [level=2] [ref=e138]
+              - generic [ref=e139]: Each user decision is recorded per artifact first. Only resolved artifacts can trigger canonical apply.
+            - generic [ref=e141]:
+              - heading "No review artifacts yet" [level=3] [ref=e142]
+              - generic [ref=e143]: Promoted packets materialize here as Learning review batches before anything can touch the canonical layer.
+          - generic [ref=e145]:
+            - generic [ref=e147]:
+              - heading "Clarification" [level=2] [ref=e148]
+              - generic [ref=e149]: Review the current request and answer history for this item.
+            - generic [ref=e151]:
+              - heading "No clarification history" [level=3] [ref=e152]
+              - generic [ref=e153]: This item has not produced a clarification request.
+          - generic [ref=e155]:
+            - generic [ref=e157]:
+              - heading "Execution attempts" [level=2] [ref=e158]
+              - generic [ref=e159]: Inspect durable process and rerun telemetry before diving into the legacy event timeline.
+            - generic [ref=e161]:
+              - heading "No execution telemetry yet" [level=3] [ref=e162]
+              - generic [ref=e163]: Attempts and step runs are recorded on the next process or clarification rerun.
+          - generic [ref=e165]:
+            - generic [ref=e167]:
+              - heading "Workflow timeline" [level=2] [ref=e168]
+              - generic [ref=e169]: Track step-level events, attempt numbers, and timestamps for the selected item.
+            - table [ref=e175]:
+              - rowgroup [ref=e176]:
+                - row "Step Event Attempt Policy Details Time" [ref=e177]:
+                  - columnheader "Step" [ref=e178]
+                  - columnheader "Event" [ref=e179]
+                  - columnheader "Attempt" [ref=e180]
+                  - columnheader "Policy" [ref=e181]
+                  - columnheader "Details" [ref=e182]
+                  - columnheader "Time" [ref=e183]
+              - rowgroup [ref=e184]:
+                - row "ingest_item item.received 1 n/a No routing details Mar 22, 2026, 08:56 PM" [ref=e185]:
+                  - cell "ingest_item" [ref=e186]
+                  - cell "item.received" [ref=e187]
+                  - cell "1" [ref=e188]
+                  - cell "n/a" [ref=e189]
+                  - cell "No routing details" [ref=e190]
+                  - cell "Mar 22, 2026, 08:56 PM" [ref=e191]
+  - button "Open Next.js Dev Tools" [ref=e197] [cursor=pointer]:
+    - generic [ref=e200]:
+      - text: Rendering
+      - generic [ref=e201]:
+        - generic [ref=e202]: .
+        - generic [ref=e203]: .
+        - generic [ref=e204]: .
+  - alert [ref=e205]
+```

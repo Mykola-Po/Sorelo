@@ -1,0 +1,72 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e9]: Sorelo
+      - generic [ref=e11]:
+        - combobox "Workspace" [ref=e12]:
+          - generic [ref=e13]: Inbox Workspace 1774205704442
+          - img [ref=e14]
+        - combobox [ref=e16]
+      - generic [ref=e17]:
+        - navigation "Primary navigation" [ref=e18]:
+          - link "Maps" [ref=e19] [cursor=pointer]:
+            - /url: /app/inbox-workspace-1774205704442
+          - link "Members" [ref=e20] [cursor=pointer]:
+            - /url: /app/inbox-workspace-1774205704442/settings/members
+        - button "Sorelo E2E User" [ref=e21]:
+          - generic [ref=e23]: S
+    - generic [ref=e26]:
+      - generic [ref=e28]:
+        - heading "Inbox Workbench" [level=1] [ref=e29]
+        - generic [ref=e30]: Internal triage surface for raw Inbox items in Inbox Workspace 1774205704442. Data is scoped to the current signed-in user.
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e34]:
+            - generic [ref=e36]:
+              - heading "Create Inbox item" [level=2] [ref=e37]
+              - generic [ref=e38]: Pick a target Map first, then paste a raw note or transcript snippet to start the triage loop.
+            - generic [ref=e40]:
+              - generic [ref=e41]:
+                - generic [ref=e42]: Target Map
+                - combobox [ref=e43]:
+                  - option "Inbox Map 1774205745904" [selected]
+              - generic [ref=e44]:
+                - generic [ref=e45]: Source type
+                - combobox [ref=e46]:
+                  - option "manual_note" [selected]
+                  - option "transcript"
+                  - option "chat"
+                  - option "upload"
+                  - option "import"
+              - generic [ref=e47]:
+                - generic [ref=e48]: Raw input
+                - textbox "Paste a raw note, transcript snippet, or observation." [ref=e50]: Public criticism from close people causes withdrawal and a defensive reaction. What exactly triggers the reaction first? We need to know who is involved before promotion.
+              - button "Create inbox item Create inbox item" [active] [ref=e51]:
+                - text: Create inbox item
+                - generic [ref=e52]: Create inbox item
+          - generic [ref=e64]:
+            - generic [ref=e66]:
+              - heading "Latest items" [level=2] [ref=e67]
+              - generic [ref=e68]: The latest 50 user-scoped Inbox items ordered by recent activity.
+            - generic [ref=e70]:
+              - heading "No inbox items yet" [level=3] [ref=e71]
+              - generic [ref=e72]: Create the first Inbox item from the composer to start the internal triage flow.
+        - generic [ref=e78]:
+          - generic [ref=e80]:
+            - heading "Item detail" [level=2] [ref=e81]
+            - generic [ref=e82]: Select an Inbox item from the list to inspect its derived state.
+          - generic [ref=e84]:
+            - heading "No item selected" [level=3] [ref=e85]
+            - generic [ref=e86]: Choose an Inbox item from the list or create a new one from the composer.
+  - button "Open Next.js Dev Tools" [ref=e92] [cursor=pointer]:
+    - generic [ref=e95]:
+      - text: Rendering
+      - generic [ref=e96]:
+        - generic [ref=e97]: .
+        - generic [ref=e98]: .
+        - generic [ref=e99]: .
+  - alert [ref=e100]
+```
