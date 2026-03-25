@@ -13,6 +13,7 @@ export type SigmaNodePayload = Attributes & {
   summary: string | null;
   description: string | null;
   selected?: boolean;
+  isGhost?: boolean;
 };
 
 export type SigmaEdgePayload = Attributes & {
@@ -25,7 +26,8 @@ export type SigmaEdgePayload = Attributes & {
 
 export function buildGraphologyInstance(
   snapshot: GraphSnapshot,
-  positions?: Record<string, { x: number; y: number }>
+  positions?: Record<string, { x: number; y: number }>,
+  ghosts: GraphConceptNode[] = []
 ): Graph {
   const graph = new Graph({ multi: true });
 
@@ -81,6 +83,26 @@ export function buildGraphologyInstance(
       summary: concept.summary,
       description: concept.description,
     } satisfies SigmaNodePayload);
+  }
+
+  for (const ghost of ghosts) {
+    const position = positions?.[ghost.id] ?? { x: ghost.x, y: ghost.y };
+    const accentColor = "#868e96"; // gray-8
+
+    if (!graph.hasNode(ghost.id)) {
+      graph.addNode(ghost.id, {
+        x: position.x,
+        y: position.y,
+        size: 16,
+        label: ghost.title + " (Ghost)",
+        color: "rgba(134, 142, 150, 0.3)",
+        accentColor,
+        conceptType: ghost.conceptType,
+        summary: ghost.summary,
+        description: ghost.description,
+        isGhost: true,
+      } satisfies SigmaNodePayload);
+    }
   }
 
   for (const link of snapshot.links) {

@@ -7,14 +7,19 @@ import {
   Card,
   Flex,
   Heading,
-  Select,
   Text,
   TextArea,
 } from "@radix-ui/themes";
 
 import { resolveSuggestionAction } from "@/features/learning/actions";
+import {
+  deriveLearningReviewDiff,
+  formatLearningDiffValue,
+  humanizeLearningFieldPath,
+} from "@/features/learning/review-diff";
 import type { LearningSuggestionSummary } from "@/features/maps/types";
 import { getIntlLocale, type SupportedLocale } from "@/shared/i18n/config";
+import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 import { EmptyState } from "@/shared/ui/components/empty-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import type { ActionState } from "@/shared/validation/action-state";
@@ -36,7 +41,7 @@ export function LearningPanel({
   mapId,
   suggestions,
 }: LearningPanelProps) {
-  const messages = getLearningMessages(locale);
+  const messages = getMapWorkspaceMessages(locale).learning;
   const openSuggestions = suggestions.filter((item) => !item.resolution);
   const resolvedSuggestions = suggestions.filter((item) => item.resolution);
 
@@ -50,7 +55,7 @@ export function LearningPanel({
   }
 
   return (
-    <Flex direction="column" gap="3" className="panel-scroll-fill">
+    <Flex direction="column" gap="3">
       <Card className="panel-card">
         <Flex align="center" justify="between" gap="3" wrap="wrap">
           <Heading size="4">{messages.heading}</Heading>
@@ -65,7 +70,7 @@ export function LearningPanel({
         </Flex>
       </Card>
 
-      <div className="panel-native-scroll">
+      <Flex direction="column" gap="3" mt="2">
         {suggestions.map((item) => (
           <SuggestionCard
             key={item.id}
@@ -75,7 +80,7 @@ export function LearningPanel({
             item={item}
           />
         ))}
-      </div>
+      </Flex>
     </Flex>
   );
 }
@@ -87,17 +92,54 @@ type SuggestionCardProps = {
   item: LearningSuggestionSummary;
 };
 
+function summarizeEvidenceSnippet(text: string, maxLength = 260) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}...`;
+}
+
 function SuggestionCard({
   locale,
   workspaceSlug,
   mapId,
   item,
 }: SuggestionCardProps) {
-  const messages = getLearningMessages(locale);
+  const messages = getMapWorkspaceMessages(locale).learning;
   const intlLocale = getIntlLocale(locale);
   const [state, formAction, isPending] = useActionState(
     resolveSuggestionAction,
     initialResolutionState
+  );
+  const diffEntries = deriveLearningReviewDiff(item.proposedPayload);
+  const formatFieldPath = (fieldPath: string) =>
+    humanizeLearningFieldPath(
+      fieldPath,
+      messages.fieldLabels,
+      messages.genericFieldLabel
+    );
+  const evidenceItems = [
+    item.rationale
+      ? {
+          label: messages.evidenceRationaleLabel,
+          value: summarizeEvidenceSnippet(item.rationale),
+        }
+      : null,
+    item.sourceRawText
+      ? {
+          label: messages.evidenceSourceLabel,
+          value: summarizeEvidenceSnippet(item.sourceRawText),
+        }
+      : null,
+  ].filter(
+    (
+      value
+    ): value is {
+      label: string;
+      value: string;
+    } => Boolean(value)
   );
 
   return (
@@ -105,7 +147,9 @@ function SuggestionCard({
       <Flex direction="column" gap="3">
         <Flex align="start" justify="between" gap="3">
           <Flex direction="column" gap="1">
-            <Heading size="3">{messages.suggestionType(item.suggestionType)}</Heading>
+            <Heading size="3">
+              {messages.suggestionType(item.suggestionType)}
+            </Heading>
             <Text size="2" color="gray">
               {messages.targetEntity(item.targetEntityType)}
             </Text>
@@ -120,12 +164,6 @@ function SuggestionCard({
               : messages.pending}
           </Badge>
         </Flex>
-
-        {item.rationale ? (
-          <Text size="2" className="sl-learning-rationale">
-            {item.rationale}
-          </Text>
-        ) : null}
 
         <Flex gap="2" wrap="wrap">
           {typeof item.confidence === "number" ? (
@@ -143,16 +181,65 @@ function SuggestionCard({
           </Badge>
         </Flex>
 
-        {item.sourceRawText ? (
-          <Text size="2" className="sl-learning-source">
-            {item.sourceRawText}
+        <Flex direction="column" gap="2" className="sl-learning-review-section">
+          <Text size="2" weight="medium">
+            {messages.reviewChangesHeading}
           </Text>
-        ) : null}
+          {diffEntries.length > 0 ? (
+            <ul className="sl-learning-diff-list">
+              {diffEntries.map((entry) => (
+                <li key={entry.fieldPath} className="sl-learning-diff-item">
+                  <Text
+                    size="1"
+                    color="gray"
+                    className="sl-learning-diff-label"
+                  >
+                    {formatFieldPath(entry.fieldPath)}
+                  </Text>
+                  <Text size="2" className="sl-learning-diff-change">
+                    {entry.changeKind === "update"
+                      ? `${formatLearningDiffValue(entry.beforeValue)} -> ${formatLearningDiffValue(entry.afterValue)}`
+                      : entry.changeKind === "remove"
+                        ? `${formatLearningDiffValue(entry.beforeValue)} -> -`
+                        : `-> ${formatLearningDiffValue(entry.afterValue)}`}
+                  </Text>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Text size="2" color="gray">
+              {messages.reviewNoChanges}
+            </Text>
+          )}
+        </Flex>
 
-        <details className="sl-learning-payload">
-          <summary>{messages.payload}</summary>
-          <pre>{JSON.stringify(item.proposedPayload, null, 2)}</pre>
-        </details>
+        <Flex direction="column" gap="2" className="sl-learning-review-section">
+          <Text size="2" weight="medium">
+            {messages.reviewEvidenceHeading}
+          </Text>
+          {evidenceItems.length > 0 ? (
+            <div className="sl-learning-evidence-list">
+              {evidenceItems.map((entry) => (
+                <div key={entry.label} className="sl-learning-evidence-item">
+                  <Text
+                    size="1"
+                    color="gray"
+                    className="sl-learning-evidence-label"
+                  >
+                    {entry.label}
+                  </Text>
+                  <Text size="2" className="sl-learning-evidence-value">
+                    {entry.value}
+                  </Text>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Text size="2" color="gray">
+              {messages.reviewNoEvidence}
+            </Text>
+          )}
+        </Flex>
 
         {item.resolution ? (
           <Flex direction="column" gap="1">
@@ -171,34 +258,24 @@ function SuggestionCard({
 
             <Flex direction="column" gap="3">
               <InlineFormField
-                label={messages.resolutionLabel}
-                error={state.fieldErrors?.resolutionType?.[0]}
-              >
-                <Select.Root name="resolutionType" defaultValue="accepted">
-                  <Select.Trigger />
-                  <Select.Content>
-                    <Select.Item value="accepted">
-                      {messages.resolutionType("accepted")}
-                    </Select.Item>
-                    <Select.Item value="edited">
-                      {messages.resolutionType("edited")}
-                    </Select.Item>
-                    <Select.Item value="rejected">
-                      {messages.resolutionType("rejected")}
-                    </Select.Item>
-                    <Select.Item value="context_limited">
-                      {messages.resolutionType("context_limited")}
-                    </Select.Item>
-                  </Select.Content>
-                </Select.Root>
-              </InlineFormField>
-
-              <InlineFormField
                 label={messages.reasonLabel}
                 error={state.fieldErrors?.reasonText?.[0]}
               >
-                <TextArea name="reasonText" rows={2} />
+                {({ controlProps }) => (
+                  <TextArea
+                    {...controlProps}
+                    name="reasonText"
+                    rows={2}
+                    placeholder={messages.reasonPlaceholder}
+                  />
+                )}
               </InlineFormField>
+
+              {state.fieldErrors?.resolutionType?.[0] ? (
+                <Text size="2" color="red">
+                  {state.fieldErrors.resolutionType[0]}
+                </Text>
+              ) : null}
 
               {state.status === "error" && state.message ? (
                 <Text size="2" color="red">
@@ -206,9 +283,51 @@ function SuggestionCard({
                 </Text>
               ) : null}
 
-              <Button type="submit" size="2" loading={isPending}>
-                {messages.resolveCta}
-              </Button>
+              <Flex gap="2" wrap="wrap" className="sl-learning-actions">
+                <Button
+                  type="submit"
+                  size="2"
+                  name="resolutionType"
+                  value="accepted"
+                  color="green"
+                  disabled={isPending}
+                >
+                  {messages.acceptCta}
+                </Button>
+                <Button
+                  type="submit"
+                  size="2"
+                  name="resolutionType"
+                  value="edited"
+                  color="blue"
+                  variant="soft"
+                  disabled={isPending}
+                >
+                  {messages.editCta}
+                </Button>
+                <Button
+                  type="submit"
+                  size="2"
+                  name="resolutionType"
+                  value="rejected"
+                  color="red"
+                  variant="soft"
+                  disabled={isPending}
+                >
+                  {messages.rejectCta}
+                </Button>
+                <Button
+                  type="submit"
+                  size="2"
+                  name="resolutionType"
+                  value="context_limited"
+                  color="amber"
+                  variant="soft"
+                  disabled={isPending}
+                >
+                  {messages.contextLimitedCta}
+                </Button>
+              </Flex>
             </Flex>
           </form>
         )}
@@ -216,27 +335,3 @@ function SuggestionCard({
     </Card>
   );
 }
-
-function getLearningMessages(locale: SupportedLocale) {
-  void locale;
-
-  return {
-    heading: "Learning",
-    emptyTitle: "No Suggestions yet",
-    emptyDescription:
-      "When new Suggestions arrive, you can review and resolve them here.",
-    pending: "Pending",
-    payload: "Proposed payload",
-    resolutionLabel: "Resolution type",
-    reasonLabel: "Reason",
-    resolveCta: "Resolve Suggestion",
-    openCount: (count: number) => `Open: ${count}`,
-    resolvedCount: (count: number) => `Resolved: ${count}`,
-    confidence: (value: number) => `Confidence: ${Math.round(value * 100)}%`,
-    suggestionType: (value: string) => value.replaceAll("_", " "),
-    targetEntity: (value: string) => `Target: ${value.replaceAll("_", " ")}`,
-    sourceType: (value: string) => `Source: ${value.replaceAll("_", " ")}`,
-    resolutionType: (value: string) => value.replaceAll("_", " "),
-  };
-}
-

@@ -72,8 +72,6 @@ export async function resolveSuggestionAction(
       mapId: parsed.data.mapId,
       actorUserId: user.id,
       resolutionType: parsed.data.resolutionType,
-      beforePayload: {},
-      afterPayload: suggestionWithResolution.suggestion.proposedPayload ?? {},
       reasonText: parsed.data.reasonText || null,
     });
 
@@ -87,4 +85,3 @@ export async function resolveSuggestionAction(
     );
   }
 }
-

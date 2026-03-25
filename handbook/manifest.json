@@ -123,6 +123,16 @@
       "summary": "Describes what is currently true in schema, routes, runtime behavior, and deterministic scenario execution.",
       "documents": [
         {
+          "id": "project-working-guide",
+          "title": "Project Working Guide",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/project-working-guide.md",
+          "summary": "Primary engineering entrypoint for the current repository layout, feature boundaries, change workflows, risk areas, and verification expectations.",
+          "tags": ["executable", "onboarding", "architecture", "workflow", "verification"],
+          "derivedFrom": ["implementation-principles", "repository-operations", "map-first-routing-and-flows", "public-schema", "map-runtime-architecture"]
+        },
+        {
           "id": "public-schema",
           "title": "Public Schema",
           "status": "existing",
@@ -140,6 +150,15 @@
           "path": "handbook/executable/learning-schema.md",
           "summary": "Current learning/provenance layer for source fragments, suggestions, resolutions, versions, lineage, and scenario feedback.",
           "tags": ["executable", "schema", "learning", "provenance"]
+        },
+        {
+          "id": "inbox-ai-core",
+          "title": "Inbox AI Core",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-ai-core.md",
+          "summary": "Current internal Inbox foundation for app_private persistence, worker contracts, routing state machine, and workflow definition.",
+          "tags": ["executable", "schema", "inbox", "ai-core", "workflow"]
         },
         {
           "id": "scenario-engine-v1",

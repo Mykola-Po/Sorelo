@@ -14,14 +14,15 @@ const sql =
   globalThis.__sorela_sql__ ??
   postgres(env.DATABASE_URL, {
     prepare: false,
-    max: 1,
+    // A single shared connection stalls concurrent server actions and route
+    // handlers during end-to-end inbox/review flows.
+    max: 5,
     idle_timeout: 20,
     connect_timeout: 10,
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__sorela_sql__ = sql;
-}
+globalThis.__sorela_sql__ = sql;
 
+export const sqlClient = sql;
 export const db = drizzle(sql, { schema, casing: "snake_case" });
 export type Database = typeof db;

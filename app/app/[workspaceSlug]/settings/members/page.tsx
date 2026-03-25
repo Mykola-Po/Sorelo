@@ -5,6 +5,7 @@ import { DataTable } from "@/shared/ui/components/data-table";
 import { PageHeader } from "@/shared/ui/components/page-header";
 import { SectionCard } from "@/shared/ui/components/section-card";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
+import { WorkspaceSectionNav } from "@/features/workspace/components/workspace-section-nav";
 
 type MembersPageProps = {
   params: Promise<{
@@ -19,6 +20,10 @@ export default async function MembersPage({ params }: MembersPageProps) {
 
   return (
     <div className="page-stack">
+      <WorkspaceSectionNav
+        workspaceSlug={workspaceSlug}
+        currentSection="members"
+      />
       <PageHeader
         title="Members"
         description="Role updates stay inside the workspace context and do not push you into a separate admin product."
@@ -32,13 +37,17 @@ export default async function MembersPage({ params }: MembersPageProps) {
             columns={["User", "Role", "Joined", "Change role"]}
             rows={members.map((member) => [
               `${member.fullName ?? "Unnamed"} (${member.email})`,
-              <StatusBadge key={`${member.userId}-role`} status={member.role} />,
+              <StatusBadge
+                key={`${member.userId}-role`}
+                status={member.role}
+              />,
               member.joinedAt.toLocaleDateString(),
               <MemberRoleForm
                 key={`${member.userId}-form`}
                 workspaceSlug={workspaceSlug}
                 userId={member.userId}
                 currentRole={member.role}
+                memberLabel={`${member.fullName ?? "Unnamed"} (${member.email})`}
               />,
             ])}
           />

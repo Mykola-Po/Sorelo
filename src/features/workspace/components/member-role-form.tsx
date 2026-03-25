@@ -16,12 +16,14 @@ type MemberRoleFormProps = {
   workspaceSlug: string;
   userId: string;
   currentRole: "owner" | "admin" | "member";
+  memberLabel: string;
 };
 
 export function MemberRoleForm({
   workspaceSlug,
   userId,
   currentRole,
+  memberLabel,
 }: MemberRoleFormProps) {
   const [state, formAction] = useActionState(
     updateMemberRoleAction,
@@ -38,7 +40,7 @@ export function MemberRoleForm({
       <input type="hidden" name="userId" value={userId} />
       <Flex direction="column" gap="2">
         <Select.Root name="role" defaultValue={currentRole}>
-          <Select.Trigger />
+          <Select.Trigger aria-label={`Change role for ${memberLabel}`} />
           <Select.Content>
             <Select.Item value="admin">Admin</Select.Item>
             <Select.Item value="member">Member</Select.Item>

@@ -57,6 +57,7 @@ export default function TestOverlay() {
         selection={selection}
         interactionMode={mode}
         connectLinkSourceId={connectLinkSourceId}
+        mutationFeedback={null}
         onClearSelection={() => {
            setLastAction("Cleared Selection");
            setSelection({ kind: "none" });

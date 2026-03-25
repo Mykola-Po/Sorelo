@@ -23,7 +23,9 @@ export function SectionCard({
       <Flex direction="column" gap="4" className="section-card-body">
         <Flex align="start" justify="between" gap="3" wrap="wrap">
           <Flex direction="column" gap="1">
-            <Heading size="4">{title}</Heading>
+            <Heading as="h2" size="4">
+              {title}
+            </Heading>
             {description ? (
               <Text color="gray" size="2">
                 {description}

@@ -1,32 +1,93 @@
 import { describe, it, expect } from "vitest";
-import { createMapStore, INITIAL_VIEWPORT } from "@/features/map-runtime/store/map-store";
+import {
+  createMapStore,
+  IDLE_DRAG_STATE,
+} from "@/features/map-runtime/store/map-store";
+import type { GraphSnapshot } from "@/features/map-runtime/types";
+
+const INITIAL_SNAPSHOT: GraphSnapshot = {
+  revision: 1,
+  counts: {
+    conceptCount: 1,
+    linkCount: 0,
+  },
+  concepts: [
+    {
+      id: "concept-1",
+      title: "Concept 1",
+      conceptType: "custom",
+      summary: null,
+      description: null,
+      x: 120,
+      y: 240,
+      updatedAt: "2026-03-24T00:00:00.000Z",
+    },
+  ],
+  links: [],
+};
 
 describe("MapStore (Zustand)", () => {
-  it("should initialize with default states and custom mapId", () => {
-    const store = createMapStore({ mapId: "map-123" });
+  it("should initialize with default states, custom mapId, and the seeded snapshot", () => {
+    const store = createMapStore({
+      mapId: "map-123",
+      initialSnapshot: INITIAL_SNAPSHOT,
+    });
     const state = store.getState();
     
     expect(state.mapId).toBe("map-123");
-    expect(state.viewport).toEqual(INITIAL_VIEWPORT);
+    expect(state.snapshot).toEqual(INITIAL_SNAPSHOT);
     expect(state.interactionMode).toBe("inspect");
     expect(state.selection).toEqual({ kind: "none" });
-    expect(state.dragState).toBeNull();
+    expect(state.dragState).toEqual(IDLE_DRAG_STATE);
   });
 
-  it("should update viewport correctly", () => {
-    const store = createMapStore({ mapId: "map-1" });
-    
-    store.getState().updateViewport({ x: 500, y: 300 });
-    const viewport = store.getState().viewport;
-    
-    // x and y should be updated, others remain defaults
-    expect(viewport.x).toBe(500);
-    expect(viewport.y).toBe(300);
-    expect(viewport.width).toBe(INITIAL_VIEWPORT.width);
+  it("should replace the graph snapshot when setSnapshot is called", () => {
+    const store = createMapStore({
+      mapId: "map-1",
+      initialSnapshot: INITIAL_SNAPSHOT,
+    });
+    const nextSnapshot: GraphSnapshot = {
+      ...INITIAL_SNAPSHOT,
+      revision: 2,
+      counts: {
+        conceptCount: 2,
+        linkCount: 1,
+      },
+      concepts: [
+        ...INITIAL_SNAPSHOT.concepts,
+        {
+          id: "concept-2",
+          title: "Concept 2",
+          conceptType: "state",
+          summary: null,
+          description: null,
+          x: 360,
+          y: 420,
+          updatedAt: "2026-03-24T00:10:00.000Z",
+        },
+      ],
+      links: [
+        {
+          id: "link-1",
+          sourceConceptId: "concept-1",
+          targetConceptId: "concept-2",
+          relationType: "causes",
+          strength: 3,
+          description: null,
+          updatedAt: "2026-03-24T00:10:00.000Z",
+        },
+      ],
+    };
+
+    store.getState().setSnapshot(nextSnapshot);
+    expect(store.getState().snapshot).toEqual(nextSnapshot);
   });
 
   it("should manage node positions", () => {
-    const store = createMapStore({ mapId: "map-1" });
+    const store = createMapStore({
+      mapId: "map-1",
+      initialSnapshot: INITIAL_SNAPSHOT,
+    });
     
     // set multiple at once
     store.getState().setPositions({
@@ -45,7 +106,10 @@ describe("MapStore (Zustand)", () => {
   });
 
   it("should handle selection changes", () => {
-    const store = createMapStore({ mapId: "map-1" });
+    const store = createMapStore({
+      mapId: "map-1",
+      initialSnapshot: INITIAL_SNAPSHOT,
+    });
     
     store.getState().setSelection({ kind: "concept", id: "concept-1" });
     expect(store.getState().selection).toEqual({ kind: "concept", id: "concept-1" });
@@ -55,20 +119,31 @@ describe("MapStore (Zustand)", () => {
   });
 
   it("should handle drag state changes", () => {
-    const store = createMapStore({ mapId: "map-1" });
+    const store = createMapStore({
+      mapId: "map-1",
+      initialSnapshot: INITIAL_SNAPSHOT,
+    });
     
     const dragPayload = {
-      id: "concept-3",
-      pointerX: 100,
-      pointerY: 100,
-      startX: 0,
-      startY: 0
+      phase: "dragging" as const,
+      conceptId: "concept-3",
+      pointerType: "mouse" as const,
+      startGraphPosition: { x: 0, y: 0 },
+      currentGraphPosition: { x: 24, y: 18 },
+      pointerViewportPosition: { x: 100, y: 100 },
+      snap: {
+        x: null,
+        y: null,
+      },
+      pendingLongPress: false,
+      retryCount: 0,
+      errorMessage: null,
     };
 
     store.getState().setDragState(dragPayload);
     expect(store.getState().dragState).toEqual(dragPayload);
 
-    store.getState().setDragState(null);
-    expect(store.getState().dragState).toBeNull();
+    store.getState().resetDragState();
+    expect(store.getState().dragState).toEqual(IDLE_DRAG_STATE);
   });
 });

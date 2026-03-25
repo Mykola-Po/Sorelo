@@ -13,6 +13,9 @@ Core product terms are fixed:
 
 Preserve explainability, data integrity, and future extensibility over local convenience.
 
+## Developer handbook entrypoint
+- For repository map, feature ownership, safe change patterns, risk areas, and verification defaults, start with `handbook/executable/project-working-guide.md`.
+
 ## Working agreements
 - Make the smallest correct change that fully solves the task.
 - Reuse existing patterns before introducing new ones.
