@@ -65,6 +65,12 @@ type MapWorkspaceViewProps = MapWorkspaceProps & {
   initialInspectorSelection?: InspectorSelection | null;
 };
 
+type MapWorkspaceSignal = {
+  title: string;
+  description: string;
+  stateLabel: string | null;
+};
+
 export function MapWorkspace(props: MapWorkspaceViewProps) {
   return (
     <MapStoreProvider
@@ -100,6 +106,8 @@ function MapWorkspaceContent({
   const [mutationFeedback, setMutationFeedback] =
     useState<InspectorMutationFeedback | null>(null);
   const selection = useMapStore((state) => state.selection);
+  const snapshot = useMapStore((state) => state.snapshot);
+  const ghostConcepts = useMapStore((state) => state.ghosts);
   const setSelection = useMapStore((state) => state.setSelection);
   const interactionMode = useMapStore((state) => state.interactionMode);
   const setInteractionMode = useMapStore((state) => state.setInteractionMode);
@@ -138,10 +146,23 @@ function MapWorkspaceContent({
     error: conceptCatalogError,
   } = useConceptCatalog(map.id);
 
-  const conceptCatalogById = useMemo(
-    () => new Map(conceptCatalog.map((concept) => [concept.id, concept])),
-    [conceptCatalog]
-  );
+  const conceptTitleById = useMemo(() => {
+    const titles = new Map<string, string>();
+
+    for (const concept of conceptCatalog) {
+      titles.set(concept.id, concept.title);
+    }
+
+    for (const concept of snapshot?.concepts ?? []) {
+      titles.set(concept.id, concept.title);
+    }
+
+    for (const concept of ghostConcepts) {
+      titles.set(concept.id, concept.title);
+    }
+
+    return titles;
+  }, [conceptCatalog, ghostConcepts, snapshot]);
 
   useEffect(() => {
     if (!initialInspectorSelection) {
@@ -166,7 +187,7 @@ function MapWorkspaceContent({
   });
 
   const linkingSourceConceptTitle = connectLinkSourceId
-    ? conceptCatalogById.get(connectLinkSourceId)?.title ?? null
+    ? conceptTitleById.get(connectLinkSourceId) ?? null
     : null;
   const isInspectorPanelOpen = panelOpen && panelTab === "inspector";
   const isScenarioPanelOpen = panelOpen && panelTab === "scenario";
@@ -371,12 +392,38 @@ function MapWorkspaceContent({
       ? messages.scenario.mobileInspectorDescription
       : panelTab === "scenario"
       ? messages.scenario.mobileScenarioDescription
-        : learningMessages.mobileDescription;
+      : learningMessages.mobileDescription;
   const panelTitleId = useId();
   const panelDescriptionId = useId();
+  const activePanelLabel =
+    dialogOpen && panelTab === "scenario"
+      ? messages.topBar.scenario
+      : dialogOpen && panelTab === "learning"
+      ? learningMessages.tabLabel
+      : null;
+  const workspaceSignal = deriveMapWorkspaceSignal({
+    messages,
+    learningLabel: learningMessages.tabLabel,
+    selection,
+    interactionMode,
+    linkingSourceConceptTitle,
+    guidedTitle: guidedCopy.title,
+    guidedDescription: guidedCopy.description,
+    panelTab,
+    panelOpen: dialogOpen,
+    conceptTitleById,
+  });
 
   return (
-    <div className="map-screen">
+    <div
+      className="map-screen"
+      data-surface-mode="canvas"
+      data-panel-open={dialogOpen ? "true" : "false"}
+      data-panel-tab={dialogOpen ? panelTab : "none"}
+      data-selection-kind={selection.kind}
+      data-interaction-mode={interactionMode}
+      data-has-selection={selection.kind !== "none" ? "true" : "false"}
+    >
       <div className="page-stack map-screen-stack">
         <div className="map-canvas-layer">
           <GraphCanvasRuntime
@@ -422,21 +469,36 @@ function MapWorkspaceContent({
         )}
 
         <div className="map-overlay-layer">
-          <div className="map-overlay-bottom">
-            <MapBottomDock
+          <div className="map-overlay-top">
+            <MapTopStrip
               messages={messages}
               mapId={map.id}
-              mapTitle={map.title}
-              mapsPath={workspaceMapsPath(workspaceSlug)}
-              subjectLabel={map.subjectLabel}
               availableMaps={availableMaps}
-              linkingSourceConceptTitle={linkingSourceConceptTitle}
+              focusTitle={workspaceSignal.title}
+              focusDescription={workspaceSignal.description}
+              stateLabel={workspaceSignal.stateLabel}
+              activePanelLabel={activePanelLabel}
               stepBadgeLabel={
                 guidedStep === "done"
                   ? messages.mapReadyBadge
                   : messages.stepLabel(guidedCopy.stepNumber, guidedCopy.totalSteps)
               }
               stepBadgeReady={guidedStep === "done"}
+              subjectLabel={map.subjectLabel}
+              interactionMode={interactionMode}
+              linkingSourceConceptTitle={linkingSourceConceptTitle}
+              onCancelInteraction={cancelInteraction}
+              onSelectMap={(value) =>
+                router.push(workspaceMapPath(workspaceSlug, value))
+              }
+            />
+          </div>
+
+          <div className="map-overlay-bottom">
+            <MapBottomDock
+              messages={messages}
+              mapTitle={map.title}
+              mapsPath={workspaceMapsPath(workspaceSlug)}
               zoomState={zoomState}
               interactionMode={interactionMode}
               selectionKind={selection.kind}
@@ -449,10 +511,6 @@ function MapWorkspaceContent({
               onOpenLearning={openLearningPanel}
               onStartCreateConcept={beginPlaceConcept}
               onStartCreateLink={beginConnectLink}
-              onCancelInteraction={cancelInteraction}
-              onSelectMap={(value) =>
-                router.push(workspaceMapPath(workspaceSlug, value))
-              }
               isGravityEnabled={isGravityEnabled}
               onToggleGravity={toggleGravity}
             />
@@ -467,6 +525,9 @@ function MapWorkspaceContent({
               aria-labelledby={panelTitleId}
               aria-describedby={panelDescriptionId}
               className={isMobileViewport ? "map-mobile-dialog" : "map-overlay-dialog"}
+              data-panel-tab={panelTab}
+              data-panel-dominant="true"
+              data-mobile={isMobileViewport ? "true" : "false"}
             >
               <div className="map-dialog-shell">
                 <Flex
@@ -570,6 +631,116 @@ function MapWorkspaceContent({
   );
 }
 
+function deriveMapWorkspaceSignal({
+  messages,
+  learningLabel,
+  selection,
+  interactionMode,
+  linkingSourceConceptTitle,
+  guidedTitle,
+  guidedDescription,
+  panelTab,
+  panelOpen,
+  conceptTitleById,
+}: {
+  messages: MapWorkspaceMessages;
+  learningLabel: string;
+  selection: InspectorSelection;
+  interactionMode: CanvasInteractionMode;
+  linkingSourceConceptTitle: string | null;
+  guidedTitle: string;
+  guidedDescription: string;
+  panelTab: PanelTab;
+  panelOpen: boolean;
+  conceptTitleById: Map<string, string>;
+}): MapWorkspaceSignal {
+  if (selection.kind === "concept") {
+    return {
+      title: conceptTitleById.get(selection.id) ?? messages.topBar.inspector,
+      description: messages.scenario.mobileInspectorDescription,
+      stateLabel: null,
+    };
+  }
+
+  if (selection.kind === "link") {
+    return {
+      title: messages.inspector.linkTitle,
+      description: messages.scenario.mobileInspectorDescription,
+      stateLabel: messages.inspector.linkTitle,
+    };
+  }
+
+  if (selection.kind === "map-settings") {
+    return {
+      title: messages.topBar.mapSettings,
+      description: messages.scenario.mobileInspectorDescription,
+      stateLabel: messages.topBar.mapSettings,
+    };
+  }
+
+  if (selection.kind === "create-concept") {
+    return {
+      title: messages.inspector.placeConceptTitle,
+      description: messages.inspector.placeConceptDescription,
+      stateLabel: messages.topBar.newConcept,
+    };
+  }
+
+  if (selection.kind === "create-link") {
+    return {
+      title: messages.topBar.createLink,
+      description: selection.sourceConceptId
+        ? messages.inspector.connectLinkTargetDescription
+        : messages.inspector.connectLinkSourceDescription,
+      stateLabel: messages.topBar.createLink,
+    };
+  }
+
+  if (interactionMode === "placeConcept") {
+    return {
+      title: messages.canvas.placeConceptTitle,
+      description: messages.canvas.placeConceptDescription,
+      stateLabel: messages.topBar.newConcept,
+    };
+  }
+
+  if (interactionMode === "connectLink") {
+    return linkingSourceConceptTitle
+      ? {
+          title: messages.canvas.createLinkTargetTitle(linkingSourceConceptTitle),
+          description: messages.canvas.createLinkTargetDescription,
+          stateLabel: messages.topBar.createLink,
+        }
+      : {
+          title: messages.canvas.createLinkSourceTitle,
+          description: messages.canvas.createLinkSourceDescription,
+          stateLabel: messages.topBar.createLink,
+        };
+  }
+
+  if (panelOpen && panelTab === "scenario") {
+    return {
+      title: messages.scenario.runTitle,
+      description: messages.scenario.runDescription,
+      stateLabel: null,
+    };
+  }
+
+  if (panelOpen && panelTab === "learning") {
+    return {
+      title: learningLabel,
+      description: messages.learning.mobileDescription,
+      stateLabel: null,
+    };
+  }
+
+  return {
+    title: guidedTitle,
+    description: guidedDescription,
+    stateLabel: null,
+  };
+}
+
 function useIsMobileViewport() {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -627,6 +798,108 @@ function MapIconAction({
           {mobileHint}
         </Text>
       ) : null}
+    </div>
+  );
+}
+
+type MapTopStripProps = {
+  messages: MapWorkspaceMessages;
+  mapId: string;
+  availableMaps: MapWorkspaceProps["availableMaps"];
+  focusTitle: string;
+  focusDescription: string;
+  stateLabel: string | null;
+  activePanelLabel: string | null;
+  stepBadgeLabel: string;
+  stepBadgeReady: boolean;
+  subjectLabel: string;
+  interactionMode: CanvasInteractionMode;
+  linkingSourceConceptTitle: string | null;
+  onCancelInteraction: () => void;
+  onSelectMap: (mapId: string) => void;
+};
+
+function MapTopStrip({
+  messages,
+  mapId,
+  availableMaps,
+  focusTitle,
+  focusDescription,
+  stateLabel,
+  activePanelLabel,
+  stepBadgeLabel,
+  stepBadgeReady,
+  subjectLabel,
+  interactionMode,
+  linkingSourceConceptTitle,
+  onCancelInteraction,
+  onSelectMap,
+}: MapTopStripProps) {
+  return (
+    <div className="map-top-strip">
+      <div className="map-top-strip-primary">
+        <MapModeIndicator
+          messages={messages}
+          interactionMode={interactionMode}
+          linkingSourceConceptTitle={linkingSourceConceptTitle}
+          onCancelInteraction={onCancelInteraction}
+        />
+
+        <div className="map-top-strip-copy">
+          <Text as="p" size="4" weight="medium" className="map-top-strip-title">
+            {focusTitle}
+          </Text>
+          <Text as="p" size="2" className="map-top-strip-description">
+            {focusDescription}
+          </Text>
+        </div>
+      </div>
+
+      <div className="map-top-strip-side">
+        <Flex
+          align="center"
+          gap="2"
+          wrap="wrap"
+          justify="end"
+          className="map-top-strip-badges"
+        >
+          {stateLabel ? (
+            <Badge color="gray" radius="full" variant="surface">
+              {stateLabel}
+            </Badge>
+          ) : null}
+          {activePanelLabel ? (
+            <Badge color="gray" radius="full" variant="surface">
+              {activePanelLabel}
+            </Badge>
+          ) : null}
+          <Badge
+            color={stepBadgeReady ? "green" : "gray"}
+            radius="full"
+            variant={stepBadgeReady ? "soft" : "surface"}
+          >
+            {stepBadgeLabel}
+          </Badge>
+          <Badge color="gray" radius="full" variant="surface">
+            {subjectLabel}
+          </Badge>
+        </Flex>
+
+        <div className="map-top-strip-switcher">
+          <div className="map-inline-select">
+            <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
+              <Select.Trigger />
+              <Select.Content>
+                {availableMaps.map((candidate) => (
+                  <Select.Item key={candidate.id} value={candidate.id}>
+                    {candidate.title}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -722,14 +995,8 @@ function MapModeIndicator({
 
 type MapBottomDockProps = {
   messages: MapWorkspaceMessages;
-  mapId: string;
   mapTitle: string;
   mapsPath: string;
-  subjectLabel: string;
-  availableMaps: MapWorkspaceProps["availableMaps"];
-  linkingSourceConceptTitle: string | null;
-  stepBadgeLabel: string;
-  stepBadgeReady: boolean;
   zoomState: CanvasZoomState;
   interactionMode: CanvasInteractionMode;
   selectionKind: InspectorSelection["kind"];
@@ -742,22 +1009,14 @@ type MapBottomDockProps = {
   onOpenLearning: () => void;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
-  onCancelInteraction: () => void;
-  onSelectMap: (mapId: string) => void;
   isGravityEnabled: boolean;
   onToggleGravity: () => void;
 };
 
 function MapBottomDock({
   messages,
-  mapId,
   mapTitle,
   mapsPath,
-  subjectLabel,
-  availableMaps,
-  linkingSourceConceptTitle,
-  stepBadgeLabel,
-  stepBadgeReady,
   zoomState,
   interactionMode,
   selectionKind,
@@ -770,8 +1029,6 @@ function MapBottomDock({
   onOpenLearning,
   onStartCreateConcept,
   onStartCreateLink,
-  onCancelInteraction,
-  onSelectMap,
   isGravityEnabled,
   onToggleGravity,
 }: MapBottomDockProps) {
@@ -803,40 +1060,6 @@ function MapBottomDock({
               {mapTitle}
             </Text>
           </div>
-
-          <div className="map-bottom-map-select">
-            <div className="map-inline-select">
-              <Select.Root size="1" value={mapId} onValueChange={onSelectMap}>
-                <Select.Trigger />
-                <Select.Content>
-                  {availableMaps.map((candidate) => (
-                    <Select.Item key={candidate.id} value={candidate.id}>
-                      {candidate.title}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </div>
-          </div>
-
-          <MapModeIndicator
-            messages={messages}
-            interactionMode={interactionMode}
-            linkingSourceConceptTitle={linkingSourceConceptTitle}
-            onCancelInteraction={onCancelInteraction}
-          />
-
-          <Badge
-            color={stepBadgeReady ? "green" : "gray"}
-            radius="full"
-            variant={stepBadgeReady ? "soft" : "surface"}
-          >
-            {stepBadgeLabel}
-          </Badge>
-
-          <Badge color="gray" radius="full" variant="surface">
-            {subjectLabel}
-          </Badge>
         </div>
       </div>
 

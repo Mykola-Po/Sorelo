@@ -155,7 +155,12 @@ export function PublicLandingPage({
 }: PublicLandingPageProps) {
   return (
     <MarketingShell>
-      <div className="marketing-page" data-locale={locale} lang={locale}>
+      <div
+        className="marketing-page"
+        data-locale={locale}
+        data-surface-mode="operational"
+        lang={locale}
+      >
         <header className="marketing-topbar">
           <Flex
             align="center"

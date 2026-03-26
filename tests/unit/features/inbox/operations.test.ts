@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { readdirMock, sqlClientMock, dbMock } = vi.hoisted(() => ({
   readdirMock: vi.fn(),
@@ -34,8 +34,36 @@ import {
   listAppMigrationFilenames,
 } from "@/features/inbox/operations";
 
+const inboxReadinessEnvKeys = [
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "INBOX_LLM_ENABLED",
+  "INBOX_LLM_PROVIDER",
+] as const;
+
+const originalReadinessEnv = Object.fromEntries(
+  inboxReadinessEnvKeys.map((key) => [key, process.env[key]])
+) as Record<(typeof inboxReadinessEnvKeys)[number], string | undefined>;
+
+function restoreReadinessEnv() {
+  for (const key of inboxReadinessEnvKeys) {
+    const value = originalReadinessEnv[key];
+    if (value === undefined) {
+      delete process.env[key];
+      continue;
+    }
+
+    process.env[key] = value;
+  }
+}
+
 describe("inbox operations", () => {
   beforeEach(() => {
+    restoreReadinessEnv();
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.INBOX_LLM_ENABLED;
+    delete process.env.INBOX_LLM_PROVIDER;
     readdirMock.mockReset();
     readdirMock.mockResolvedValue([
       {
@@ -45,6 +73,10 @@ describe("inbox operations", () => {
     ]);
     sqlClientMock.mockReset();
     dbMock.select.mockReset();
+  });
+
+  afterEach(() => {
+    restoreReadinessEnv();
   });
 
   it("filters and sorts repository app migrations", () => {
@@ -165,6 +197,63 @@ describe("inbox operations", () => {
     expect(
       JSON.stringify(report).match(/item-1|workspace-|map-/)
     ).toBeNull();
+  });
+
+  it("reports Gemini-backed readiness when Gemini is configured", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    process.env.INBOX_LLM_ENABLED = "true";
+    process.env.INBOX_LLM_PROVIDER = "gemini";
+
+    dbMock.select.mockImplementation(() => {
+      const chain = {
+        from() {
+          return {
+            orderBy: async () => [
+              {
+                version: "0015_inbox_workspace_scope.sql",
+              },
+            ],
+          };
+        },
+      };
+
+      return chain;
+    });
+
+    sqlClientMock
+      .mockResolvedValueOnce([
+        { table_name: "app_migrations" },
+        { table_name: "clarification_requests" },
+        { table_name: "inbox_fragments" },
+        { table_name: "inbox_items" },
+        { table_name: "inbox_pipeline_attempts" },
+        { table_name: "inbox_step_runs" },
+        { table_name: "learning_suggestion_batches" },
+        { table_name: "learning_suggestion_resolutions" },
+        { table_name: "learning_suggestions" },
+        { table_name: "structured_packets" },
+        { table_name: "workflow_events" },
+      ])
+      .mockResolvedValueOnce([{ failed_count: 0 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ pending_count: 0 }])
+      .mockResolvedValueOnce([{ pending_count: 0 }]);
+
+    const report = await collectInboxRuntimeReport();
+
+    expect(report.checks.find((check) => check.name === "readiness")).toMatchObject({
+      status: "ok",
+      code: "inbox_runtime_readiness_gemini_enabled",
+      details: {
+        readinessMode: "gemini_enabled",
+        configuredProvider: "gemini",
+        hasGeminiKey: true,
+      },
+    });
   });
 
   it("redacts raw exception text from runtime report failures", async () => {

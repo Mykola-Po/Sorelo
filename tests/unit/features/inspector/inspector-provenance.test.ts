@@ -63,8 +63,8 @@ describe("InspectorProvenanceSection", () => {
       ],
     });
 
-    expect(markup).toContain("Provenance");
-    expect(markup).toContain("Open in Inbox");
+    expect(markup).toContain("Inbox workbench provenance");
+    expect(markup).toContain("Open in Inbox workbench");
     expect(markup).toContain(
       "Clarification answer: The reaction starts when the criticism comes from a close partner in front of other people."
     );
@@ -74,7 +74,7 @@ describe("InspectorProvenanceSection", () => {
   it("renders an explicit empty state when canonical provenance is missing", () => {
     const markup = renderMarkup(null);
 
-    expect(markup).toContain("Provenance");
+    expect(markup).toContain("Inbox workbench provenance");
     expect(markup).toContain(
       "No canonical apply provenance has been recorded yet."
     );

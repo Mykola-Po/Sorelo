@@ -18,6 +18,12 @@ Use this order when onboarding or scoping a change:
 4. this document
 5. the specific executable docs for the area you are changing
 
+For UI, visual-system, or surface-direction work, also pair this guide with:
+
+- `handbook/rules/ui-engineering-playbook.md`
+- `handbook/surfaces/positioning-surfaces.md`
+- `handbook/surfaces/current-user-flows.md`
+
 For work on specific areas, pair this guide with:
 
 - `handbook/executable/public-schema.md`

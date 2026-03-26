@@ -110,6 +110,31 @@ async function authenticateAsE2EUser(page: Page, userId: string) {
   ]);
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const layout = await page.evaluate(() => {
+    const scrollingElement =
+      document.scrollingElement ?? document.documentElement;
+
+    return {
+      innerWidth: window.innerWidth,
+      scrollWidth: scrollingElement.scrollWidth,
+    };
+  });
+
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth + 1);
+}
+
+async function expectNoBackdropBlur(page: Page, selector: string) {
+  const backdropFilters = await page.locator(selector).evaluateAll((elements) =>
+    elements.map((element) => {
+      const value = window.getComputedStyle(element).backdropFilter;
+      return value && value !== "none" ? value : "none";
+    })
+  );
+
+  expect(backdropFilters.every((value) => value === "none")).toBeTruthy();
+}
+
 test.describe("workspace home", () => {
   test("keeps the next step and solid progress visible", async ({ page }) => {
     test.setTimeout(120_000);
@@ -148,7 +173,9 @@ test.describe("workspace home", () => {
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}/inbox$`), {
       timeout: 30_000,
     });
-    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Inbox", exact: true })
+    ).toBeVisible();
     await page.getByRole("link", { name: "Overview" }).click();
     await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
       timeout: 30_000,
@@ -180,5 +207,114 @@ test.describe("workspace home", () => {
     await expect(
       page.getByRole("link", { name: "Open Map" }).first()
     ).toBeVisible();
+  });
+
+  test("keeps the authenticated shell and workspace hierarchy clear on desktop", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const suffix = `${Date.now()}`;
+    const userId = randomUUID();
+    const workspaceName = `Hierarchy Workspace ${suffix}`;
+    const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
+
+    await authenticateAsE2EUser(page, userId);
+    await page.goto("/app");
+    await expect(page).toHaveURL(/\/app\/new-workspace$/);
+
+    await page.getByLabel("Workspace name").fill(workspaceName);
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
+      timeout: 30_000,
+    });
+
+    const topbar = page.locator(".product-topbar");
+    const heroPanel = page.locator(".sl-workspace-hero-panel");
+    const focusCard = page.locator(".sl-workspace-focus-card");
+    const metricCards = page.locator(".sl-workspace-metric-card");
+
+    await expect(topbar).toBeVisible();
+    await expect(heroPanel).toBeVisible();
+    await expect(focusCard).toBeVisible();
+    await expect(metricCards).toHaveCount(5);
+
+    const [heroBox, focusBox] = await Promise.all([
+      heroPanel.boundingBox(),
+      focusCard.boundingBox(),
+    ]);
+
+    expect(heroBox).not.toBeNull();
+    expect(focusBox).not.toBeNull();
+
+    if (!heroBox || !focusBox) {
+      return;
+    }
+
+    expect(Math.abs(heroBox.y - focusBox.y)).toBeLessThan(40);
+    expect(heroBox.width).toBeGreaterThan(focusBox.width);
+
+    await expectNoBackdropBlur(
+      page,
+      ".product-topbar, .sl-workspace-hero-panel, .sl-workspace-focus-card"
+    );
+  });
+});
+
+test.describe("workspace home mobile", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("stacks hero, focus, and navigation cleanly on mobile", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const suffix = `${Date.now()}`;
+    const userId = randomUUID();
+    const workspaceName = `Mobile Workspace ${suffix}`;
+    const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
+
+    await authenticateAsE2EUser(page, userId);
+    await page.goto("/app");
+    await expect(page).toHaveURL(/\/app\/new-workspace$/);
+
+    await page.getByLabel("Workspace name").fill(workspaceName);
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await page.waitForURL(new RegExp(`/app/${workspaceSlug}$`), {
+      timeout: 30_000,
+    });
+
+    const topbar = page.locator(".product-topbar");
+    const nav = page.getByRole("navigation", { name: "Workspace sections" });
+    const heroPanel = page.locator(".sl-workspace-hero-panel");
+    const focusCard = page.locator(".sl-workspace-focus-card");
+
+    await expect(topbar).toBeVisible();
+    await expect(nav).toBeVisible();
+    await expect(heroPanel).toBeVisible();
+    await expect(focusCard).toBeVisible();
+
+    const [heroBox, focusBox] = await Promise.all([
+      heroPanel.boundingBox(),
+      focusCard.boundingBox(),
+    ]);
+
+    expect(heroBox).not.toBeNull();
+    expect(focusBox).not.toBeNull();
+
+    if (!heroBox || !focusBox) {
+      return;
+    }
+
+    expect(focusBox.y).toBeGreaterThan(heroBox.y + heroBox.height - 4);
+    await expectNoHorizontalOverflow(page);
+    await expectNoBackdropBlur(
+      page,
+      ".product-topbar, .sl-workspace-hero-panel, .sl-workspace-focus-card"
+    );
   });
 });

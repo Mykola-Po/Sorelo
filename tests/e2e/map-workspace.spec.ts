@@ -141,6 +141,59 @@ async function createWorkspaceAndOpenMap(page: Page) {
   };
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const layout = await page.evaluate(() => {
+    const scrollingElement =
+      document.scrollingElement ?? document.documentElement;
+
+    return {
+      innerWidth: window.innerWidth,
+      scrollWidth: scrollingElement.scrollWidth,
+    };
+  });
+
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth + 1);
+}
+
+async function expectNoBackdropBlur(page: Page, selector: string) {
+  const backdropFilters = await page.locator(selector).evaluateAll((elements) =>
+    elements.map((element) => {
+      const value = window.getComputedStyle(element).backdropFilter;
+      return value && value !== "none" ? value : "none";
+    })
+  );
+
+  expect(backdropFilters.every((value) => value === "none")).toBeTruthy();
+}
+
+async function createConceptThroughUi(
+  page: Page,
+  input: { title: string; position: { x: number; y: number } }
+) {
+  const dismissButton = page
+    .locator(".map-overlay-dialog, .map-mobile-dialog")
+    .getByRole("button", { name: "Cancel" })
+    .first();
+
+  if (await dismissButton.isVisible().catch(() => false)) {
+    await dismissButton.click();
+  }
+
+  await page
+    .locator(".map-bottom-dock")
+    .getByRole("button", { name: "New Concept" })
+    .click();
+  await page.locator(".map-canvas-layer").click({
+    position: input.position,
+  });
+
+  await page.getByLabel("Title").fill(input.title);
+  await page.getByRole("button", { name: "Create Concept" }).click();
+  await expect(page.getByRole("button", { name: new RegExp(input.title) })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 test.describe("Map workspace canvas interactions", () => {
   test("place concept mode still allows clicking the canvas while the Inspector is open", async ({
     page,
@@ -228,5 +281,112 @@ test.describe("Map workspace canvas interactions", () => {
       timeout: 30_000,
     });
     expect(failingRuntimeReads).toEqual([]);
+  });
+
+  test("keeps top strip, selected state, and panel dominance readable on desktop", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createWorkspaceAndOpenMap(page);
+
+    const topStrip = page.locator(".map-top-strip").first();
+    const dock = page.locator(".map-bottom-dock").first();
+    const dialog = page.locator(".map-overlay-dialog");
+
+    await expect(topStrip).toBeVisible();
+    await expect(dock).toBeVisible();
+    await expect(dialog).toBeVisible();
+
+    const [topStripBox, dockBox, dialogBox] = await Promise.all([
+      topStrip.boundingBox(),
+      dock.boundingBox(),
+      dialog.boundingBox(),
+    ]);
+
+    expect(topStripBox).not.toBeNull();
+    expect(dockBox).not.toBeNull();
+    expect(dialogBox).not.toBeNull();
+
+    if (!topStripBox || !dockBox || !dialogBox) {
+      return;
+    }
+
+    expect(dialogBox.x).toBeGreaterThan(topStripBox.x + topStripBox.width * 0.55);
+    expect(dialogBox.height).toBeGreaterThan(dockBox.height * 3);
+
+    await createConceptThroughUi(page, {
+      title: "Signal Node",
+      position: { x: 220, y: 220 },
+    });
+
+    await expect(
+      page.locator('.sl-concept-card[data-selected="true"]').filter({
+        hasText: "Signal Node",
+      })
+    ).toHaveCount(1);
+    await expect(page.locator(".map-top-strip").first()).toContainText("Signal Node");
+
+    await expectNoHorizontalOverflow(page);
+    await expectNoBackdropBlur(
+      page,
+      ".map-top-strip, .map-bottom-dock-group, .map-overlay-dialog"
+    );
+  });
+});
+
+test.describe("Map workspace mobile", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("keeps mobile panel dominance and selected state readable", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createWorkspaceAndOpenMap(page);
+
+    const topStrip = page.locator(".map-top-strip").first();
+    const dock = page.locator(".map-bottom-dock").first();
+    const dialog = page.locator(".map-mobile-dialog");
+
+    await expect(topStrip).toBeVisible();
+    await expect(dock).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(page.locator(".map-overlay-dialog")).toHaveCount(0);
+
+    await createConceptThroughUi(page, {
+      title: "Pocket Node",
+      position: { x: 180, y: 220 },
+    });
+
+    const [dockBox, dialogBox] = await Promise.all([
+      dock.boundingBox(),
+      dialog.boundingBox(),
+    ]);
+
+    expect(dockBox).not.toBeNull();
+    expect(dialogBox).not.toBeNull();
+
+    if (!dockBox || !dialogBox) {
+      return;
+    }
+
+    expect(dialogBox.height).toBeGreaterThan(dockBox.height * 3);
+    await expect(
+      page.locator('.sl-concept-card[data-selected="true"]').filter({
+        hasText: "Pocket Node",
+      })
+    ).toHaveCount(1);
+    await expect(page.locator(".map-top-strip").first()).toContainText("Pocket Node");
+
+    await expectNoHorizontalOverflow(page);
+    await expectNoBackdropBlur(
+      page,
+      ".map-top-strip, .map-bottom-dock-group, .map-mobile-dialog"
+    );
   });
 });

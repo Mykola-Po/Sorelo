@@ -17,8 +17,10 @@ import { env } from "@/shared/config/env";
 import { z } from "zod";
 
 const openAiInterpretPromptVersion = "inbox-interpret.openai.v1";
+const geminiInterpretPromptVersion = "inbox-interpret.gemini.v1";
 const deterministicInterpretPromptVersion = "inbox-interpret.deterministic.v1";
-const defaultInboxLlmModel = "gpt-5-mini";
+const defaultOpenAiLlmModel = "gpt-5-mini";
+const defaultGeminiLlmModel = "gemini-2.5-flash-lite";
 
 const inboxLlmExtractionSchema = z.object({
   summary: z.string().trim().min(1).max(1000),
@@ -109,7 +111,16 @@ const inboxLlmExtractionSchema = z.object({
 
 type InboxLlmExtraction = z.infer<typeof inboxLlmExtractionSchema>;
 
-type InboxInterpretRuntimeProvider = "openai" | "deterministic";
+type InboxInterpretRuntimeProvider = "openai" | "gemini" | "deterministic";
+type InboxLlmProvider = Exclude<InboxInterpretRuntimeProvider, "deterministic">;
+type InboxStructuredOutputSource =
+  | "openai_structured_output"
+  | "gemini_structured_output";
+type InboxLlmProviderConfig = {
+  modelName: string;
+  promptVersion: string;
+  provider: InboxLlmProvider;
+};
 
 export type InboxInterpretAttemptRuntime = {
   modelName: string;
@@ -144,6 +155,21 @@ type OpenAiResponsesApiResponse = {
   };
 };
 
+type GeminiGenerateContentApiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+  usageMetadata?: Record<string, unknown>;
+  modelVersion?: string;
+  error?: {
+    message?: string;
+  };
+};
+
 type InboxLlmAttemptTelemetry = {
   attempt: number;
   latencyMs: number;
@@ -155,8 +181,12 @@ type InboxLlmAttemptTelemetry = {
 
 type InboxLlmRequestResult = {
   extraction: InboxLlmExtraction;
-  apiResponse: OpenAiResponsesApiResponse;
   attempts: InboxLlmAttemptTelemetry[];
+  responseMetadata: {
+    modelName: string | null;
+    responseId: string | null;
+    usage: Record<string, unknown> | null;
+  };
 };
 
 class InboxLlmRequestError extends Error {
@@ -455,7 +485,11 @@ const inboxLlmExtractionJsonSchema = {
 } as const;
 
 function getOpenAiModelName() {
-  return env.INBOX_LLM_MODEL?.trim() || defaultInboxLlmModel;
+  return env.INBOX_LLM_MODEL?.trim() || defaultOpenAiLlmModel;
+}
+
+function getGeminiModelName() {
+  return env.INBOX_LLM_MODEL?.trim() || defaultGeminiLlmModel;
 }
 
 function getInboxLlmTimeoutMs() {
@@ -470,17 +504,54 @@ function getInboxLlmRetryBaseDelayMs() {
   return env.INBOX_LLM_RETRY_BASE_DELAY_MS ?? 400;
 }
 
-function shouldUseInboxLlm() {
-  return env.INBOX_LLM_ENABLED !== "false" && Boolean(env.OPENAI_API_KEY);
-}
+function getConfiguredInboxLlmProvider(): InboxLlmProviderConfig | null {
+  if (env.INBOX_LLM_ENABLED === "false" || env.INBOX_LLM_PROVIDER === "deterministic") {
+    return null;
+  }
 
-export function getConfiguredInboxInterpretRuntime(): InboxInterpretAttemptRuntime {
-  if (shouldUseInboxLlm()) {
+  if (env.INBOX_LLM_PROVIDER === "gemini") {
+    return env.GEMINI_API_KEY
+      ? {
+          provider: "gemini",
+          modelName: getGeminiModelName(),
+          promptVersion: geminiInterpretPromptVersion,
+        }
+      : null;
+  }
+
+  if (env.INBOX_LLM_PROVIDER === "openai") {
+    return env.OPENAI_API_KEY
+      ? {
+          provider: "openai",
+          modelName: getOpenAiModelName(),
+          promptVersion: openAiInterpretPromptVersion,
+        }
+      : null;
+  }
+
+  if (env.OPENAI_API_KEY) {
     return {
       provider: "openai",
       modelName: getOpenAiModelName(),
       promptVersion: openAiInterpretPromptVersion,
     };
+  }
+
+  if (env.GEMINI_API_KEY) {
+    return {
+      provider: "gemini",
+      modelName: getGeminiModelName(),
+      promptVersion: geminiInterpretPromptVersion,
+    };
+  }
+
+  return null;
+}
+
+export function getConfiguredInboxInterpretRuntime(): InboxInterpretAttemptRuntime {
+  const configuredProvider = getConfiguredInboxLlmProvider();
+  if (configuredProvider) {
+    return configuredProvider;
   }
 
   return {
@@ -499,7 +570,11 @@ function isRetryableStatusCode(statusCode: number) {
 }
 
 function toInboxLlmFailureMessage(input: {
-  payload?: OpenAiResponsesApiResponse | null;
+  payload?: {
+    error?: {
+      message?: string;
+    };
+  } | null;
   fallback: string;
 }) {
   return input.payload?.error?.message?.trim() || input.fallback;
@@ -529,7 +604,7 @@ function normalizeInboxLlmError(
     (error.name === "AbortError" || error.name === "TimeoutError")
   ) {
     return new InboxLlmRequestError({
-      message: "OpenAI Inbox extraction timed out.",
+      message: "Inbox extraction timed out.",
       retryable: true,
       code: "timeout",
       attempts,
@@ -546,7 +621,7 @@ function normalizeInboxLlmError(
   }
 
   return new InboxLlmRequestError({
-    message: "Unknown OpenAI Inbox extraction failure.",
+    message: "Unknown Inbox extraction failure.",
     retryable: false,
     code: "unknown_error",
     attempts,
@@ -622,7 +697,8 @@ function buildAtomsFromInterpretation(interpretation: InterpretOutput) {
 function mapLlmExtractionToInterpretation(
   extraction: InboxLlmExtraction,
   fragments: InboxFragmentCandidate[],
-  clarificationContext: InboxClarificationContextEntry[]
+  clarificationContext: InboxClarificationContextEntry[],
+  inferredFrom: InboxStructuredOutputSource
 ) {
   const allowedOrdinals = new Set(fragments.map((fragment) => fragment.ordinal));
   const answeredQuestionSet = new Set(
@@ -638,7 +714,7 @@ function mapLlmExtractionToInterpretation(
         confidence: entity.confidence,
         payload: {
           evidence: entity.evidence,
-          inferredFrom: "openai_structured_output",
+          inferredFrom,
         },
       })
     ),
@@ -657,7 +733,7 @@ function mapLlmExtractionToInterpretation(
           confidence: relation.confidence,
           payload: {
             evidence: relation.evidence,
-            inferredFrom: "openai_structured_output",
+            inferredFrom,
           },
         })
       ),
@@ -783,11 +859,51 @@ function buildInboxInterpretPrompt(input: ExtractInboxInterpretationInput) {
   ].join("\n");
 }
 
+function parseInboxLlmExtractionJson(input: {
+  jsonText: string;
+  providerLabel: "OpenAI" | "Gemini";
+  statusCode: number;
+}) {
+  let parsedJson: unknown;
+
+  try {
+    parsedJson = JSON.parse(input.jsonText);
+  } catch {
+    throw new InboxLlmRequestError({
+      message: `${input.providerLabel} Inbox extraction returned invalid JSON.`,
+      statusCode: input.statusCode,
+      retryable: false,
+      code: "invalid_json",
+    });
+  }
+
+  return inboxLlmExtractionSchema.parse(parsedJson);
+}
+
+function getGeminiOutputText(payload: GeminiGenerateContentApiResponse) {
+  const parts = payload.candidates?.[0]?.content?.parts ?? [];
+  const outputText = parts
+    .map((part) => (typeof part.text === "string" ? part.text : ""))
+    .join("")
+    .trim();
+
+  return outputText.length > 0 ? outputText : null;
+}
+
+function getStructuredOutputSource(provider: InboxLlmProvider): InboxStructuredOutputSource {
+  return provider === "openai" ? "openai_structured_output" : "gemini_structured_output";
+}
+
+function getInboxExecutionMode(provider: InboxLlmProvider) {
+  return provider === "openai" ? "openai_structured_output" : "gemini_structured_output";
+}
+
 async function requestOpenAiExtraction(
-  input: ExtractInboxInterpretationInput
+  input: ExtractInboxInterpretationInput,
+  config: InboxLlmProviderConfig
 ): Promise<{
   extraction: InboxLlmExtraction;
-  apiResponse: OpenAiResponsesApiResponse;
+  responseMetadata: InboxLlmRequestResult["responseMetadata"];
   statusCode: number;
 }> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -797,7 +913,7 @@ async function requestOpenAiExtraction(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: getOpenAiModelName(),
+      model: config.modelName,
       input: buildInboxInterpretPrompt(input),
       max_output_tokens: 2400,
       text: {
@@ -825,7 +941,12 @@ async function requestOpenAiExtraction(
     });
   }
 
-  if (typeof payload.output_text !== "string" || payload.output_text.trim().length === 0) {
+  const outputText =
+    typeof payload.output_text === "string" && payload.output_text.trim().length > 0
+      ? payload.output_text
+      : null;
+
+  if (!outputText) {
     throw new InboxLlmRequestError({
       message: "OpenAI Inbox extraction returned no structured output.",
       statusCode: response.status,
@@ -834,30 +955,116 @@ async function requestOpenAiExtraction(
     });
   }
 
-  let parsedJson: unknown;
-
-  try {
-    parsedJson = JSON.parse(payload.output_text);
-  } catch {
-    throw new InboxLlmRequestError({
-      message: "OpenAI Inbox extraction returned invalid JSON.",
-      statusCode: response.status,
-      retryable: false,
-      code: "invalid_json",
-    });
-  }
-
-  const parsed = inboxLlmExtractionSchema.parse(parsedJson);
+  const parsed = parseInboxLlmExtractionJson({
+    jsonText: outputText,
+    providerLabel: "OpenAI",
+    statusCode: response.status,
+  });
 
   return {
     extraction: parsed,
-    apiResponse: payload,
+    responseMetadata: {
+      modelName: payload.model ?? config.modelName,
+      responseId: payload.id ?? null,
+      usage: payload.usage ?? null,
+    },
     statusCode: response.status,
   };
 }
 
-async function requestOpenAiExtractionWithRetry(
-  input: ExtractInboxInterpretationInput
+async function requestGeminiExtraction(
+  input: ExtractInboxInterpretationInput,
+  config: InboxLlmProviderConfig
+): Promise<{
+  extraction: InboxLlmExtraction;
+  responseMetadata: InboxLlmRequestResult["responseMetadata"];
+  statusCode: number;
+}> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.modelName)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": env.GEMINI_API_KEY ?? "",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: buildInboxInterpretPrompt(input),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseJsonSchema: inboxLlmExtractionJsonSchema,
+          temperature: 0,
+        },
+      }),
+      signal: AbortSignal.timeout(getInboxLlmTimeoutMs()),
+    }
+  );
+  const payload = (await response.json()) as GeminiGenerateContentApiResponse;
+
+  if (!response.ok) {
+    throw new InboxLlmRequestError({
+      message: toInboxLlmFailureMessage({
+        payload,
+        fallback: "Gemini Inbox extraction failed.",
+      }),
+      statusCode: response.status,
+      retryable: isRetryableStatusCode(response.status),
+      code: "http_error",
+    });
+  }
+
+  const outputText = getGeminiOutputText(payload);
+  if (!outputText) {
+    throw new InboxLlmRequestError({
+      message: "Gemini Inbox extraction returned no structured output.",
+      statusCode: response.status,
+      retryable: false,
+      code: "empty_output",
+    });
+  }
+
+  return {
+    extraction: parseInboxLlmExtractionJson({
+      jsonText: outputText,
+      providerLabel: "Gemini",
+      statusCode: response.status,
+    }),
+    responseMetadata: {
+      modelName: payload.modelVersion ?? config.modelName,
+      responseId: null,
+      usage: payload.usageMetadata ?? null,
+    },
+    statusCode: response.status,
+  };
+}
+
+async function requestInboxLlmExtraction(
+  input: ExtractInboxInterpretationInput,
+  config: InboxLlmProviderConfig
+): Promise<{
+  extraction: InboxLlmExtraction;
+  responseMetadata: InboxLlmRequestResult["responseMetadata"];
+  statusCode: number;
+}> {
+  if (config.provider === "openai") {
+    return requestOpenAiExtraction(input, config);
+  }
+
+  return requestGeminiExtraction(input, config);
+}
+
+async function requestInboxLlmExtractionWithRetry(
+  input: ExtractInboxInterpretationInput,
+  config: InboxLlmProviderConfig
 ): Promise<InboxLlmRequestResult> {
   const attempts: InboxLlmAttemptTelemetry[] = [];
   const maxRetries = getInboxLlmMaxRetries();
@@ -866,7 +1073,7 @@ async function requestOpenAiExtractionWithRetry(
     const startedAt = Date.now();
 
     try {
-      const result = await requestOpenAiExtraction(input);
+      const result = await requestInboxLlmExtraction(input, config);
       attempts.push({
         attempt,
         latencyMs: Math.max(0, Date.now() - startedAt),
@@ -878,7 +1085,7 @@ async function requestOpenAiExtractionWithRetry(
 
       return {
         extraction: result.extraction,
-        apiResponse: result.apiResponse,
+        responseMetadata: result.responseMetadata,
         attempts,
       };
     } catch (error) {
@@ -908,7 +1115,7 @@ async function requestOpenAiExtractionWithRetry(
   }
 
   throw new InboxLlmRequestError({
-    message: "OpenAI Inbox extraction exhausted retries without a terminal response.",
+    message: "Inbox extraction exhausted retries without a terminal response.",
     retryable: false,
     code: "retry_exhausted",
     attempts,
@@ -944,7 +1151,8 @@ function buildDeterministicInterpretation(
 
 function withFallbackAttempts(
   runtime: ExtractInboxInterpretationResult,
-  error: InboxLlmRequestError
+  error: InboxLlmRequestError,
+  config: InboxLlmProviderConfig
 ) {
   return {
     ...runtime,
@@ -952,7 +1160,8 @@ function withFallbackAttempts(
       ...runtime.runtime,
       metadata: {
         ...runtime.runtime.metadata,
-        configuredModel: getOpenAiModelName(),
+        configuredProvider: config.provider,
+        configuredModel: config.modelName,
         timeoutMs: getInboxLlmTimeoutMs(),
         attemptCount: error.attempts.length,
         retryCount: Math.max(0, error.attempts.length - 1),
@@ -968,8 +1177,9 @@ export async function extractInboxInterpretation(
   input: ExtractInboxInterpretationInput
 ): Promise<ExtractInboxInterpretationResult> {
   const clarificationContext = input.clarificationContext ?? [];
+  const configuredProvider = getConfiguredInboxLlmProvider();
 
-  if (!shouldUseInboxLlm()) {
+  if (!configuredProvider) {
     return buildDeterministicInterpretation(
       {
         ...input,
@@ -980,32 +1190,38 @@ export async function extractInboxInterpretation(
   }
 
   try {
-    const { extraction, apiResponse, attempts } = await requestOpenAiExtractionWithRetry({
-      ...input,
-      clarificationContext,
-    });
+    const { extraction, responseMetadata, attempts } =
+      await requestInboxLlmExtractionWithRetry(
+        {
+          ...input,
+          clarificationContext,
+        },
+        configuredProvider
+      );
     const interpretation = mapLlmExtractionToInterpretation(
       extraction,
       input.fragments,
-      clarificationContext
+      clarificationContext,
+      getStructuredOutputSource(configuredProvider.provider)
     );
 
     return {
       interpretation,
       runtime: {
-        provider: "openai",
-        modelName: apiResponse.model ?? getOpenAiModelName(),
-        promptVersion: openAiInterpretPromptVersion,
+        provider: configuredProvider.provider,
+        modelName: responseMetadata.modelName ?? configuredProvider.modelName,
+        promptVersion: configuredProvider.promptVersion,
         fallbackUsed: false,
         metadata: {
-          executionMode: "openai_structured_output",
-          configuredModel: getOpenAiModelName(),
+          executionMode: getInboxExecutionMode(configuredProvider.provider),
+          configuredProvider: configuredProvider.provider,
+          configuredModel: configuredProvider.modelName,
           timeoutMs: getInboxLlmTimeoutMs(),
           attemptCount: attempts.length,
           retryCount: Math.max(0, attempts.length - 1),
           attempts,
-          responseId: apiResponse.id ?? null,
-          usage: apiResponse.usage ?? null,
+          responseId: responseMetadata.responseId,
+          usage: responseMetadata.usage,
           ambiguitySignalCount: extraction.ambiguitySignals.length,
         },
       },
@@ -1020,7 +1236,8 @@ export async function extractInboxInterpretation(
         },
         normalizedError.message
       ),
-      normalizedError
+      normalizedError,
+      configuredProvider
     );
   }
 }

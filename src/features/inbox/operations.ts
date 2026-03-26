@@ -38,7 +38,10 @@ type FailedInboxItemSample = {
   attemptNo: number | null;
 };
 
-type RuntimeReadinessMode = "deterministic_only" | "openai_enabled";
+type RuntimeReadinessMode =
+  | "deterministic_only"
+  | "openai_enabled"
+  | "gemini_enabled";
 
 const appMigrationFilenamePattern = /^\d{4}_.+\.sql$/;
 const migrationDirectory = path.join(process.cwd(), "supabase", "migrations");
@@ -297,24 +300,44 @@ function buildEnvCheck(secret: string | null): InboxRuntimeCheck {
 
 function buildReadinessCheck(): InboxRuntimeCheck {
   const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
   const inboxLlmEnabled = process.env.INBOX_LLM_ENABLED !== "false";
+  const configuredProvider = process.env.INBOX_LLM_PROVIDER;
   const readinessMode: RuntimeReadinessMode =
-    hasOpenAiKey && inboxLlmEnabled
-      ? "openai_enabled"
-      : "deterministic_only";
+    !inboxLlmEnabled || configuredProvider === "deterministic"
+      ? "deterministic_only"
+      : configuredProvider === "gemini"
+        ? hasGeminiKey
+          ? "gemini_enabled"
+          : "deterministic_only"
+        : configuredProvider === "openai"
+          ? hasOpenAiKey
+            ? "openai_enabled"
+            : "deterministic_only"
+          : hasOpenAiKey
+            ? "openai_enabled"
+            : hasGeminiKey
+              ? "gemini_enabled"
+              : "deterministic_only";
 
   return buildOkCheck(
     "readiness",
     readinessMode === "openai_enabled"
       ? "inbox_runtime_readiness_openai_enabled"
+      : readinessMode === "gemini_enabled"
+        ? "inbox_runtime_readiness_gemini_enabled"
       : "inbox_runtime_readiness_deterministic_only",
     readinessMode === "openai_enabled"
       ? "Inbox is ready for OpenAI-backed interpretation."
+      : readinessMode === "gemini_enabled"
+        ? "Inbox is ready for Gemini-backed interpretation."
       : "Inbox is ready in deterministic-only mode.",
     {
       readinessMode,
       inboxLlmEnabled,
+      configuredProvider: configuredProvider ?? null,
       hasOpenAiKey,
+      hasGeminiKey,
     }
   );
 }

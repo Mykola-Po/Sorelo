@@ -28,14 +28,33 @@ The landing page currently presents Sorelo as:
 - explainable human mapping
 - a calm workspace instead of scattered notes
 - a system built around Concepts, Links, and deterministic Scenarios
+- a technical but approachable surface with visible causal structure instead of generic startup polish
 
 The landing page is a positioning surface, not the product canon.
+
+## Current Visual Language
+
+Across public and authenticated product surfaces, the current visual language should read as:
+
+- signal-first expressive minimalism
+- expressive typography, purposeful shape, living motion, and glanceable hierarchy
+- light-first structural surfaces with restrained signal accents and mono metadata cues
+- crisp, low-noise panels instead of glass, blur, or frosted chrome
+- grids, nodes, traces, and causal lines as the primary visual metaphor instead of illustrative hero art
+- responsive feedback that makes the model feel active without introducing ambient noise
 
 ## Authenticated Product Surfaces
 
 ### App Shell
 
 The authenticated shell positions the product around maps and workspace context rather than generic dashboards.
+
+Its visual job is to feel:
+
+- operational and focused, not admin-heavy
+- spatial and model-aware, not card-grid-first
+- alive through selection, trace, and state feedback rather than animation for its own sake
+- coherent with the map language without pretending every surface is a canvas
 
 ### Maps Home
 
@@ -48,6 +67,14 @@ The maps home surface reinforces:
 ### Map Workspace
 
 The active map workspace positions the canvas as primary and the Inspector and Scenario panels as secondary bounded surfaces.
+
+This is the first and current surface that should fully express **canvas-first signal UI**:
+
+- the canvas dominates the screen
+- signal accents help read structure, selection, and causality
+- typography and shape support fast scanning of the current state
+- side panels support the work without competing with the canvas
+- the surface should feel active and responsive without relying on blur or decorative surface tricks
 
 ### Inbox
 

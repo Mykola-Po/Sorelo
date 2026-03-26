@@ -45,7 +45,7 @@ export function ProductShell({
   );
 
   return (
-    <div className="viewport-shell app-shell">
+    <div className="viewport-shell app-shell" data-surface-mode="operational">
       <Flex direction="column" className="product-shell">
         <div className="product-topbar">
           <Flex
@@ -59,6 +59,9 @@ export function ProductShell({
               <Flex align="center" gap="2" className="brand-lockup">
                 <Text size="4" weight="bold">
                   Sorelo
+                </Text>
+                <Text size="1" color="gray" className="brand-subtitle">
+                  {messages.shell.brandNote}
                 </Text>
               </Flex>
             </Flex>

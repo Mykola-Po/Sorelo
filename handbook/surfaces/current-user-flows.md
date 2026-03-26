@@ -143,6 +143,13 @@ The user should never wonder where the main action is.
 
 The canvas must visually dominate the screen.
 
+This is the one current surface where `canvas-first signal UI` should be applied directly:
+
+- expressive typography and glanceable hierarchy should help the user parse current structure quickly
+- shape and motion should reinforce selection, connection, and next action
+- Inspector and Scenario must stay visually related, but secondary
+- glass or frosted chrome must not compete with structural readability
+
 ## Guided Onboarding Flow Inside A Map
 
 Onboarding inside the map is derived from actual state, not from a separate stored progress model.

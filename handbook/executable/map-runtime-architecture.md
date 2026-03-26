@@ -30,3 +30,15 @@ The map architecture strictly separates the high-performance WebGL rendering lay
 1. **Never use React State (`useState`) for graph positions or drag-and-drop.** All drag operations synchronously manipulate the Graphology instance.
 2. **Sigma Events to Zustand Actions.** When a user clicks a node, Sigma fires the `clickNode` event. We immediately translate this into a Zustand action like `setSelection({ kind: 'concept', id: ... })`.
 3. **E2E Testing is Mocked.** Because Playwright cannot inspect elements inside WebGL, we test the integration boundary by emitting exact Sigma events (`window.__SIGMA__.emit('clickNode')`) and asserting that the Radix Dialogs/Inspectors appear correctly.
+
+## Visual Contract
+
+The map runtime is the first surface that should fully express Sorelo's `canvas-first signal UI`.
+
+That means:
+
+- the canvas is visually dominant and remains the primary working zone
+- hierarchy must be glanceable through typography, signal color, grouping, and overlay placement
+- motion should clarify interaction state, connection, and selection
+- Inspector and Scenario surfaces should remain secondary and supportive
+- glassmorphism, frosted panels, or blur-heavy chrome should not become the primary source of polish or depth

@@ -127,7 +127,10 @@ export function WorkspaceHome({
   ];
 
   return (
-    <div className="page-stack maps-home-page sl-workspace-home">
+    <div
+      className="page-stack maps-home-page sl-workspace-home"
+      data-surface-mode="operational"
+    >
       <WorkspaceSectionNav
         workspaceSlug={workspaceSlug}
         currentSection="overview"

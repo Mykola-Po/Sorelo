@@ -1963,7 +1963,13 @@ export function GraphCanvasRuntime({
       : null;
 
   return (
-    <div className="canvas-card" style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div
+      className="canvas-card"
+      data-readability-mode={isZoomedOut ? "dots" : "cards"}
+      data-selection-kind={selection.kind}
+      data-drag-phase={dragState.phase}
+      style={{ position: "relative", width: "100%", height: "100%" }}
+    >
       {graphMetrics.conceptCount === 0 && interactionMode === "inspect" ? (
         <div className="canvas-empty-overlay" style={{ zIndex: 10 }}>
           <Text size="2" color="gray">
@@ -1989,6 +1995,8 @@ export function GraphCanvasRuntime({
                 ? "canvas-runtime-status is-error"
                 : "canvas-runtime-status"
           }
+          role="status"
+          aria-live="polite"
         >
           <Text
             size="1"
@@ -2015,6 +2023,7 @@ export function GraphCanvasRuntime({
         ref={cardsLayerRef}
         className="sl-concept-card-layer"
         aria-hidden={!snapshot}
+        data-visibility-mode={isZoomedOut ? "hidden" : "visible"}
         onWheelCapture={forwardWheelToSigma}
       >
         {dragState.phase === "dragging" &&
@@ -2073,6 +2082,9 @@ export function GraphCanvasRuntime({
               }}
               aria-label={`${concept.title}, ${conceptTypeLabel}`}
               aria-grabbed={isDraggingConcept}
+              data-selected={isSelectedConcept ? "true" : "false"}
+              data-connection-source={isConnectionSource ? "true" : "false"}
+              data-dragging={isDraggingConcept ? "true" : "false"}
             >
               <Text as="span" size="2" weight="medium" className="sl-concept-card-title">
                 {concept.title}
@@ -2096,6 +2108,7 @@ export function GraphCanvasRuntime({
       <div
         className="sl-concept-dot-layer"
         aria-hidden={!snapshot || !isZoomedOut}
+        data-visibility-mode={isZoomedOut ? "visible" : "hidden"}
         onWheelCapture={forwardWheelToSigma}
       >
         {snapshot?.concepts.map((concept) => {
@@ -2124,6 +2137,8 @@ export function GraphCanvasRuntime({
               onPointerLeave={() => handleDotHoverEnd(concept.id)}
               onFocus={() => handleDotHoverStart(concept.id)}
               onBlur={() => handleDotHoverEnd(concept.id)}
+              data-selected={isSelectedConcept ? "true" : "false"}
+              data-connection-source={isConnectionSource ? "true" : "false"}
             />
           );
         })}

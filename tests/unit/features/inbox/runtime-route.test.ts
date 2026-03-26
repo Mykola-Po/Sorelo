@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { assertInternalInboxRequestMock, collectInboxRuntimeReportMock } =
+const {
+  assertInternalInboxRequestMock,
+  collectInboxRuntimeReportMock,
+  logInboxInternalRouteEventMock,
+} =
   vi.hoisted(() => ({
     assertInternalInboxRequestMock: vi.fn(),
     collectInboxRuntimeReportMock: vi.fn(),
+    logInboxInternalRouteEventMock: vi.fn(),
   }));
 
 vi.mock("@/features/inbox/internal-api", () => ({
   assertInternalInboxRequest: assertInternalInboxRequestMock,
+  logInboxInternalRouteEvent: logInboxInternalRouteEventMock,
 }));
 
 vi.mock("@/features/inbox/operations", () => ({
@@ -24,13 +30,16 @@ describe("internal inbox runtime route", () => {
 
   it("returns auth failures from the shared internal auth contract", async () => {
     assertInternalInboxRequestMock.mockReturnValue(
-      NextResponse.json(
-        {
-          code: "internal_auth_invalid_token",
-          error: "Unauthorized.",
-        },
-        { status: 401 }
-      )
+      {
+        ok: false,
+        response: NextResponse.json(
+          {
+            code: "internal_auth_invalid_token",
+            error: "Unauthorized.",
+          },
+          { status: 401 }
+        ),
+      }
     );
 
     const response = await GET(
@@ -46,7 +55,11 @@ describe("internal inbox runtime route", () => {
   });
 
   it("returns 503 when the runtime report is failed", async () => {
-    assertInternalInboxRequestMock.mockReturnValue(null);
+    assertInternalInboxRequestMock.mockReturnValue({
+      ok: true,
+      caller: "inbox-runtime-check",
+      channel: "runtime",
+    });
     collectInboxRuntimeReportMock.mockResolvedValue({
       status: "failed",
       generatedAt: "2026-03-22T12:00:00.000Z",
@@ -70,7 +83,11 @@ describe("internal inbox runtime route", () => {
   });
 
   it("returns 200 for degraded runtime reports", async () => {
-    assertInternalInboxRequestMock.mockReturnValue(null);
+    assertInternalInboxRequestMock.mockReturnValue({
+      ok: true,
+      caller: "inbox-runtime-check",
+      channel: "runtime",
+    });
     collectInboxRuntimeReportMock.mockResolvedValue({
       status: "degraded",
       generatedAt: "2026-03-22T12:00:00.000Z",

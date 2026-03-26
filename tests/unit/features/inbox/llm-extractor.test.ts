@@ -4,7 +4,9 @@ import { segmentInboxText } from "@/features/inbox/engine";
 
 const inboxEnvKeys = [
   "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
   "INBOX_LLM_ENABLED",
+  "INBOX_LLM_PROVIDER",
   "INBOX_LLM_MODEL",
   "INBOX_LLM_TIMEOUT_MS",
   "INBOX_LLM_MAX_RETRIES",
@@ -37,7 +39,9 @@ afterEach(() => {
 describe("inbox llm extractor", () => {
   it("uses the deterministic interpreter when the Inbox LLM is disabled", async () => {
     delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     delete process.env.INBOX_LLM_ENABLED;
+    delete process.env.INBOX_LLM_PROVIDER;
 
     const { extractInboxInterpretation, getConfiguredInboxInterpretRuntime } =
       await import("@/features/inbox/llm-extractor");
@@ -64,9 +68,141 @@ describe("inbox llm extractor", () => {
     expect(result.interpretation.questions.length).toBeGreaterThan(0);
   });
 
+  it("uses Gemini structured output when the Inbox LLM is configured for Gemini", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    process.env.INBOX_LLM_ENABLED = "true";
+    process.env.INBOX_LLM_PROVIDER = "gemini";
+    process.env.INBOX_LLM_MODEL = "gemini-2.5-flash-lite";
+    process.env.INBOX_LLM_MAX_RETRIES = "1";
+    process.env.INBOX_LLM_RETRY_BASE_DELAY_MS = "1";
+
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          modelVersion: "gemini-2.5-flash-lite",
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      summary:
+                        "Public criticism from a close partner appears to trigger withdrawal.",
+                      ambiguitySignals: ["actor identity is partial"],
+                      entities: [
+                        {
+                          label: "public criticism from a close partner",
+                          entityType: "trigger",
+                          fragmentOrdinals: [0],
+                          confidence: 0.84,
+                          evidence: "Public criticism from a close partner",
+                        },
+                        {
+                          label: "withdrawal",
+                          entityType: "state",
+                          fragmentOrdinals: [0],
+                          confidence: 0.8,
+                          evidence: "withdrawal",
+                        },
+                      ],
+                      relations: [
+                        {
+                          sourceLabel: "public criticism from a close partner",
+                          targetLabel: "withdrawal",
+                          relationType: "causes",
+                          fragmentOrdinals: [0],
+                          confidence: 0.82,
+                          evidence: "causes withdrawal",
+                        },
+                      ],
+                      questions: [
+                        {
+                          question: "Who is the close partner in this context?",
+                          confidence: 0.63,
+                          fragmentOrdinals: [0],
+                        },
+                      ],
+                      constraints: [],
+                      intents: [],
+                      hypotheses: [
+                        {
+                          rank: 1,
+                          hypothesisType: "interpretation",
+                          summary:
+                            "Public criticism from a close partner appears to trigger withdrawal.",
+                          fragmentOrdinals: [0],
+                          confidence: 0.81,
+                          explanation:
+                            "The trigger and reaction are explicit enough to form a reviewable interpretation.",
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 120,
+            candidatesTokenCount: 180,
+            totalTokenCount: 300,
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      )
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { extractInboxInterpretation, getConfiguredInboxInterpretRuntime } =
+      await import("@/features/inbox/llm-extractor");
+    const fragments = segmentInboxText(
+      "Public criticism from a close partner causes withdrawal."
+    ).fragments;
+
+    const result = await extractInboxInterpretation({
+      itemId: "11111111-1111-4111-8111-111111111111",
+      normalizedText: "Public criticism from a close partner causes withdrawal.",
+      fragments,
+      clarificationContext: [],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-goog-api-key": "test-gemini-key",
+        }),
+      })
+    );
+    expect(getConfiguredInboxInterpretRuntime()).toEqual({
+      provider: "gemini",
+      modelName: "gemini-2.5-flash-lite",
+      promptVersion: "inbox-interpret.gemini.v1",
+    });
+    expect(result.runtime.provider).toBe("gemini");
+    expect(result.runtime.fallbackUsed).toBe(false);
+    expect(result.runtime.metadata.executionMode).toBe("gemini_structured_output");
+    expect(result.runtime.metadata.configuredProvider).toBe("gemini");
+    expect(result.runtime.metadata.attemptCount).toBe(1);
+    expect(result.runtime.metadata.retryCount).toBe(0);
+    expect(result.interpretation.entities.map((entity) => entity.label)).toContain(
+      "withdrawal"
+    );
+    expect(result.interpretation.relations[0]?.relationType).toBe("causes");
+  });
+
   it("uses OpenAI structured output when the Inbox LLM is enabled", async () => {
     process.env.OPENAI_API_KEY = "test-openai-key";
     process.env.INBOX_LLM_ENABLED = "true";
+    process.env.INBOX_LLM_PROVIDER = "openai";
     process.env.INBOX_LLM_MODEL = "gpt-5-mini";
     process.env.INBOX_LLM_MAX_RETRIES = "2";
     process.env.INBOX_LLM_RETRY_BASE_DELAY_MS = "1";
@@ -181,6 +317,7 @@ describe("inbox llm extractor", () => {
   it("falls back to the deterministic interpreter after an OpenAI failure", async () => {
     process.env.OPENAI_API_KEY = "test-openai-key";
     process.env.INBOX_LLM_ENABLED = "true";
+    process.env.INBOX_LLM_PROVIDER = "openai";
     process.env.INBOX_LLM_MODEL = "gpt-5-mini";
     process.env.INBOX_LLM_MAX_RETRIES = "2";
     process.env.INBOX_LLM_RETRY_BASE_DELAY_MS = "1";
@@ -231,6 +368,7 @@ describe("inbox llm extractor", () => {
   it("retries transient OpenAI failures before succeeding", async () => {
     process.env.OPENAI_API_KEY = "test-openai-key";
     process.env.INBOX_LLM_ENABLED = "true";
+    process.env.INBOX_LLM_PROVIDER = "openai";
     process.env.INBOX_LLM_MODEL = "gpt-5-mini";
     process.env.INBOX_LLM_MAX_RETRIES = "2";
     process.env.INBOX_LLM_RETRY_BASE_DELAY_MS = "1";
