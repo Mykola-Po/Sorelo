@@ -7,18 +7,14 @@ import {
   IconButton,
   Text,
 } from "@radix-ui/themes";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { WorkspaceSwitcher } from "@/features/workspace/components/workspace-switcher";
 import { signOutAction } from "@/shared/auth/actions";
-import {
-  workspaceMapsPath,
-  workspaceMembersPath,
-} from "@/shared/config/routes";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getAppShellMessages } from "@/shared/i18n/messages/app-shell";
 import { PathnameLocaleSwitcher } from "@/shared/ui/components/pathname-locale-switcher";
+import { ProductPrimaryNav } from "@/shared/ui/shells/product-primary-nav";
 
 type ProductShellProps = {
   locale: SupportedLocale;
@@ -49,7 +45,7 @@ export function ProductShell({
   );
 
   return (
-    <div className="viewport-shell app-shell">
+    <div className="viewport-shell app-shell" data-surface-mode="operational">
       <Flex direction="column" className="product-shell">
         <div className="product-topbar">
           <Flex
@@ -64,6 +60,9 @@ export function ProductShell({
                 <Text size="4" weight="bold">
                   Sorelo
                 </Text>
+                <Text size="1" color="gray" className="brand-subtitle">
+                  {messages.shell.brandNote}
+                </Text>
               </Flex>
             </Flex>
 
@@ -77,9 +76,14 @@ export function ProductShell({
 
             <Flex
               align="center"
-              gap="0"
+              gap="2"
               className="product-topbar-right"
             >
+              <ProductPrimaryNav
+                workspaceSlug={activeWorkspace?.slug}
+                mapsLabel={messages.shell.maps}
+                membersLabel={messages.shell.members}
+              />
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   <IconButton
@@ -118,21 +122,6 @@ export function ProductShell({
                       </Text>
                     </Flex>
                   </Flex>
-                  {activeWorkspace ? (
-                    <>
-                      <DropdownMenu.Separator />
-                      <DropdownMenu.Item asChild>
-                        <Link href={workspaceMapsPath(activeWorkspace.slug)}>
-                          {messages.shell.maps}
-                        </Link>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item asChild>
-                        <Link href={workspaceMembersPath(activeWorkspace.slug)}>
-                          {messages.shell.members}
-                        </Link>
-                      </DropdownMenu.Item>
-                    </>
-                  ) : null}
                   <DropdownMenu.Separator />
                   <Box className="profile-menu-locale">
                     <PathnameLocaleSwitcher currentLocale={locale} />

@@ -13,6 +13,9 @@ export function workspaceMapPath(workspaceSlug: string, mapId: string) {
   return `/app/${workspaceSlug}/maps/${mapId}`;
 }
 
+export function workspaceInboxPath(workspaceSlug: string) {
+  return `/app/${workspaceSlug}/inbox`;
+}
 
 export function workspaceMembersPath(workspaceSlug: string) {
   return `/app/${workspaceSlug}/settings/members`;

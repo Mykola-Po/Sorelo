@@ -9,6 +9,7 @@ import type {
   GraphCounts,
   GraphConceptNode,
   GraphLinkEdge,
+  GraphSnapshot,
   ScenarioPanelSummary,
   ScenarioRunPanelSummary,
 } from "@/features/map-runtime/types";
@@ -71,9 +72,16 @@ export type MapConceptCatalogEntry = ConceptCatalogEntry;
 
 export type LearningSuggestionSummary = {
   id: string;
+  batchId: string;
+  batchType: string;
+  batchStatus: string;
+  batchMetadata: Record<string, unknown>;
+  inboxItemId: string | null;
+  inboxPacketId: string | null;
   suggestionType: string;
   targetEntityType: string;
   proposedPayload: Record<string, unknown>;
+  artifactOrder: number;
   rationale: string | null;
   confidence: number | null;
   createdAt: string;
@@ -82,6 +90,10 @@ export type LearningSuggestionSummary = {
   resolution: {
     id: string;
     resolutionType: string;
+    applyStatus: string;
+    appliedAt: string | null;
+    applyOutcome: Record<string, unknown>;
+    applyError: string | null;
     reasonText: string | null;
     resolvedAt: string;
   } | null;
@@ -93,6 +105,7 @@ export type MapWorkspaceProps = {
   workspaceRole: WorkspaceRole;
   map: MapDetail;
   availableMaps: MapSummary[];
+  initialSnapshot: GraphSnapshot;
   graphMetrics: GraphMetrics;
   scenarios: ScenarioSummary[];
   runs: ScenarioRunSummary[];

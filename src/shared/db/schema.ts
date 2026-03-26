@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgSchema,
   pgTable,
@@ -14,6 +15,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -59,6 +61,7 @@ export const entityOriginTypeEnum = pgEnum("entity_origin_type", [
 ]);
 
 export const learningSchema = pgSchema("learning");
+export const appPrivateSchema = pgSchema("app_private");
 
 export const sourceFragmentTypeEnum = learningSchema.enum("source_fragment_type", [
   "manual_note",
@@ -69,7 +72,15 @@ export const sourceFragmentTypeEnum = learningSchema.enum("source_fragment_type"
 ]);
 export const suggestionBatchTypeEnum = learningSchema.enum(
   "suggestion_batch_type",
-  ["extract", "link", "retype", "scenario_seed", "scenario_eval"]
+  [
+    "extract",
+    "link",
+    "retype",
+    "scenario_seed",
+    "scenario_eval",
+    "promote_apply",
+    "inbox_review",
+  ]
 );
 export const suggestionBatchStatusEnum = learningSchema.enum(
   "suggestion_batch_status",
@@ -80,6 +91,8 @@ export const suggestionTypeEnum = learningSchema.enum("suggestion_type", [
   "update_concept",
   "create_link",
   "update_link",
+  "merge_candidate",
+  "park_for_review",
   "create_scenario_seed",
   "scenario_hypothesis",
 ]);
@@ -128,6 +141,124 @@ export const scenarioStepFeedbackVerdictEnum = learningSchema.enum(
   "scenario_step_feedback_verdict",
   ["correct", "overstated", "wrong_link", "missing_context", "wrong_effect"]
 );
+
+export const inboxSourceTypeEnum = appPrivateSchema.enum("inbox_source_type", [
+  "manual_note",
+  "transcript",
+  "chat",
+  "upload",
+  "import",
+]);
+export const inboxItemStatusEnum = appPrivateSchema.enum("inbox_item_status", [
+  "received",
+  "persisted",
+  "normalized",
+  "segmented",
+  "interpreted",
+  "scored",
+  "resolved",
+  "clarification_requested",
+  "promoted",
+  "ready_for_review",
+  "parked",
+  "discarded",
+  "applied",
+  "failed_needs_review",
+]);
+export const inboxFragmentTypeEnum = appPrivateSchema.enum(
+  "inbox_fragment_type",
+  ["statement", "question", "constraint", "claim", "observation", "intent", "unknown"]
+);
+export const inboxFragmentSourceKindEnum = appPrivateSchema.enum(
+  "inbox_fragment_source_kind",
+  ["item_raw", "clarification_answer"]
+);
+export const inboxHypothesisTypeEnum = appPrivateSchema.enum(
+  "inbox_hypothesis_type",
+  [
+    "interpretation",
+    "candidate_structure",
+    "relation_cluster",
+    "actionable_summary",
+  ]
+);
+export const suggestionApplyStatusEnum = learningSchema.enum(
+  "suggestion_apply_status",
+  ["pending", "applied", "failed", "not_applicable"]
+);
+export const canonicalMutationTypeEnum = learningSchema.enum(
+  "canonical_mutation_type",
+  ["create_concept", "update_concept", "create_link"]
+);
+export const inboxAtomTypeEnum = appPrivateSchema.enum("inbox_atom_type", [
+  "entity",
+  "relation",
+  "intent",
+  "question",
+  "constraint",
+  "claim",
+  "observation",
+]);
+export const inboxRouteEnum = appPrivateSchema.enum("inbox_route", [
+  "promote",
+  "clarify",
+  "park",
+  "discard",
+]);
+export const inboxStructuredPacketTypeEnum = appPrivateSchema.enum(
+  "inbox_structured_packet_type",
+  [
+    "concept_packet",
+    "link_packet",
+    "mixed_packet",
+    "clarification_packet",
+    "parked_packet",
+  ]
+);
+export const inboxStructuredPacketStatusEnum = appPrivateSchema.enum(
+  "inbox_structured_packet_status",
+  ["draft", "ready", "emitted"]
+);
+export const inboxMergeTargetObjectTypeEnum = appPrivateSchema.enum(
+  "inbox_merge_target_object_type",
+  ["concept", "link", "scenario", "map"]
+);
+export const inboxMergeCandidateDecisionEnum = appPrivateSchema.enum(
+  "inbox_merge_candidate_decision",
+  ["pending", "accepted", "rejected"]
+);
+export const inboxClarificationStatusEnum = appPrivateSchema.enum(
+  "inbox_clarification_status",
+  ["pending", "answered", "dismissed", "expired"]
+);
+export const inboxEmbeddingOwnerTypeEnum = appPrivateSchema.enum(
+  "inbox_embedding_owner_type",
+  ["item", "fragment", "hypothesis", "atom", "packet"]
+);
+export const inboxWorkflowEventStatusEnum = appPrivateSchema.enum(
+  "inbox_workflow_event_status",
+  ["started", "completed", "failed"]
+);
+export const inboxPipelineAttemptTriggerKindEnum = appPrivateSchema.enum(
+  "inbox_pipeline_attempt_trigger_kind",
+  ["manual_process", "clarification_rerun"]
+);
+export const inboxPipelineRunStatusEnum = appPrivateSchema.enum(
+  "inbox_pipeline_run_status",
+  ["running", "completed", "failed"]
+);
+export const inboxExecutionFailureCodeEnum = appPrivateSchema.enum(
+  "inbox_execution_failure_code",
+  ["conflict", "validation", "persistence", "pipeline", "unknown"]
+);
+
+function inboxScoreColumn(name: string) {
+  return numeric(name, {
+    precision: 5,
+    scale: 4,
+    mode: "number",
+  });
+}
 
 export const users = pgTable(
   "users",
@@ -554,6 +685,15 @@ export const learningSuggestionBatches = learningSchema.table(
     initiatedByUserId: uuid("initiated_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    inboxItemId: uuid("inbox_item_id").references(() => inboxItems.id, {
+      onDelete: "set null",
+    }),
+    inboxPacketId: uuid("inbox_packet_id").references(
+      () => inboxStructuredPackets.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     batchType: suggestionBatchTypeEnum("batch_type").notNull(),
     modelName: varchar("model_name", { length: 160 }).notNull(),
     modelVersion: varchar("model_version", { length: 64 }).notNull(),
@@ -582,6 +722,14 @@ export const learningSuggestionBatches = learningSchema.table(
       table.batchType,
       table.startedAt
     ),
+    index("learning_suggestion_batches_inbox_item_started_idx").on(
+      table.inboxItemId,
+      table.startedAt
+    ),
+    index("learning_suggestion_batches_inbox_packet_started_idx").on(
+      table.inboxPacketId,
+      table.startedAt
+    ),
     index("learning_suggestion_batches_input_hash_idx").on(table.inputHash),
   ]
 );
@@ -599,12 +747,22 @@ export const learningSuggestions = learningSchema.table(
     mapId: uuid("map_id").references(() => maps.id, {
       onDelete: "set null",
     }),
+    inboxItemId: uuid("inbox_item_id").references(() => inboxItems.id, {
+      onDelete: "set null",
+    }),
+    inboxPacketId: uuid("inbox_packet_id").references(
+      () => inboxStructuredPackets.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     sourceFragmentId: uuid("source_fragment_id").references(
       () => learningSourceFragments.id,
       {
         onDelete: "set null",
       }
     ),
+    artifactOrder: integer("artifact_order").notNull().default(0),
     suggestionType: suggestionTypeEnum("suggestion_type").notNull(),
     targetEntityType: suggestionTargetEntityTypeEnum("target_entity_type")
       .notNull()
@@ -625,12 +783,24 @@ export const learningSuggestions = learningSchema.table(
       table.batchId,
       table.createdAt
     ),
+    index("learning_suggestions_batch_artifact_idx").on(
+      table.batchId,
+      table.artifactOrder
+    ),
     index("learning_suggestions_workspace_created_idx").on(
       table.workspaceId,
       table.createdAt
     ),
     index("learning_suggestions_map_created_idx").on(
       table.mapId,
+      table.createdAt
+    ),
+    index("learning_suggestions_inbox_item_created_idx").on(
+      table.inboxItemId,
+      table.createdAt
+    ),
+    index("learning_suggestions_inbox_packet_created_idx").on(
+      table.inboxPacketId,
       table.createdAt
     ),
     index("learning_suggestions_target_entity_idx").on(
@@ -665,6 +835,15 @@ export const learningSuggestionResolutions = learningSchema.table(
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
+    applyStatus: suggestionApplyStatusEnum("apply_status")
+      .notNull()
+      .default("not_applicable"),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    applyOutcome: jsonb("apply_outcome")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    applyError: text("apply_error"),
     reasonText: text("reason_text"),
     latencyMs: integer("latency_ms"),
     resolvedAt: timestamp("resolved_at", { withTimezone: true })
@@ -687,6 +866,10 @@ export const learningSuggestionResolutions = learningSchema.table(
       table.resolutionType,
       table.resolvedAt
     ),
+    index("learning_suggestion_resolutions_apply_status_idx").on(
+      table.applyStatus,
+      table.resolvedAt
+    ),
   ]
 );
 
@@ -705,6 +888,12 @@ export const learningMapVersions = learningSchema.table(
     actorUserId: uuid("actor_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    causedByResolutionId: uuid("caused_by_resolution_id").references(
+      () => learningSuggestionResolutions.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     snapshotJson: jsonb("snapshot_json")
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
@@ -729,6 +918,103 @@ export const learningMapVersions = learningSchema.table(
     index("learning_map_versions_workspace_created_idx").on(
       table.workspaceId,
       table.createdAt
+    ),
+    index("learning_map_versions_resolution_created_idx").on(
+      table.causedByResolutionId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const learningCanonicalMutationProvenance = learningSchema.table(
+  "canonical_mutation_provenance",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, { onDelete: "cascade" }),
+    mapVersionId: uuid("map_version_id")
+      .notNull()
+      .references(() => learningMapVersions.id, { onDelete: "cascade" }),
+    entityType: lineageEntityTypeEnum("entity_type").notNull(),
+    entityId: uuid("entity_id").notNull(),
+    mutationType: canonicalMutationTypeEnum("mutation_type").notNull(),
+    originSuggestionId: uuid("origin_suggestion_id")
+      .notNull()
+      .references(() => learningSuggestions.id, { onDelete: "cascade" }),
+    reviewResolutionId: uuid("review_resolution_id")
+      .notNull()
+      .references(() => learningSuggestionResolutions.id, {
+        onDelete: "cascade",
+      }),
+    inboxItemId: uuid("inbox_item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    inboxPacketId: uuid("inbox_packet_id").references(
+      () => inboxStructuredPackets.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    appliedByUserId: uuid("applied_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_canonical_mutation_provenance_map_version_key").on(
+      table.mapVersionId
+    ),
+    index("learning_canonical_mutation_provenance_entity_idx").on(
+      table.entityType,
+      table.entityId
+    ),
+    index("learning_canonical_mutation_provenance_resolution_idx").on(
+      table.reviewResolutionId
+    ),
+    index("learning_canonical_mutation_provenance_suggestion_idx").on(
+      table.originSuggestionId
+    ),
+    index("learning_canonical_mutation_provenance_inbox_item_idx").on(
+      table.inboxItemId
+    ),
+  ]
+);
+
+export const learningCanonicalMutationEvidence = learningSchema.table(
+  "canonical_mutation_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    provenanceId: uuid("provenance_id")
+      .notNull()
+      .references(() => learningCanonicalMutationProvenance.id, {
+        onDelete: "cascade",
+      }),
+    inboxFragmentId: uuid("inbox_fragment_id")
+      .notNull()
+      .references(() => inboxFragments.id, { onDelete: "cascade" }),
+    clarificationAnswerId: uuid("clarification_answer_id").references(
+      () => inboxClarificationAnswers.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    evidenceOrder: integer("evidence_order").notNull(),
+    fragmentOrdinal: integer("fragment_ordinal").notNull(),
+  },
+  (table) => [
+    uniqueIndex("learning_canonical_mutation_evidence_fragment_key").on(
+      table.provenanceId,
+      table.inboxFragmentId
+    ),
+    index("learning_canonical_mutation_evidence_provenance_order_idx").on(
+      table.provenanceId,
+      table.evidenceOrder
     ),
   ]
 );
@@ -829,6 +1115,366 @@ export const learningScenarioStepFeedback = learningSchema.table(
     ),
   ]
 );
+
+export const inboxItems = appPrivateSchema.table(
+  "inbox_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, {
+        onDelete: "cascade",
+      }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, {
+        onDelete: "restrict",
+      }),
+    sourceType: inboxSourceTypeEnum("source_type").notNull(),
+    sourceRef: text("source_ref"),
+    rawText: text("raw_text").notNull(),
+    normalizedText: text("normalized_text"),
+    language: varchar("language", { length: 32 }),
+    status: inboxItemStatusEnum("status").notNull().default("received"),
+    score: inboxScoreColumn("score"),
+    confidence: inboxScoreColumn("confidence"),
+    ambiguity: inboxScoreColumn("ambiguity"),
+    risk: inboxScoreColumn("risk"),
+    route: inboxRouteEnum("route"),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.mapId, table.workspaceId],
+      foreignColumns: [maps.id, maps.workspaceId],
+      name: "inbox_items_map_workspace_fk",
+    }),
+    uniqueIndex("inbox_items_workspace_map_idempotency_key").on(
+      table.workspaceId,
+      table.mapId,
+      table.idempotencyKey
+    ),
+    index("inbox_items_user_created_idx").on(
+      table.userId,
+      table.createdAt.desc()
+    ),
+    index("inbox_items_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt.desc()
+    ),
+    index("inbox_items_map_created_idx").on(table.mapId, table.createdAt.desc()),
+    index("inbox_items_status_route_idx").on(table.status, table.route),
+  ]
+);
+
+export const inboxFragments = appPrivateSchema.table(
+  "inbox_fragments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    fragmentText: text("fragment_text").notNull(),
+    fragmentType: inboxFragmentTypeEnum("fragment_type"),
+    sourceKind: inboxFragmentSourceKindEnum("source_kind")
+      .notNull()
+      .default("item_raw"),
+    clarificationAnswerId: uuid("clarification_answer_id").references(
+      () => inboxClarificationAnswers.id,
+      { onDelete: "set null" }
+    ),
+    spanStart: integer("span_start"),
+    spanEnd: integer("span_end"),
+  },
+  (table) => [
+    uniqueIndex("inbox_fragments_item_ordinal_key").on(table.itemId, table.ordinal),
+    index("inbox_fragments_item_ordinal_idx").on(table.itemId, table.ordinal),
+  ]
+);
+
+export const inboxHypotheses = appPrivateSchema.table(
+  "inbox_hypotheses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    fragmentId: uuid("fragment_id").references(() => inboxFragments.id, {
+      onDelete: "set null",
+    }),
+    rank: integer("rank").notNull(),
+    hypothesisType: inboxHypothesisTypeEnum("hypothesis_type").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    confidence: inboxScoreColumn("confidence").notNull(),
+    explanation: text("explanation"),
+    modelName: varchar("model_name", { length: 160 }).notNull(),
+    promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+  },
+  (table) => [
+    index("inbox_hypotheses_item_rank_idx").on(table.itemId, table.rank),
+  ]
+);
+
+export const inboxAtoms = appPrivateSchema.table(
+  "inbox_atoms",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    hypothesisId: uuid("hypothesis_id")
+      .notNull()
+      .references(() => inboxHypotheses.id, { onDelete: "cascade" }),
+    atomType: inboxAtomTypeEnum("atom_type").notNull(),
+    canonicalValue: text("canonical_value"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    confidence: inboxScoreColumn("confidence").notNull(),
+  }
+);
+
+export const inboxStructuredPackets = appPrivateSchema.table(
+  "structured_packets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    packetType: inboxStructuredPacketTypeEnum("packet_type").notNull(),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    route: inboxRouteEnum("route").notNull(),
+    status: inboxStructuredPacketStatusEnum("status").notNull().default("draft"),
+  }
+);
+
+export const inboxMergeCandidates = appPrivateSchema.table(
+  "merge_candidates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    targetObjectType: inboxMergeTargetObjectTypeEnum("target_object_type").notNull(),
+    targetObjectId: uuid("target_object_id").notNull(),
+    similarity: inboxScoreColumn("similarity").notNull(),
+    decision: inboxMergeCandidateDecisionEnum("decision"),
+  },
+  (table) => [
+    index("inbox_merge_candidates_item_similarity_idx").on(
+      table.itemId,
+      table.similarity.desc()
+    ),
+  ]
+);
+
+export const inboxClarificationRequests = appPrivateSchema.table(
+  "clarification_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    question: text("question").notNull(),
+    reason: text("reason").notNull(),
+    status: inboxClarificationStatusEnum("status").notNull().default("pending"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+  }
+);
+
+export const inboxClarificationAnswers = appPrivateSchema.table(
+  "clarification_answers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => inboxClarificationRequests.id, { onDelete: "cascade" }),
+    answerText: text("answer_text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("inbox_clarification_answers_request_key").on(table.requestId),
+  ]
+);
+
+export const inboxEmbeddings = appPrivateSchema.table(
+  "embeddings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ownerType: inboxEmbeddingOwnerTypeEnum("owner_type").notNull(),
+    ownerId: uuid("owner_id").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+    embeddingModel: varchar("embedding_model", { length: 160 }).notNull(),
+    contentHash: varchar("content_hash", { length: 128 }).notNull(),
+  },
+  (table) => [
+    index("inbox_embeddings_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops")
+    ),
+    uniqueIndex("inbox_embeddings_owner_content_hash_key").on(
+      table.contentHash,
+      table.embeddingModel,
+      table.ownerType,
+      table.ownerId
+    ),
+  ]
+);
+
+export const inboxWorkflowEvents = appPrivateSchema.table(
+  "workflow_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    stepName: varchar("step_name", { length: 64 }).notNull(),
+    status: inboxWorkflowEventStatusEnum("status").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown> | null>(),
+    attemptNo: integer("attempt_no").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("inbox_workflow_events_item_created_idx").on(
+      table.itemId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const inboxPipelineAttempts = appPrivateSchema.table(
+  "inbox_pipeline_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    attemptNo: integer("attempt_no").notNull(),
+    triggerKind: inboxPipelineAttemptTriggerKindEnum("trigger_kind").notNull(),
+    runnerKind: varchar("runner_kind", { length: 64 }).notNull(),
+    status: inboxPipelineRunStatusEnum("status").notNull().default("running"),
+    route: inboxRouteEnum("route"),
+    reason: text("reason"),
+    failureCode: inboxExecutionFailureCodeEnum("failure_code"),
+    failureMessage: text("failure_message"),
+    clarificationRequestId: uuid("clarification_request_id").references(
+      () => inboxClarificationRequests.id,
+      { onDelete: "set null" }
+    ),
+    clarificationAnswerId: uuid("clarification_answer_id").references(
+      () => inboxClarificationAnswers.id,
+      { onDelete: "set null" }
+    ),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    latencyMs: integer("latency_ms"),
+  },
+  (table) => [
+    uniqueIndex("inbox_pipeline_attempts_item_attempt_key").on(
+      table.itemId,
+      table.attemptNo
+    ),
+    index("inbox_pipeline_attempts_item_attempt_idx").on(
+      table.itemId,
+      table.attemptNo.desc()
+    ),
+    index("inbox_pipeline_attempts_status_started_idx").on(
+      table.status,
+      table.startedAt.desc()
+    ),
+    index("inbox_pipeline_attempts_failure_started_idx").on(
+      table.failureCode,
+      table.startedAt.desc()
+    ),
+  ]
+);
+
+export const inboxStepRuns = appPrivateSchema.table(
+  "inbox_step_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    attemptId: uuid("attempt_id")
+      .notNull()
+      .references(() => inboxPipelineAttempts.id, { onDelete: "cascade" }),
+    stepName: varchar("step_name", { length: 64 }).notNull(),
+    stepOrder: integer("step_order").notNull(),
+    runNo: integer("run_no").notNull().default(1),
+    status: inboxPipelineRunStatusEnum("status").notNull().default("running"),
+    modelName: varchar("model_name", { length: 160 }),
+    promptVersion: varchar("prompt_version", { length: 64 }),
+    route: inboxRouteEnum("route"),
+    reason: text("reason"),
+    inputHash: varchar("input_hash", { length: 128 }),
+    outputHash: varchar("output_hash", { length: 128 }),
+    failureCode: inboxExecutionFailureCodeEnum("failure_code"),
+    failureMessage: text("failure_message"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    latencyMs: integer("latency_ms"),
+  },
+  (table) => [
+    uniqueIndex("inbox_step_runs_attempt_step_run_key").on(
+      table.attemptId,
+      table.stepOrder,
+      table.runNo
+    ),
+    index("inbox_step_runs_attempt_step_idx").on(
+      table.attemptId,
+      table.stepOrder,
+      table.runNo
+    ),
+    index("inbox_step_runs_status_started_idx").on(
+      table.status,
+      table.startedAt.desc()
+    ),
+    index("inbox_step_runs_failure_started_idx").on(
+      table.failureCode,
+      table.startedAt.desc()
+    ),
+  ]
+);
+
+export const appMigrations = appPrivateSchema.table("app_migrations", {
+  version: varchar("version", { length: 160 }).primaryKey(),
+  appliedAt: timestamp("applied_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 /** @deprecated Legacy compatibility table. Do not use for map-first product flows. */
 export const projects = pgTable(
@@ -1164,6 +1810,14 @@ export const learningSuggestionBatchRelations = relations(
       fields: [learningSuggestionBatches.initiatedByUserId],
       references: [users.id],
     }),
+    inboxItem: one(inboxItems, {
+      fields: [learningSuggestionBatches.inboxItemId],
+      references: [inboxItems.id],
+    }),
+    inboxPacket: one(inboxStructuredPackets, {
+      fields: [learningSuggestionBatches.inboxPacketId],
+      references: [inboxStructuredPackets.id],
+    }),
     suggestions: many(learningSuggestions),
   })
 );
@@ -1182,6 +1836,14 @@ export const learningSuggestionRelations = relations(
     map: one(maps, {
       fields: [learningSuggestions.mapId],
       references: [maps.id],
+    }),
+    inboxItem: one(inboxItems, {
+      fields: [learningSuggestions.inboxItemId],
+      references: [inboxItems.id],
+    }),
+    inboxPacket: one(inboxStructuredPackets, {
+      fields: [learningSuggestions.inboxPacketId],
+      references: [inboxStructuredPackets.id],
     }),
     sourceFragment: one(learningSourceFragments, {
       fields: [learningSuggestions.sourceFragmentId],
@@ -1210,13 +1872,14 @@ export const learningSuggestionResolutionRelations = relations(
       fields: [learningSuggestionResolutions.actorUserId],
       references: [users.id],
     }),
+    canonicalMutations: many(learningCanonicalMutationProvenance),
     lineageEntries: many(learningEntityLineage),
   })
 );
 
 export const learningMapVersionRelations = relations(
   learningMapVersions,
-  ({ one }) => ({
+  ({ many, one }) => ({
     workspace: one(workspaces, {
       fields: [learningMapVersions.workspaceId],
       references: [workspaces.id],
@@ -1228,6 +1891,68 @@ export const learningMapVersionRelations = relations(
     actor: one(users, {
       fields: [learningMapVersions.actorUserId],
       references: [users.id],
+    }),
+    causedByResolution: one(learningSuggestionResolutions, {
+      fields: [learningMapVersions.causedByResolutionId],
+      references: [learningSuggestionResolutions.id],
+    }),
+    canonicalMutations: many(learningCanonicalMutationProvenance),
+  })
+);
+
+export const learningCanonicalMutationProvenanceRelations = relations(
+  learningCanonicalMutationProvenance,
+  ({ many, one }) => ({
+    workspace: one(workspaces, {
+      fields: [learningCanonicalMutationProvenance.workspaceId],
+      references: [workspaces.id],
+    }),
+    map: one(maps, {
+      fields: [learningCanonicalMutationProvenance.mapId],
+      references: [maps.id],
+    }),
+    mapVersion: one(learningMapVersions, {
+      fields: [learningCanonicalMutationProvenance.mapVersionId],
+      references: [learningMapVersions.id],
+    }),
+    suggestion: one(learningSuggestions, {
+      fields: [learningCanonicalMutationProvenance.originSuggestionId],
+      references: [learningSuggestions.id],
+    }),
+    reviewResolution: one(learningSuggestionResolutions, {
+      fields: [learningCanonicalMutationProvenance.reviewResolutionId],
+      references: [learningSuggestionResolutions.id],
+    }),
+    inboxItem: one(inboxItems, {
+      fields: [learningCanonicalMutationProvenance.inboxItemId],
+      references: [inboxItems.id],
+    }),
+    inboxPacket: one(inboxStructuredPackets, {
+      fields: [learningCanonicalMutationProvenance.inboxPacketId],
+      references: [inboxStructuredPackets.id],
+    }),
+    appliedByUser: one(users, {
+      fields: [learningCanonicalMutationProvenance.appliedByUserId],
+      references: [users.id],
+    }),
+    evidence: many(learningCanonicalMutationEvidence),
+  })
+);
+
+export const learningCanonicalMutationEvidenceRelations = relations(
+  learningCanonicalMutationEvidence,
+  ({ one }) => ({
+    provenance: one(learningCanonicalMutationProvenance, {
+      fields: [learningCanonicalMutationEvidence.provenanceId],
+      references: [learningCanonicalMutationProvenance.id],
+    }),
+    inboxFragment: one(inboxFragments, {
+      fields: [learningCanonicalMutationEvidence.inboxFragmentId],
+      references: [inboxFragments.id],
+    }),
+    clarificationAnswer: one(inboxClarificationAnswers, {
+      fields: [learningCanonicalMutationEvidence.clarificationAnswerId],
+      references: [inboxClarificationAnswers.id],
     }),
   })
 );
@@ -1355,6 +2080,10 @@ export type SuggestionTargetEntityType =
   (typeof suggestionTargetEntityTypeEnum.enumValues)[number];
 export type SuggestionResolutionType =
   (typeof suggestionResolutionTypeEnum.enumValues)[number];
+export type SuggestionApplyStatus =
+  (typeof suggestionApplyStatusEnum.enumValues)[number];
+export type CanonicalMutationType =
+  (typeof canonicalMutationTypeEnum.enumValues)[number];
 export type MapVersionTriggerType =
   (typeof mapVersionTriggerTypeEnum.enumValues)[number];
 export type LineageEntityType =
@@ -1365,3 +2094,32 @@ export type ScenarioRunFeedbackVerdict =
   (typeof scenarioRunFeedbackVerdictEnum.enumValues)[number];
 export type ScenarioStepFeedbackVerdict =
   (typeof scenarioStepFeedbackVerdictEnum.enumValues)[number];
+export type InboxSourceType = (typeof inboxSourceTypeEnum.enumValues)[number];
+export type InboxItemStatus = (typeof inboxItemStatusEnum.enumValues)[number];
+export type InboxFragmentType = (typeof inboxFragmentTypeEnum.enumValues)[number];
+export type InboxFragmentSourceKind =
+  (typeof inboxFragmentSourceKindEnum.enumValues)[number];
+export type InboxHypothesisType =
+  (typeof inboxHypothesisTypeEnum.enumValues)[number];
+export type InboxAtomType = (typeof inboxAtomTypeEnum.enumValues)[number];
+export type InboxRoute = (typeof inboxRouteEnum.enumValues)[number];
+export type InboxPacketType =
+  (typeof inboxStructuredPacketTypeEnum.enumValues)[number];
+export type InboxStructuredPacketStatus =
+  (typeof inboxStructuredPacketStatusEnum.enumValues)[number];
+export type InboxMergeTargetObjectType =
+  (typeof inboxMergeTargetObjectTypeEnum.enumValues)[number];
+export type InboxMergeCandidateDecision =
+  (typeof inboxMergeCandidateDecisionEnum.enumValues)[number];
+export type InboxClarificationStatus =
+  (typeof inboxClarificationStatusEnum.enumValues)[number];
+export type InboxEmbeddingOwnerType =
+  (typeof inboxEmbeddingOwnerTypeEnum.enumValues)[number];
+export type InboxWorkflowEventStatus =
+  (typeof inboxWorkflowEventStatusEnum.enumValues)[number];
+export type InboxPipelineAttemptTriggerKind =
+  (typeof inboxPipelineAttemptTriggerKindEnum.enumValues)[number];
+export type InboxPipelineRunStatus =
+  (typeof inboxPipelineRunStatusEnum.enumValues)[number];
+export type InboxExecutionFailureCode =
+  (typeof inboxExecutionFailureCodeEnum.enumValues)[number];

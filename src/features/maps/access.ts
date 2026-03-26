@@ -53,6 +53,24 @@ export async function requireActiveMap(workspaceId: string, mapId: string) {
   return map;
 }
 
+export async function requireActiveMapById(mapId: string) {
+  const [map] = await db
+    .select({
+      id: maps.id,
+      title: maps.title,
+      workspaceId: maps.workspaceId,
+    })
+    .from(maps)
+    .where(and(eq(maps.id, mapId), isNull(maps.archivedAt)))
+    .limit(1);
+
+  if (!map) {
+    throw new Error("Map not found.");
+  }
+
+  return map;
+}
+
 export async function requireMapMembershipById(mapId: string, userId: string) {
   const rows = await db
     .select({

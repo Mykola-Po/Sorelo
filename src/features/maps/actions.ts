@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import {
   archiveMapCommand,
@@ -78,6 +79,10 @@ export async function createMapAction(
 
     redirect(workspaceMapPath(parsed.data.workspaceSlug, map.id));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
+
     return toActionError<"title" | "slug" | "subjectLabel" | "description">(
       error instanceof Error ? error.message : messages.unableToCreate
     );

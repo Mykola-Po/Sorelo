@@ -51,13 +51,21 @@ export function CreateMapForm({ workspaceSlug, locale }: CreateMapFormProps) {
           placeholder={messages.subjectPlaceholder}
           size="3"
         />
-        <TextInputField
-          label={messages.slugLabel}
-          error={state.fieldErrors?.slug?.[0]}
-          name="slug"
-          placeholder={messages.slugPlaceholder}
-          size="3"
-        />
+        <details
+          className="sl-form-advanced"
+          open={Boolean(state.fieldErrors?.slug?.[0])}
+        >
+          <summary>{messages.advancedLabel}</summary>
+          <div className="sl-form-advanced-fields">
+            <TextInputField
+              label={messages.slugLabel}
+              error={state.fieldErrors?.slug?.[0]}
+              name="slug"
+              placeholder={messages.slugPlaceholder}
+              size="3"
+            />
+          </div>
+        </details>
         <TextAreaField
           label={messages.descriptionLabel}
           error={state.fieldErrors?.description?.[0]}

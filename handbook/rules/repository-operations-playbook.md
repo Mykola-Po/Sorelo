@@ -16,6 +16,18 @@ Rules:
 - Push important work to a remote repository early.
 - Treat `git worktree` directories as disposable working copies, not as the long-term source of truth.
 
+Before starting substantial engineering work, read `handbook/executable/project-working-guide.md`.
+
+Use that guide for:
+
+- repository map
+- feature ownership boundaries
+- safe change workflows
+- risk areas
+- verification expectations
+
+Use this playbook as the safety and repository-operations companion to that engineering entrypoint.
+
 ## 2. Safety Baseline
 
 Required controls:
@@ -32,7 +44,10 @@ Required controls:
    - `backups/`
    - `tmp/`
    - `output/`
+   - `.codex-*.out`
+   - `.codex-*.err`
    - `tsconfig.tsbuildinfo`
+   - `next-env.d.ts` remains a generated Next.js file in its canonical generated form
 
 ## 3. Local + Offsite Backup
 
@@ -76,11 +91,20 @@ Use pull requests with a mandatory checklist:
 
 - lint passes
 - typecheck passes
+- `db:check` passes
 - tests pass or explicitly documented as skipped
 - build passes
 - no secrets in diff
 - UI rules respected (see UI engineering playbook)
 - changes are made on a short-lived branch and merged through a reviewed PR
+
+Inbox runtime delivery flow:
+
+1. Configure deployment env, including `INTERNAL_API_SECRET`.
+2. Apply the latest SQL migration under `supabase/migrations/`.
+3. Run `npm run db:check`.
+4. Deploy the app.
+5. Run `npm run ops:inbox:check -- --base-url <deployment-url>`.
 
 ## 5. Scaling Without Chaos
 

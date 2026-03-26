@@ -1,11 +1,15 @@
 import type { RelationType } from "@/shared/db/schema";
 
+export const guidedOnboardingSteps = [
+  "no_concepts",
+  "one_concept_no_link",
+  "multiple_concepts_no_link",
+  "has_links_no_run",
+  "done",
+] as const;
+
 export type GuidedOnboardingStep =
-  | "no_concepts"
-  | "one_concept_no_link"
-  | "multiple_concepts_no_link"
-  | "has_links_no_run"
-  | "done";
+  (typeof guidedOnboardingSteps)[number];
 
 export type CanvasInteractionMode = "inspect" | "placeConcept" | "connectLink";
 
@@ -45,6 +49,10 @@ export function deriveGuidedOnboardingStep(input: {
   }
 
   return "done";
+}
+
+export function isPreFirstLinkGuidedStep(step: GuidedOnboardingStep) {
+  return step === "one_concept_no_link" || step === "multiple_concepts_no_link";
 }
 
 export function getGuidedOnboardingCopy(

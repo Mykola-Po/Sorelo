@@ -31,6 +31,21 @@ describe("loadParsedDocsHubDocument", () => {
     ).toBe(true);
   });
 
+  it("loads and parses the project working guide from the handbook", async () => {
+    const loadedDocument = await loadParsedDocsHubDocument("project-working-guide");
+
+    expect(loadedDocument).not.toBeNull();
+    expect(loadedDocument?.document.path).toBe(
+      "handbook/executable/project-working-guide.md"
+    );
+    expect(loadedDocument?.content.title).toBe("Project Working Guide");
+    expect(
+      loadedDocument?.content.headings.some(
+        (heading) => heading.text === "Repository Map"
+      )
+    ).toBe(true);
+  });
+
   it("returns null for roadmap entries without published files", async () => {
     await expect(loadParsedDocsHubDocument("surface-copy-audit")).resolves.toBeNull();
   });

@@ -3,25 +3,94 @@ import "server-only";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 
-import { requireMapMembershipById } from "@/features/maps/access";
+import {
+  requireActiveMapById,
+  requireWorkspaceMembership,
+} from "@/features/maps/access";
 import { getCurrentUser } from "@/shared/auth/session";
+
+export class RuntimeRouteError extends Error {
+  readonly statusCode: number;
+  readonly code: string;
+
+  constructor(message: string, statusCode: number, code: string) {
+    super(message);
+    this.name = "RuntimeRouteError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+function createRuntimeRouteError(
+  message: string,
+  statusCode: number,
+  code: string
+) {
+  return new RuntimeRouteError(message, statusCode, code);
+}
 
 export async function requireMapRuntimeAccess(mapId: string) {
   const user = await getCurrentUser();
 
   if (!user) {
-    throw new Error("Authentication required.");
+    throw createRuntimeRouteError(
+      "Authentication required.",
+      401,
+      "runtime_auth_required"
+    );
   }
 
-  const access = await requireMapMembershipById(mapId, user.id);
+  let map;
+  try {
+    map = await requireActiveMapById(mapId);
+  } catch {
+    throw createRuntimeRouteError(
+      "Map not found.",
+      404,
+      "runtime_map_not_found"
+    );
+  }
+
+  let membership;
+  try {
+    membership = await requireWorkspaceMembership(map.workspaceId, user.id);
+  } catch {
+    throw createRuntimeRouteError(
+      "Map access required.",
+      403,
+      "runtime_map_access_required"
+    );
+  }
 
   return {
     user: {
       id: user.id,
       email: user.email,
     },
-    access,
+    access: {
+      mapId: map.id,
+      mapTitle: map.title,
+      workspaceId: map.workspaceId,
+      role: membership.role,
+    },
   };
+}
+
+export function toRuntimeRouteErrorResponse(
+  error: unknown,
+  fallbackMessage: string
+) {
+  if (error instanceof RuntimeRouteError) {
+    return NextResponse.json(
+      {
+        code: error.code,
+        error: error.message,
+      },
+      { status: error.statusCode }
+    );
+  }
+
+  return NextResponse.json({ error: fallbackMessage }, { status: 500 });
 }
 
 export async function parseRouteJson<TSchema extends z.ZodTypeAny>(

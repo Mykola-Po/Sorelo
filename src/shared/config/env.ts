@@ -6,8 +6,23 @@ export const runtimeEnvSchema = {
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
+  INTERNAL_API_SECRET: z.string().min(1),
+  INBOX_INTERNAL_CREATE_SECRET: z.string().min(1).optional(),
+  INBOX_INTERNAL_PROCESS_SECRET: z.string().min(1).optional(),
+  INBOX_INTERNAL_RUNTIME_SECRET: z.string().min(1).optional(),
+  INBOX_INTERNAL_CREATE_CALLERS: z.string().min(1).optional(),
+  INBOX_INTERNAL_PROCESS_CALLERS: z.string().min(1).optional(),
+  INBOX_INTERNAL_RUNTIME_CALLERS: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   DOCS_HUB_PASSWORD: z.string().min(1).optional(),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  INBOX_LLM_ENABLED: z.enum(["true", "false"]).optional(),
+  INBOX_LLM_PROVIDER: z.enum(["openai", "gemini", "deterministic"]).optional(),
+  INBOX_LLM_MODEL: z.string().min(1).optional(),
+  INBOX_LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).optional(),
+  INBOX_LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).optional(),
+  INBOX_LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().min(100).max(5000).optional(),
 };
 
 export function parseRuntimeEnv(input: Record<string, string | undefined>) {
@@ -17,8 +32,28 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
 export const env = createEnv({
   server: {
     DATABASE_URL: runtimeEnvSchema.DATABASE_URL,
+    INTERNAL_API_SECRET: runtimeEnvSchema.INTERNAL_API_SECRET,
+    INBOX_INTERNAL_CREATE_SECRET: runtimeEnvSchema.INBOX_INTERNAL_CREATE_SECRET,
+    INBOX_INTERNAL_PROCESS_SECRET:
+      runtimeEnvSchema.INBOX_INTERNAL_PROCESS_SECRET,
+    INBOX_INTERNAL_RUNTIME_SECRET:
+      runtimeEnvSchema.INBOX_INTERNAL_RUNTIME_SECRET,
+    INBOX_INTERNAL_CREATE_CALLERS:
+      runtimeEnvSchema.INBOX_INTERNAL_CREATE_CALLERS,
+    INBOX_INTERNAL_PROCESS_CALLERS:
+      runtimeEnvSchema.INBOX_INTERNAL_PROCESS_CALLERS,
+    INBOX_INTERNAL_RUNTIME_CALLERS:
+      runtimeEnvSchema.INBOX_INTERNAL_RUNTIME_CALLERS,
     SUPABASE_SECRET_KEY: runtimeEnvSchema.SUPABASE_SECRET_KEY,
     DOCS_HUB_PASSWORD: runtimeEnvSchema.DOCS_HUB_PASSWORD,
+    OPENAI_API_KEY: runtimeEnvSchema.OPENAI_API_KEY,
+    GEMINI_API_KEY: runtimeEnvSchema.GEMINI_API_KEY,
+    INBOX_LLM_ENABLED: runtimeEnvSchema.INBOX_LLM_ENABLED,
+    INBOX_LLM_PROVIDER: runtimeEnvSchema.INBOX_LLM_PROVIDER,
+    INBOX_LLM_MODEL: runtimeEnvSchema.INBOX_LLM_MODEL,
+    INBOX_LLM_TIMEOUT_MS: runtimeEnvSchema.INBOX_LLM_TIMEOUT_MS,
+    INBOX_LLM_MAX_RETRIES: runtimeEnvSchema.INBOX_LLM_MAX_RETRIES,
+    INBOX_LLM_RETRY_BASE_DELAY_MS: runtimeEnvSchema.INBOX_LLM_RETRY_BASE_DELAY_MS,
   },
   client: {
     NEXT_PUBLIC_APP_URL: runtimeEnvSchema.NEXT_PUBLIC_APP_URL,
@@ -28,8 +63,23 @@ export const env = createEnv({
   },
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
+    INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET,
+    INBOX_INTERNAL_CREATE_SECRET: process.env.INBOX_INTERNAL_CREATE_SECRET,
+    INBOX_INTERNAL_PROCESS_SECRET: process.env.INBOX_INTERNAL_PROCESS_SECRET,
+    INBOX_INTERNAL_RUNTIME_SECRET: process.env.INBOX_INTERNAL_RUNTIME_SECRET,
+    INBOX_INTERNAL_CREATE_CALLERS: process.env.INBOX_INTERNAL_CREATE_CALLERS,
+    INBOX_INTERNAL_PROCESS_CALLERS: process.env.INBOX_INTERNAL_PROCESS_CALLERS,
+    INBOX_INTERNAL_RUNTIME_CALLERS: process.env.INBOX_INTERNAL_RUNTIME_CALLERS,
     SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
     DOCS_HUB_PASSWORD: process.env.DOCS_HUB_PASSWORD,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    INBOX_LLM_ENABLED: process.env.INBOX_LLM_ENABLED,
+    INBOX_LLM_PROVIDER: process.env.INBOX_LLM_PROVIDER,
+    INBOX_LLM_MODEL: process.env.INBOX_LLM_MODEL,
+    INBOX_LLM_TIMEOUT_MS: process.env.INBOX_LLM_TIMEOUT_MS,
+    INBOX_LLM_MAX_RETRIES: process.env.INBOX_LLM_MAX_RETRIES,
+    INBOX_LLM_RETRY_BASE_DELAY_MS: process.env.INBOX_LLM_RETRY_BASE_DELAY_MS,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:

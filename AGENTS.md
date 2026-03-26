@@ -13,6 +13,10 @@ Core product terms are fixed:
 
 Preserve explainability, data integrity, and future extensibility over local convenience.
 
+## Developer handbook entrypoint
+- For repository map, feature ownership, safe change patterns, risk areas, and verification defaults, start with `handbook/executable/project-working-guide.md`.
+- For UI, design-system, and interface-direction work, pair that guide with `handbook/rules/ui-engineering-playbook.md` and `handbook/surfaces/positioning-surfaces.md`.
+
 ## Working agreements
 - Make the smallest correct change that fully solves the task.
 - Reuse existing patterns before introducing new ones.
@@ -67,6 +71,13 @@ Preserve explainability, data integrity, and future extensibility over local con
   - Radix Theme configuration
   - CSS custom properties
   - `app/globals.css`
+- The current visual direction is **signal-first expressive minimalism**:
+  - expressive typography
+  - purposeful shape
+  - living motion
+  - glanceable hierarchy
+- Do not use glassmorphism, frosted panels, or blur-heavy chrome as the default surface language.
+- Use **canvas-first signal UI** only for canvas-driven work zones such as the map workspace, while keeping the broader product visually coherent with the same tokens and hierarchy rules.
 - Do not introduce Tailwind, CSS-in-JS, or ad hoc styling systems.
 - Do not introduce a second component library without approval.
 - Prefer semantic HTML and accessible Radix primitives.

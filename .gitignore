@@ -7,9 +7,12 @@ coverage/
 playwright-report/
 test-results/
 .vercel/
+supabase/.temp/
 backups/
 tmp/
 output/
+.codex-*.out
+.codex-*.err
 *.log
 *.tsbuildinfo
 .DS_Store

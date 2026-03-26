@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
 
-import { getInternalAuthStatus } from "@/shared/auth/internal";
+import { assertInternalApiRequest } from "@/shared/auth/internal-api";
 
 export function assertInternalLearningRequest(request: Request) {
   return assertInternalLearningRequestWithSecret(request);
@@ -11,20 +11,7 @@ export function assertInternalLearningRequestWithSecret(
   request: Request,
   secret?: string | null
 ) {
-  const status = getInternalAuthStatus(request, secret);
-
-  if (status === "authorized") {
-    return null;
-  }
-
-  if (status === "misconfigured") {
-    return NextResponse.json(
-      { error: "Internal learning routes are not configured." },
-      { status: 503 }
-    );
-  }
-
-  return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  return assertInternalApiRequest(request, secret);
 }
 
 export async function parseInternalJson<T extends z.ZodTypeAny>(

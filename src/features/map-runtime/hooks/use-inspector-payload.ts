@@ -1,17 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { InspectorPayload, InspectorSelection } from "@/features/inspector/types";
 
 export function useInspectorPayload(mapId: string, selection: InspectorSelection) {
   const [payload, setPayload] = useState<InspectorPayload | null>(null);
+  const [payloadSelectionKey, setPayloadSelectionKey] = useState<string | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const payloadSelectionKeyRef = useRef(payloadSelectionKey);
+  const selectionKey =
+    selection.kind === "concept" || selection.kind === "link"
+      ? `${selection.kind}:${selection.id}`
+      : null;
+
+  useEffect(() => {
+    payloadSelectionKeyRef.current = payloadSelectionKey;
+  }, [payloadSelectionKey]);
 
   useEffect(() => {
     if (selection.kind !== "concept" && selection.kind !== "link") {
       setPayload(null);
+      setPayloadSelectionKey(null);
       setIsLoading(false);
       setError(null);
       return;
@@ -37,11 +50,15 @@ export function useInspectorPayload(mapId: string, selection: InspectorSelection
         );
 
         if (!response.ok) {
-          throw new Error("Unable to load inspector details.");
+          const body = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(body?.error ?? "Unable to load inspector details.");
         }
 
         const nextPayload = (await response.json()) as InspectorPayload;
         setPayload(nextPayload);
+        setPayloadSelectionKey(`${selectedKind}:${selectedId}`);
       } catch (fetchError) {
         if (controller.signal.aborted) {
           return;
@@ -52,7 +69,10 @@ export function useInspectorPayload(mapId: string, selection: InspectorSelection
             ? fetchError.message
             : "Unable to load inspector details."
         );
-        setPayload(null);
+        if (payloadSelectionKeyRef.current !== `${selectedKind}:${selectedId}`) {
+          setPayload(null);
+          setPayloadSelectionKey(null);
+        }
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -67,8 +87,10 @@ export function useInspectorPayload(mapId: string, selection: InspectorSelection
     };
   }, [mapId, selection]);
 
+  const activePayload = payloadSelectionKey === selectionKey ? payload : null;
+
   return {
-    payload,
+    payload: activePayload,
     isLoading,
     error,
   };

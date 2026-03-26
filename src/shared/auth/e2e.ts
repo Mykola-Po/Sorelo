@@ -2,10 +2,16 @@ export const E2E_AUTH_COOKIE = "sorela-e2e-auth";
 export const E2E_AUTH_USER_COOKIE = "sorela-e2e-auth-user";
 
 export function isE2EAuthBypassEnabled() {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_BYPASS !== "false"
-  );
+  const explicitBypass = process.env.E2E_AUTH_BYPASS;
+  if (explicitBypass === "true") {
+    return true;
+  }
+
+  if (explicitBypass === "false") {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== "production";
 }
 
 export function getE2EAuthProfile(userId: string) {

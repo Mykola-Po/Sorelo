@@ -21,6 +21,7 @@ export type MapWorkspaceMessages = {
     collapsePanel: string;
     openInspector: string;
     openScenario: string;
+    backToMaps: string;
   };
   canvas: {
     placeConceptBadge: string;
@@ -35,6 +36,9 @@ export type MapWorkspaceMessages = {
     loadingSnapshot: string;
     conceptSummaryFallback: string;
     updatingPosition: string;
+    positionSaveFailed: string;
+    ghostCreateFailed: string;
+    zoomInToMoveConcepts: string;
   };
   guided: Record<
     GuidedOnboardingStep,
@@ -67,7 +71,11 @@ export type MapWorkspaceMessages = {
     createConceptSummaryPlaceholder: string;
     createConceptDescriptionPlaceholder: string;
     conceptSave: string;
+    conceptCreatedFeedback: string;
+    conceptUpdatedFeedback: string;
     conceptArchive: string;
+    archiveConceptConfirmTitle: string;
+    archiveConceptConfirmDescription: string;
     connectedLinksTitle: string;
     connectedLinksEmpty: string;
     incoming: string;
@@ -80,15 +88,34 @@ export type MapWorkspaceMessages = {
     strengthLabel: string;
     linkDescriptionPlaceholder: string;
     createLinkCta: string;
+    linkCreatedFeedback: string;
     linkTitle: string;
     linkDelete: string;
+    deleteLinkConfirmTitle: string;
+    deleteLinkConfirmDescription: string;
     currentDirection: string;
     unknownConcept: string;
     saveLink: string;
+    linkUpdatedFeedback: string;
     saveMap: string;
     archiveMap: string;
+    archiveMapConfirmTitle: string;
+    archiveMapConfirmDescription: string;
     subjectLabel: string;
     openLink: string;
+    provenanceTitle: string;
+    provenanceEmpty: string;
+    provenanceInboxItem: string;
+    provenanceOpenInbox: string;
+    provenanceAppliedAt: string;
+    provenanceReviewStatus: string;
+    provenanceReason: string;
+    provenanceSuggestionRationale: string;
+    provenanceEvidence: string;
+    provenanceNoEvidence: string;
+    provenanceClarificationAnswer: string;
+    provenanceFragment: (ordinal: number) => string;
+    provenanceMutationType: (value: string) => string;
     strengthValue: (value: number) => string;
   };
   scenario: {
@@ -97,6 +124,8 @@ export type MapWorkspaceMessages = {
     situationLabel: string;
     situationPlaceholder: string;
     runCta: string;
+    reviewRunCta: string;
+    hideReviewCta: string;
     latestRun: string;
     noSummaryYet: string;
     openRecentRuns: string;
@@ -140,6 +169,38 @@ export type MapWorkspaceMessages = {
     saveStepFeedbackCta: string;
     mobileInspectorDescription: string;
     mobileScenarioDescription: string;
+  };
+  learning: {
+    tabLabel: string;
+    mobileDescription: string;
+    heading: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    pending: string;
+    payload: string;
+    resolutionLabel: string;
+    reasonLabel: string;
+    resolveCta: string;
+    openCount: (count: number) => string;
+    resolvedCount: (count: number) => string;
+    confidence: (value: number) => string;
+    suggestionType: (value: string) => string;
+    targetEntity: (value: string) => string;
+    sourceType: (value: string) => string;
+    resolutionType: (value: string) => string;
+    reviewChangesHeading: string;
+    reviewNoChanges: string;
+    reviewEvidenceHeading: string;
+    evidenceRationaleLabel: string;
+    evidenceSourceLabel: string;
+    reviewNoEvidence: string;
+    reasonPlaceholder: string;
+    acceptCta: string;
+    editCta: string;
+    rejectCta: string;
+    contextLimitedCta: string;
+    fieldLabels: Record<string, string>;
+    genericFieldLabel: string;
   };
   labels: {
     conceptTypes: Record<ConceptType, string>;
@@ -285,6 +346,206 @@ function buildGuidedMessages(locale: SupportedLocale) {
   } satisfies MapWorkspaceMessages["guided"];
 }
 
+function humanizeSuggestionValue(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function buildLearningMessages(
+  locale: SupportedLocale
+): MapWorkspaceMessages["learning"] {
+  const formatSuggestionValue = (value: string) => humanizeSuggestionValue(value);
+
+  if (locale === "uk") {
+    return {
+      tabLabel: "Навчання",
+      mobileDescription:
+        "Переглядайте Пропозиції та фіксуйте рішення в циклі навчання.",
+      heading: "Навчання",
+      emptyTitle: "Пропозицій поки немає",
+      emptyDescription:
+        "Коли з’являться нові Пропозиції, ви зможете переглянути та розв’язати їх тут.",
+      pending: "Очікує",
+      payload: "Запропонований payload",
+      resolutionLabel: "Тип рішення",
+      reasonLabel: "Причина",
+      resolveCta: "Зафіксувати рішення",
+      reviewChangesHeading: "Що зміниться",
+      reviewNoChanges: "Запропоновані зміни не деталізовані.",
+      reviewEvidenceHeading: "Підсумок підтверджень",
+      evidenceRationaleLabel: "Чому запропоновано",
+      evidenceSourceLabel: "Підтвердження з джерела",
+      reviewNoEvidence: "Додаткових підтверджень не надано.",
+      reasonPlaceholder: "За потреби додайте короткий коментар до рішення.",
+      acceptCta: "Прийняти",
+      editCta: "Редагувати",
+      rejectCta: "Відхилити",
+      contextLimitedCta: "Бракує контексту",
+      fieldLabels: {
+        title: "Назва",
+        summary: "Коротко",
+        description: "Опис",
+        conceptType: "Тип Концепту",
+        relationType: "Тип Зв’язку",
+        strength: "Сила",
+        sourceConceptId: "Вихідний Концепт",
+        targetConceptId: "Цільовий Концепт",
+        situation: "Ситуація",
+        seedConceptIds: "Початкові Концепти",
+        targetEntityId: "Цільова сутність",
+      },
+      genericFieldLabel: "Поле",
+      openCount: (count) => `Відкриті: ${count}`,
+      resolvedCount: (count) => `Вирішені: ${count}`,
+      confidence: (value) => `Впевненість: ${Math.round(value * 100)}%`,
+      suggestionType: formatSuggestionValue,
+      targetEntity: (value) =>
+        `Ціль: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) =>
+        `Джерело: ${humanizeSuggestionValue(value)}`,
+      resolutionType: (value) => {
+        if (value === "accepted") {
+          return "прийнято";
+        }
+
+        if (value === "edited") {
+          return "відредаговано";
+        }
+
+        if (value === "rejected") {
+          return "відхилено";
+        }
+
+        if (value === "context_limited") {
+          return "бракує контексту";
+        }
+
+        return humanizeSuggestionValue(value);
+      },
+    };
+  }
+
+  if (locale === "ru") {
+    return {
+      tabLabel: "Обучение",
+      mobileDescription:
+        "Просматривайте Предложения и фиксируйте решения в цикле обучения.",
+      heading: "Обучение",
+      emptyTitle: "Предложений пока нет",
+      emptyDescription:
+        "Когда появятся новые Предложения, вы сможете просмотреть и разобрать их здесь.",
+      pending: "В ожидании",
+      payload: "Предложенный payload",
+      resolutionLabel: "Тип решения",
+      reasonLabel: "Причина",
+      resolveCta: "Зафиксировать решение",
+      reviewChangesHeading: "Что изменится",
+      reviewNoChanges: "Предложенные изменения не детализированы.",
+      reviewEvidenceHeading: "Сводка подтверждений",
+      evidenceRationaleLabel: "Почему это предложено",
+      evidenceSourceLabel: "Подтверждение из источника",
+      reviewNoEvidence: "Дополнительные подтверждения не приложены.",
+      reasonPlaceholder: "При необходимости добавьте короткий комментарий к решению.",
+      acceptCta: "Принять",
+      editCta: "Редактировать",
+      rejectCta: "Отклонить",
+      contextLimitedCta: "Не хватает контекста",
+      fieldLabels: {
+        title: "Название",
+        summary: "Кратко",
+        description: "Описание",
+        conceptType: "Тип Концепта",
+        relationType: "Тип Связи",
+        strength: "Сила",
+        sourceConceptId: "Исходный Концепт",
+        targetConceptId: "Целевой Концепт",
+        situation: "Ситуация",
+        seedConceptIds: "Начальные Концепты",
+        targetEntityId: "Целевая сущность",
+      },
+      genericFieldLabel: "Поле",
+      openCount: (count) => `Открытые: ${count}`,
+      resolvedCount: (count) => `Решенные: ${count}`,
+      confidence: (value) => `Уверенность: ${Math.round(value * 100)}%`,
+      suggestionType: formatSuggestionValue,
+      targetEntity: (value) =>
+        `Цель: ${humanizeSuggestionValue(value)}`,
+      sourceType: (value) =>
+        `Источник: ${humanizeSuggestionValue(value)}`,
+      resolutionType: (value) => {
+        if (value === "accepted") {
+          return "принято";
+        }
+
+        if (value === "edited") {
+          return "отредактировано";
+        }
+
+        if (value === "rejected") {
+          return "отклонено";
+        }
+
+        if (value === "context_limited") {
+          return "не хватает контекста";
+        }
+
+        return humanizeSuggestionValue(value);
+      },
+    };
+  }
+
+  return {
+    tabLabel: "Learning",
+    mobileDescription: "Review Suggestions and resolve them in the learning loop.",
+    heading: "Learning",
+    emptyTitle: "No Suggestions yet",
+    emptyDescription:
+      "When new Suggestions arrive, you can review and resolve them here.",
+    pending: "Pending",
+    payload: "Proposed payload",
+    resolutionLabel: "Resolution type",
+    reasonLabel: "Reason",
+    resolveCta: "Resolve Suggestion",
+    reviewChangesHeading: "What will change",
+    reviewNoChanges: "The proposed change payload has no detailed fields.",
+    reviewEvidenceHeading: "Evidence summary",
+    evidenceRationaleLabel: "Why this was suggested",
+    evidenceSourceLabel: "Source evidence",
+    reviewNoEvidence: "No additional evidence was attached.",
+    reasonPlaceholder: "Add a short note for this decision (optional).",
+    acceptCta: "Accept",
+    editCta: "Edit",
+    rejectCta: "Reject",
+    contextLimitedCta: "Needs context",
+    fieldLabels: {
+      title: "Title",
+      summary: "Summary",
+      description: "Description",
+      conceptType: "Concept type",
+      relationType: "Relation type",
+      strength: "Strength",
+      sourceConceptId: "Source Concept",
+      targetConceptId: "Target Concept",
+      situation: "Situation",
+      seedConceptIds: "Seed Concepts",
+      targetEntityId: "Target entity",
+    },
+    genericFieldLabel: "Field",
+    openCount: (count) => `Open: ${count}`,
+    resolvedCount: (count) => `Resolved: ${count}`,
+    confidence: (value) => `Confidence: ${Math.round(value * 100)}%`,
+    suggestionType: formatSuggestionValue,
+    targetEntity: (value) => `Target: ${humanizeSuggestionValue(value)}`,
+    sourceType: (value) => `Source: ${humanizeSuggestionValue(value)}`,
+    resolutionType: (value) => {
+      if (value === "context_limited") {
+        return "needs context";
+      }
+
+      return humanizeSuggestionValue(value);
+    },
+  };
+}
+
 export const mapWorkspaceMessages: Record<
   SupportedLocale,
   MapWorkspaceMessages
@@ -304,6 +565,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Collapse panel",
       openInspector: "Open Inspector",
       openScenario: "Open Scenario",
+      backToMaps: "Back to Maps",
     },
     canvas: {
       placeConceptBadge: "Place Concept",
@@ -319,13 +581,17 @@ export const mapWorkspaceMessages: Record<
         `Select the target Concept for \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "The second click opens the Link form with source and target already filled in.",
-      emptyOverlay:
-        "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
-      loadingSnapshot: "Loading graph snapshot...",
-      conceptSummaryFallback:
-        "Open Inspector to define the meaning of this Concept.",
-      updatingPosition: "Updating canvas position...",
-    },
+        emptyOverlay:
+          "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
+        loadingSnapshot: "Loading graph snapshot...",
+        conceptSummaryFallback:
+          "Open Inspector to define the meaning of this Concept.",
+        updatingPosition: "Updating canvas position...",
+        positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
+        ghostCreateFailed:
+          "Couldn't create a Concept from this ghost. Try again.",
+        zoomInToMoveConcepts: "Zoom in to move Concepts.",
+      },
     guided: buildGuidedMessages("en"),
     inspector: {
       placeConceptTitle: "Click on the canvas to place the Concept",
@@ -353,7 +619,12 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Why this Concept matters in the person's structure.",
       conceptSave: "Save Concept",
+      conceptCreatedFeedback: "Concept created. Highlighted on canvas.",
+      conceptUpdatedFeedback: "Concept saved. Highlighted on canvas.",
       conceptArchive: "Archive",
+      archiveConceptConfirmTitle: "Archive this Concept?",
+      archiveConceptConfirmDescription:
+        "This will remove the Concept from active map analysis and can change Link and Scenario explainability.",
       connectedLinksTitle: "Connected Links",
       connectedLinksEmpty:
         "This Concept is not linked yet. Add a Link so the structure becomes explainable.",
@@ -368,31 +639,54 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Strength",
       linkDescriptionPlaceholder: "Why does this influence exist?",
       createLinkCta: "Create Link",
+      linkCreatedFeedback: "Link created. Highlighted on canvas.",
       linkTitle: "Link",
       linkDelete: "Delete",
+      deleteLinkConfirmTitle: "Delete this Link?",
+      deleteLinkConfirmDescription:
+        "Deleting this Link removes an explicit explanation path from the map.",
       currentDirection: "Current direction",
       unknownConcept: "Unknown Concept",
       saveLink: "Save Link",
+      linkUpdatedFeedback: "Link saved. Highlighted on canvas.",
       saveMap: "Save map",
       archiveMap: "Archive map",
+      archiveMapConfirmTitle: "Archive this map?",
+      archiveMapConfirmDescription:
+        "This map will be moved out of active workspace lists.",
       subjectLabel: "Subject label",
       openLink: "Open Link",
+      provenanceTitle: "Inbox workbench provenance",
+      provenanceEmpty: "No canonical apply provenance has been recorded yet.",
+      provenanceInboxItem: "Inbox workbench item",
+      provenanceOpenInbox: "Open in Inbox workbench",
+      provenanceAppliedAt: "Applied",
+      provenanceReviewStatus: "Review status",
+      provenanceReason: "Review reason",
+      provenanceSuggestionRationale: "Suggestion rationale",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "No evidence fragments were attached.",
+      provenanceClarificationAnswer: "Clarification answer",
+      provenanceFragment: (ordinal) => `Fragment ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `strength ${value}`,
     },
     scenario: {
-      runTitle: "Run scenario",
+      runTitle: "Run Scenario now",
       runDescription:
         "Test one situation against the map and inspect the ordered explanation path.",
       situationLabel: "Situation",
       situationPlaceholder:
         "A colleague questions the person's competence in a public meeting.",
-      runCta: "Run scenario",
+      runCta: "Run now",
+      reviewRunCta: "Review run",
+      hideReviewCta: "Hide review",
       latestRun: "Latest run",
       noSummaryYet: "No summary yet.",
-      openRecentRuns: "Open recent runs",
+      openRecentRuns: "Review runs",
       saveTab: "Save scenario",
       savedTab: "Saved scenarios",
-      runsTab: "Recent runs",
+      runsTab: "Review runs",
       saveTitle: "Save current scenario",
       saveCta: "Save scenario",
       saveTitlePlaceholder: "Public disagreement",
@@ -439,6 +733,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Run Scenarios, save them, and inspect recent runs.",
     },
+    learning: buildLearningMessages("en"),
     labels: {
       conceptTypes: {
         thought: "thought",
@@ -490,6 +785,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Згорнути панель",
       openInspector: "Відкрити Інспектор",
       openScenario: "Відкрити Сценарій",
+      backToMaps: "До списку карт",
     },
     canvas: {
       placeConceptBadge: "Поставити Концепт",
@@ -505,13 +801,17 @@ export const mapWorkspaceMessages: Record<
         `Оберіть цільовий Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Другий клік відкриє форму Зв’язку з уже заповненими source і target.",
-      emptyOverlay:
-        "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
-      loadingSnapshot: "Завантажуємо snapshot графа...",
-      conceptSummaryFallback:
-        "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
-      updatingPosition: "Оновлюємо позицію на canvas...",
-    },
+        emptyOverlay:
+          "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
+        loadingSnapshot: "Завантажуємо snapshot графа...",
+        conceptSummaryFallback:
+          "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
+        updatingPosition: "Оновлюємо позицію на canvas...",
+        positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
+        ghostCreateFailed:
+          "Не вдалося створити Концепт із цього ghost. Спробуйте ще раз.",
+        zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
+      },
     guided: buildGuidedMessages("uk"),
     inspector: {
       placeConceptTitle: "Клікніть на canvas, щоб поставити Концепт",
@@ -539,7 +839,12 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Чому цей Концепт важливий у структурі цієї людини.",
       conceptSave: "Зберегти Концепт",
+      conceptCreatedFeedback: "Концепт створено. Підсвічено на canvas.",
+      conceptUpdatedFeedback: "Концепт збережено. Підсвічено на canvas.",
       conceptArchive: "Архівувати",
+      archiveConceptConfirmTitle: "Архівувати цей Концепт?",
+      archiveConceptConfirmDescription:
+        "Це прибере Концепт з активного аналізу карти та може змінити пояснюваність Зв’язків і Сценаріїв.",
       connectedLinksTitle: "Пов’язані Зв’язки",
       connectedLinksEmpty:
         "Цей Концепт ще не пов’язаний. Додайте Зв’язок, щоб структура стала пояснюваною.",
@@ -554,31 +859,54 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Сила",
       linkDescriptionPlaceholder: "Чому існує цей вплив?",
       createLinkCta: "Створити Зв’язок",
+      linkCreatedFeedback: "Зв’язок створено. Підсвічено на canvas.",
       linkTitle: "Зв’язок",
       linkDelete: "Видалити",
+      deleteLinkConfirmTitle: "Видалити цей Зв’язок?",
+      deleteLinkConfirmDescription:
+        "Видалення цього Зв’язку прибирає явний шлях пояснення з карти.",
       currentDirection: "Поточний напрям",
       unknownConcept: "Невідомий Концепт",
       saveLink: "Зберегти Зв’язок",
+      linkUpdatedFeedback: "Зв’язок збережено. Підсвічено на canvas.",
       saveMap: "Зберегти карту",
       archiveMap: "Архівувати карту",
+      archiveMapConfirmTitle: "Архівувати цю карту?",
+      archiveMapConfirmDescription:
+        "Цю карту буде прибрано з активних списків workspace.",
       subjectLabel: "Мітка суб’єкта",
       openLink: "Відкрити Зв’язок",
+      provenanceTitle: "Провенанс Inbox workbench",
+      provenanceEmpty: "Для цього canonical apply provenance ще не записано.",
+      provenanceInboxItem: "Елемент Inbox workbench",
+      provenanceOpenInbox: "Відкрити в Inbox workbench",
+      provenanceAppliedAt: "Застосовано",
+      provenanceReviewStatus: "Статус review",
+      provenanceReason: "Причина review",
+      provenanceSuggestionRationale: "Обґрунтування suggestion",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "Фрагменти evidence не прикріплені.",
+      provenanceClarificationAnswer: "Відповідь на clarification",
+      provenanceFragment: (ordinal) => `Фрагмент ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {
-      runTitle: "Запустити Сценарій",
+      runTitle: "Запустити Сценарій зараз",
       runDescription:
         "Перевірте одну ситуацію на карті та перегляньте впорядкований шлях пояснення.",
       situationLabel: "Ситуація",
       situationPlaceholder:
         "Колега публічно ставить під сумнів компетентність цієї людини.",
-      runCta: "Запустити Сценарій",
+      runCta: "Запустити зараз",
+      reviewRunCta: "Переглянути запуск",
+      hideReviewCta: "Сховати перегляд",
       latestRun: "Останній запуск",
       noSummaryYet: "Підсумку ще немає.",
-      openRecentRuns: "Відкрити останні запуски",
+      openRecentRuns: "Переглянути запуски",
       saveTab: "Зберегти Сценарій",
       savedTab: "Збережені Сценарії",
-      runsTab: "Останні запуски",
+      runsTab: "Перегляд запусків",
       saveTitle: "Зберегти поточний Сценарій",
       saveCta: "Зберегти Сценарій",
       saveTitlePlaceholder: "Публічна незгода",
@@ -625,6 +953,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Запускайте Сценарії, зберігайте їх і переглядайте останні запуски.",
     },
+    learning: buildLearningMessages("uk"),
     labels: {
       conceptTypes: {
         thought: "думка",
@@ -676,6 +1005,7 @@ export const mapWorkspaceMessages: Record<
       collapsePanel: "Свернуть панель",
       openInspector: "Открыть Инспектор",
       openScenario: "Открыть Сценарий",
+      backToMaps: "К списку карт",
     },
     canvas: {
       placeConceptBadge: "Поставить Концепт",
@@ -691,13 +1021,17 @@ export const mapWorkspaceMessages: Record<
         `Выберите целевой Концепт для \"${conceptTitle}\".`,
       createLinkTargetDescription:
         "Второй клик откроет форму Связи с уже заполненными source и target.",
-      emptyOverlay:
-        "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
-      loadingSnapshot: "Загружаем snapshot графа...",
-      conceptSummaryFallback:
-        "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
-      updatingPosition: "Обновляем позицию на canvas...",
-    },
+        emptyOverlay:
+          "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
+        loadingSnapshot: "Загружаем snapshot графа...",
+        conceptSummaryFallback:
+          "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
+        updatingPosition: "Обновляем позицию на canvas...",
+        positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
+        ghostCreateFailed:
+          "Не удалось создать Концепт из этого ghost. Попробуйте ещё раз.",
+        zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
+      },
     guided: buildGuidedMessages("ru"),
     inspector: {
       placeConceptTitle: "Кликните по canvas, чтобы поставить Концепт",
@@ -726,7 +1060,12 @@ export const mapWorkspaceMessages: Record<
       createConceptDescriptionPlaceholder:
         "Почему этот Концепт важен в структуре этого человека.",
       conceptSave: "Сохранить Концепт",
+      conceptCreatedFeedback: "Концепт создан. Подсвечен на canvas.",
+      conceptUpdatedFeedback: "Концепт сохранён. Подсвечен на canvas.",
       conceptArchive: "Архивировать",
+      archiveConceptConfirmTitle: "Архивировать этот Концепт?",
+      archiveConceptConfirmDescription:
+        "Это уберёт Концепт из активного анализа карты и может изменить объяснимость Связей и Сценариев.",
       connectedLinksTitle: "Связанные Связи",
       connectedLinksEmpty:
         "Этот Концепт пока не связан. Добавьте Связь, чтобы структура стала объяснимой.",
@@ -741,31 +1080,54 @@ export const mapWorkspaceMessages: Record<
       strengthLabel: "Сила",
       linkDescriptionPlaceholder: "Почему существует это влияние?",
       createLinkCta: "Создать Связь",
+      linkCreatedFeedback: "Связь создана. Подсвечена на canvas.",
       linkTitle: "Связь",
       linkDelete: "Удалить",
+      deleteLinkConfirmTitle: "Удалить эту Связь?",
+      deleteLinkConfirmDescription:
+        "Удаление этой Связи убирает явный путь объяснения из карты.",
       currentDirection: "Текущее направление",
       unknownConcept: "Неизвестный Концепт",
       saveLink: "Сохранить Связь",
+      linkUpdatedFeedback: "Связь сохранена. Подсвечена на canvas.",
       saveMap: "Сохранить карту",
       archiveMap: "Архивировать карту",
+      archiveMapConfirmTitle: "Архивировать эту карту?",
+      archiveMapConfirmDescription:
+        "Эта карта будет убрана из активных списков workspace.",
       subjectLabel: "Метка субъекта",
       openLink: "Открыть Связь",
+      provenanceTitle: "Провенанс Inbox workbench",
+      provenanceEmpty: "Для этого canonical apply provenance пока не записан.",
+      provenanceInboxItem: "Элемент Inbox workbench",
+      provenanceOpenInbox: "Открыть в Inbox workbench",
+      provenanceAppliedAt: "Применено",
+      provenanceReviewStatus: "Статус review",
+      provenanceReason: "Причина review",
+      provenanceSuggestionRationale: "Обоснование suggestion",
+      provenanceEvidence: "Evidence",
+      provenanceNoEvidence: "Фрагменты evidence не прикреплены.",
+      provenanceClarificationAnswer: "Ответ на clarification",
+      provenanceFragment: (ordinal) => `Фрагмент ${ordinal}`,
+      provenanceMutationType: (value) => `Mutation: ${value}`,
       strengthValue: (value) => `сила ${value}`,
     },
     scenario: {
-      runTitle: "Запустить Сценарий",
+      runTitle: "Запустить Сценарий сейчас",
       runDescription:
         "Проверьте одну ситуацию на карте и изучите упорядоченный путь объяснения.",
       situationLabel: "Ситуация",
       situationPlaceholder:
         "Коллега публично ставит под сомнение компетентность этого человека.",
-      runCta: "Запустить Сценарий",
+      runCta: "Запустить сейчас",
+      reviewRunCta: "Проверить запуск",
+      hideReviewCta: "Скрыть обзор",
       latestRun: "Последний запуск",
       noSummaryYet: "Пока нет краткого вывода.",
-      openRecentRuns: "Открыть последние запуски",
+      openRecentRuns: "Проверить запуски",
       saveTab: "Сохранить Сценарий",
       savedTab: "Сохранённые Сценарии",
-      runsTab: "Последние запуски",
+      runsTab: "Проверка запусков",
       saveTitle: "Сохранить текущий Сценарий",
       saveCta: "Сохранить Сценарий",
       saveTitlePlaceholder: "Публичное несогласие",
@@ -812,6 +1174,7 @@ export const mapWorkspaceMessages: Record<
       mobileScenarioDescription:
         "Запускайте Сценарии, сохраняйте их и просматривайте последние запуски.",
     },
+    learning: buildLearningMessages("ru"),
     labels: {
       conceptTypes: {
         thought: "мысль",

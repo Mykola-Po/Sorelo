@@ -6,6 +6,15 @@
 
 It does not exist to collect every note. It exists to preserve the stable foundation of the product in one place and make source precedence explicit.
 
+## Recommended Entry Points
+
+Use the handbook through the shortest path that matches your task:
+
+- Product meaning and vocabulary: start in `canon`
+- Durable implementation and workflow rules: start in `rules`
+- Current codebase onboarding and change workflow: start with `handbook/executable/project-working-guide.md`
+- Runtime, schema, and architectural reality for a specific area: continue into the matching `executable` document
+
 ## Authority Tiers
 
 The handbook is organized into four authority tiers:
@@ -71,3 +80,4 @@ handbook/
 - User-facing product name is `Sorelo`.
 - Technical identifiers may still use `sorela`.
 - `projects/tasks` remain legacy compatibility residue in the repository and schema. They are not active Sorelo product vocabulary.
+- Engineering onboarding should start with `handbook/executable/project-working-guide.md` before diving into a specific slice.

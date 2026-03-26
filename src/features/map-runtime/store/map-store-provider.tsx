@@ -10,7 +10,7 @@ export const MapStoreContext = createContext<MapStore | null>(null);
 export type MapStoreProviderProps = {
   children: ReactNode;
   mapId: string;
-  initialSnapshot?: GraphSnapshot | null;
+  initialSnapshot: GraphSnapshot;
 };
 
 export function MapStoreProvider({
@@ -21,7 +21,7 @@ export function MapStoreProvider({
   const [store] = useState<MapStore>(() =>
     createMapStore({
       mapId,
-      initialSnapshot: initialSnapshot ?? null,
+      initialSnapshot,
     })
   );
 

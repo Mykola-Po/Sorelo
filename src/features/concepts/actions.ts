@@ -17,21 +17,31 @@ import {
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 import { workspaceMapPath } from "@/shared/config/routes";
 import {
-  createIdleState,
+  type FieldErrors,
   toActionError,
   zodErrorToActionState,
 } from "@/shared/validation/action-state";
 
+type ConceptFormField = "title" | "conceptType" | "summary" | "description";
+type ConceptMutation = "created" | "updated";
+
+export type ConceptMutationPayload = {
+  conceptId: string;
+  mutation: ConceptMutation;
+  eventId: string;
+};
+
+export type ConceptActionState = {
+  status: "idle" | "error" | "success";
+  message?: string;
+  fieldErrors?: FieldErrors<ConceptFormField>;
+  payload?: ConceptMutationPayload;
+};
+
 export async function createConceptAction(
-  _: {
-    status: "idle" | "error";
-    message?: string;
-    fieldErrors?: Partial<
-      Record<"title" | "conceptType" | "summary" | "description", string[]>
-    >;
-  },
+  _: ConceptActionState,
   formData: FormData
-) {
+): Promise<ConceptActionState> {
   const parsed = createConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
@@ -53,7 +63,7 @@ export async function createConceptAction(
     const { user, access } = await requireWorkspaceAccess(
       parsed.data.workspaceSlug
     );
-    await createConceptCommand({
+    const concept = await createConceptCommand({
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
@@ -66,24 +76,26 @@ export async function createConceptAction(
     });
 
     revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
-    return createIdleState<"title" | "conceptType" | "summary" | "description">();
+    const eventId = crypto.randomUUID();
+    return {
+      status: "success",
+      payload: {
+        conceptId: concept.id,
+        mutation: "created",
+        eventId,
+      },
+    };
   } catch (error) {
-    return toActionError<"title" | "conceptType" | "summary" | "description">(
+    return toActionError<ConceptFormField>(
       error instanceof Error ? error.message : "Unable to create concept."
     );
   }
 }
 
 export async function updateConceptAction(
-  _: {
-    status: "idle" | "error";
-    message?: string;
-    fieldErrors?: Partial<
-      Record<"title" | "conceptType" | "summary" | "description", string[]>
-    >;
-  },
+  _: ConceptActionState,
   formData: FormData
-) {
+): Promise<ConceptActionState> {
   const parsed = updateConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
@@ -106,7 +118,7 @@ export async function updateConceptAction(
     const { user, access } = await requireWorkspaceAccess(
       parsed.data.workspaceSlug
     );
-    await updateConceptCommand({
+    const concept = await updateConceptCommand({
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
@@ -120,9 +132,17 @@ export async function updateConceptAction(
     });
 
     revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
-    return createIdleState<"title" | "conceptType" | "summary" | "description">();
+    const eventId = crypto.randomUUID();
+    return {
+      status: "success",
+      payload: {
+        conceptId: concept.id,
+        mutation: "updated",
+        eventId,
+      },
+    };
   } catch (error) {
-    return toActionError<"title" | "conceptType" | "summary" | "description">(
+    return toActionError<ConceptFormField>(
       error instanceof Error ? error.message : "Unable to update concept."
     );
   }

@@ -26,7 +26,7 @@ export function EmptyState({
     >
       {eyebrow ? <div className="empty-state-eyebrow">{eyebrow}</div> : null}
       <Flex direction="column" gap="2" className="empty-state-copy">
-        <Heading size="4" className="empty-state-title">
+        <Heading as="h3" size="4" className="empty-state-title">
           {title}
         </Heading>
         <Text size="2" className="empty-state-description">
