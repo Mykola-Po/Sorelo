@@ -401,6 +401,26 @@ export const clarificationAnswerInputSchema = z.object({
   answerText: boundedText(4000),
 });
 
+export const inboxWorkspaceScopeSchema = z.object({
+  workspaceId: uuidSchema,
+});
+
+export const processInboxItemRequestSchema = inboxWorkspaceScopeSchema;
+
+export const processInboxItemInputSchema = inboxWorkspaceScopeSchema.extend({
+  itemId: uuidSchema,
+});
+
+export const answerInboxClarificationRequestSchema =
+  clarificationAnswerInputSchema.extend({
+    workspaceId: uuidSchema,
+  });
+
+export const answerInboxClarificationWithScopeInputSchema =
+  answerInboxClarificationRequestSchema.extend({
+    requestId: uuidSchema,
+  });
+
 export const inboxWorkbenchCreateActionSchema = z.object({
   workspaceSlug: z.string().trim().min(2).max(64),
   mapId: uuidSchema,
@@ -438,9 +458,10 @@ export const inboxRoutingDecisionGatesSchema = z.object({
   park: z.boolean(),
 });
 
-export const inboxRoutingInputSnapshotSchema = inboxRouteDecisionInputSchema.extend({
-  gates: inboxRoutingDecisionGatesSchema,
-});
+export const inboxRoutingInputSnapshotSchema =
+  inboxRouteDecisionInputSchema.extend({
+    gates: inboxRoutingDecisionGatesSchema,
+  });
 
 export const inboxRouteDecisionSchema = z.object({
   route: inboxRouteSchema,
@@ -560,6 +581,19 @@ export type InboxClarificationContextEntry = z.infer<
 export type ClarificationAnswerInput = z.infer<
   typeof clarificationAnswerInputSchema
 >;
+export type InboxWorkspaceScopeInput = z.infer<
+  typeof inboxWorkspaceScopeSchema
+>;
+export type ProcessInboxItemRequestInput = z.infer<
+  typeof processInboxItemRequestSchema
+>;
+export type ProcessInboxItemInput = z.infer<typeof processInboxItemInputSchema>;
+export type AnswerInboxClarificationRequestInput = z.infer<
+  typeof answerInboxClarificationRequestSchema
+>;
+export type AnswerInboxClarificationWithScopeInput = z.infer<
+  typeof answerInboxClarificationWithScopeInputSchema
+>;
 export type InboxWorkbenchCreateActionInput = z.infer<
   typeof inboxWorkbenchCreateActionSchema
 >;
@@ -592,12 +626,8 @@ export type InboxRoutingInputSnapshot = z.infer<
 export type InboxRoutingDecisionNote = z.infer<
   typeof inboxRoutingDecisionNoteSchema
 >;
-export type InboxRoutingDecision = z.infer<
-  typeof inboxRoutingDecisionSchema
->;
-export type InboxRoutingOverride = z.infer<
-  typeof inboxRoutingOverrideSchema
->;
+export type InboxRoutingDecision = z.infer<typeof inboxRoutingDecisionSchema>;
+export type InboxRoutingOverride = z.infer<typeof inboxRoutingOverrideSchema>;
 export type InboxRoutingPolicyTrace = z.infer<
   typeof inboxRoutingPolicyTraceSchema
 >;

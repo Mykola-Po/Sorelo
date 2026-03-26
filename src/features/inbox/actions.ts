@@ -20,6 +20,10 @@ import {
   inboxWorkbenchCreateActionSchema,
   inboxWorkbenchProcessActionSchema,
 } from "@/features/inbox/schemas";
+import {
+  buildInboxWorkbenchHref,
+  normalizeInboxWorkbenchListState,
+} from "@/features/inbox/workbench-state";
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 import { workspaceInboxPath } from "@/shared/config/routes";
 import {
@@ -31,9 +35,28 @@ type CreateInboxWorkbenchActionFields = "mapId" | "sourceType" | "rawText";
 type ProcessInboxWorkbenchActionFields = "itemId";
 type AnswerInboxWorkbenchActionFields = "answerText";
 
-function buildWorkbenchItemHref(workspaceSlug: string, itemId: string) {
-  const params = new URLSearchParams({ item: itemId });
-  return `${workspaceInboxPath(workspaceSlug)}?${params.toString()}`;
+function readWorkbenchListState(formData: FormData) {
+  return normalizeInboxWorkbenchListState({
+    view: formData.get("listView")?.toString(),
+    status: formData.get("listStatus")?.toString(),
+    route: formData.get("listRoute")?.toString(),
+    mapId: formData.get("listMapId")?.toString(),
+    sort: formData.get("listSort")?.toString(),
+    page: formData.get("listPage")?.toString(),
+    pageSize: formData.get("listPageSize")?.toString(),
+    item: formData.get("listItem")?.toString(),
+  });
+}
+
+function buildWorkbenchItemHref(
+  workspaceSlug: string,
+  itemId: string,
+  listState: ReturnType<typeof readWorkbenchListState>
+) {
+  return buildInboxWorkbenchHref(workspaceSlug, {
+    ...listState,
+    item: itemId,
+  });
 }
 
 export async function createInboxWorkbenchItemAction(
@@ -52,11 +75,16 @@ export async function createInboxWorkbenchItemAction(
   });
 
   if (!parsed.success) {
-    return zodErrorToActionState<CreateInboxWorkbenchActionFields>(parsed.error);
+    return zodErrorToActionState<CreateInboxWorkbenchActionFields>(
+      parsed.error
+    );
   }
+  const listState = readWorkbenchListState(formData);
 
   try {
-    const { user, access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const { user, access } = await requireWorkspaceAccess(
+      parsed.data.workspaceSlug
+    );
     const result = await createInboxItemCommand({
       userId: user.id,
       workspaceId: access.workspace.id,
@@ -68,7 +96,13 @@ export async function createInboxWorkbenchItemAction(
     });
 
     revalidatePath(workspaceInboxPath(parsed.data.workspaceSlug));
-    redirect(buildWorkbenchItemHref(parsed.data.workspaceSlug, result.item.id));
+    redirect(
+      buildWorkbenchItemHref(
+        parsed.data.workspaceSlug,
+        result.item.id,
+        listState
+      )
+    );
   } catch (error) {
     if (isRedirectError(error)) {
       throw error;
@@ -94,8 +128,11 @@ export async function processInboxWorkbenchItemAction(
   });
 
   if (!parsed.success) {
-    return zodErrorToActionState<ProcessInboxWorkbenchActionFields>(parsed.error);
+    return zodErrorToActionState<ProcessInboxWorkbenchActionFields>(
+      parsed.error
+    );
   }
+  const listState = readWorkbenchListState(formData);
 
   try {
     const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
@@ -110,9 +147,14 @@ export async function processInboxWorkbenchItemAction(
       );
     }
 
-    await processInboxItemCommand(item.id);
+    await processInboxItemCommand({
+      workspaceId: access.workspace.id,
+      itemId: item.id,
+    });
     revalidatePath(workspaceInboxPath(parsed.data.workspaceSlug));
-    redirect(buildWorkbenchItemHref(parsed.data.workspaceSlug, item.id));
+    redirect(
+      buildWorkbenchItemHref(parsed.data.workspaceSlug, item.id, listState)
+    );
   } catch (error) {
     if (isRedirectError(error)) {
       throw error;
@@ -139,8 +181,11 @@ export async function answerInboxClarificationAction(
   });
 
   if (!parsed.success) {
-    return zodErrorToActionState<AnswerInboxWorkbenchActionFields>(parsed.error);
+    return zodErrorToActionState<AnswerInboxWorkbenchActionFields>(
+      parsed.error
+    );
   }
+  const listState = readWorkbenchListState(formData);
 
   try {
     const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
@@ -155,9 +200,19 @@ export async function answerInboxClarificationAction(
       );
     }
 
-    await answerInboxClarificationCommand(request.id, parsed.data.answerText);
+    await answerInboxClarificationCommand({
+      workspaceId: access.workspace.id,
+      requestId: request.id,
+      answerText: parsed.data.answerText,
+    });
     revalidatePath(workspaceInboxPath(parsed.data.workspaceSlug));
-    redirect(buildWorkbenchItemHref(parsed.data.workspaceSlug, request.itemId));
+    redirect(
+      buildWorkbenchItemHref(
+        parsed.data.workspaceSlug,
+        request.itemId,
+        listState
+      )
+    );
   } catch (error) {
     if (isRedirectError(error)) {
       throw error;

@@ -1123,12 +1123,16 @@ export const inboxItems = appPrivateSchema.table(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
-      onDelete: "set null",
-    }),
-    mapId: uuid("map_id").references(() => maps.id, {
-      onDelete: "set null",
-    }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, {
+        onDelete: "cascade",
+      }),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => maps.id, {
+        onDelete: "restrict",
+      }),
     sourceType: inboxSourceTypeEnum("source_type").notNull(),
     sourceRef: text("source_ref"),
     rawText: text("raw_text").notNull(),
@@ -1149,7 +1153,16 @@ export const inboxItems = appPrivateSchema.table(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("inbox_items_idempotency_key_key").on(table.idempotencyKey),
+    foreignKey({
+      columns: [table.mapId, table.workspaceId],
+      foreignColumns: [maps.id, maps.workspaceId],
+      name: "inbox_items_map_workspace_fk",
+    }),
+    uniqueIndex("inbox_items_workspace_map_idempotency_key").on(
+      table.workspaceId,
+      table.mapId,
+      table.idempotencyKey
+    ),
     index("inbox_items_user_created_idx").on(
       table.userId,
       table.createdAt.desc()

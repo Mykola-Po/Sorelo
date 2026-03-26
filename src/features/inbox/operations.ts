@@ -5,21 +5,24 @@ import path from "node:path";
 
 import { desc } from "drizzle-orm";
 
-import { resolveInternalAuthSecret } from "@/shared/auth/internal";
 import { db, sqlClient } from "@/shared/db/client";
+import { env } from "@/shared/config/env";
 import { appMigrations } from "@/shared/db/schema";
 
 export type InboxRuntimeCheckStatus = "ok" | "degraded" | "failed";
 export type InboxRuntimeCheckName =
   | "env"
+  | "readiness"
   | "migrations"
   | "schema"
   | "items"
-  | "executions";
+  | "executions"
+  | "learning_bridge";
 
 export type InboxRuntimeCheck = {
   name: InboxRuntimeCheckName;
   status: InboxRuntimeCheckStatus;
+  code: string;
   message: string;
   details?: Record<string, unknown>;
 };
@@ -31,13 +34,11 @@ export type InboxRuntimeReport = {
 };
 
 type FailedInboxItemSample = {
-  itemId: string;
-  workspaceId: string | null;
-  mapId: string | null;
   updatedAt: string;
   attemptNo: number | null;
-  message: string | null;
 };
+
+type RuntimeReadinessMode = "deterministic_only" | "openai_enabled";
 
 const appMigrationFilenamePattern = /^\d{4}_.+\.sql$/;
 const migrationDirectory = path.join(process.cwd(), "supabase", "migrations");
@@ -55,9 +56,15 @@ export const requiredInboxExecutionTables = [
   "inbox_pipeline_attempts",
   "inbox_step_runs",
 ] as const;
+export const requiredInboxLearningBridgeTables = [
+  "learning_suggestion_batches",
+  "learning_suggestions",
+  "learning_suggestion_resolutions",
+] as const;
 const trackedInboxRuntimeTables = [
   ...requiredInboxRuntimeTables,
   ...requiredInboxExecutionTables,
+  ...requiredInboxLearningBridgeTables,
 ] as const;
 
 type MigrationDriftInput = {
@@ -81,6 +88,7 @@ function serializeTimestamp(value: Date | string): string {
 
 function buildFailedCheck(
   name: InboxRuntimeCheckName,
+  code: string,
   message: string,
   details?: Record<string, unknown>
 ): InboxRuntimeCheck {
@@ -88,6 +96,7 @@ function buildFailedCheck(
     return {
       name,
       status: "failed",
+      code,
       message,
       details,
     };
@@ -96,6 +105,55 @@ function buildFailedCheck(
   return {
     name,
     status: "failed",
+    code,
+    message,
+  };
+}
+
+function buildOkCheck(
+  name: InboxRuntimeCheckName,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+): InboxRuntimeCheck {
+  if (details) {
+    return {
+      name,
+      status: "ok",
+      code,
+      message,
+      details,
+    };
+  }
+
+  return {
+    name,
+    status: "ok",
+    code,
+    message,
+  };
+}
+
+function buildDegradedCheck(
+  name: InboxRuntimeCheckName,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+): InboxRuntimeCheck {
+  if (details) {
+    return {
+      name,
+      status: "degraded",
+      code,
+      message,
+      details,
+    };
+  }
+
+  return {
+    name,
+    status: "degraded",
+    code,
     message,
   };
 }
@@ -129,62 +187,62 @@ export function buildMigrationDriftCheck({
   const latestAppliedMigration = appliedMigrations.at(-1) ?? null;
 
   if (!ledgerPresent) {
-    return {
-      name: "migrations",
-      status: "failed",
-      message: "Inbox migration ledger table is missing.",
-      details: {
+    return buildFailedCheck(
+      "migrations",
+      "inbox_runtime_missing_migration_ledger",
+      "Inbox migration ledger table is missing.",
+      {
         latestRepoMigration,
         latestAppliedMigration,
-      },
-    };
+      }
+    );
   }
 
   if (!latestRepoMigration) {
-    return {
-      name: "migrations",
-      status: "failed",
-      message: "No repository app migrations were found.",
-      details: {
+    return buildFailedCheck(
+      "migrations",
+      "inbox_runtime_missing_repo_migrations",
+      "No repository app migrations were found.",
+      {
         latestRepoMigration,
         latestAppliedMigration,
-      },
-    };
+      }
+    );
   }
 
   if (!latestAppliedMigration) {
-    return {
-      name: "migrations",
-      status: "failed",
-      message: "No applied app migrations were recorded.",
-      details: {
+    return buildFailedCheck(
+      "migrations",
+      "inbox_runtime_missing_applied_migrations",
+      "No applied app migrations were recorded.",
+      {
         latestRepoMigration,
         latestAppliedMigration,
-      },
-    };
+      }
+    );
   }
 
   if (latestAppliedMigration !== latestRepoMigration) {
-    return {
-      name: "migrations",
-      status: "failed",
-      message: "Inbox migration ledger is behind the repository.",
-      details: {
+    return buildFailedCheck(
+      "migrations",
+      "inbox_runtime_migration_drift",
+      "Inbox migration ledger is behind the repository.",
+      {
         latestRepoMigration,
         latestAppliedMigration,
-      },
-    };
+      }
+    );
   }
 
-  return {
-    name: "migrations",
-    status: "ok",
-    message: "Inbox migration ledger matches the repository.",
-    details: {
+  return buildOkCheck(
+    "migrations",
+    "inbox_runtime_migration_ledger_ok",
+    "Inbox migration ledger matches the repository.",
+    {
       latestRepoMigration,
       latestAppliedMigration,
-    },
-  };
+    }
+  );
 }
 
 async function readRepoAppMigrations() {
@@ -204,7 +262,7 @@ async function readAvailableInboxTables() {
     select table_name
     from information_schema.tables
     where
-      table_schema = 'app_private'
+      table_schema in ('app_private', 'learning')
     order by table_name
   `;
 
@@ -217,24 +275,48 @@ async function readAvailableInboxTables() {
 
 function buildEnvCheck(secret: string | null): InboxRuntimeCheck {
   if (!secret) {
-    return {
-      name: "env",
-      status: "failed",
-      message: "INTERNAL_API_SECRET is not configured.",
-      details: {
-        requiredEnv: ["INTERNAL_API_SECRET"],
-      },
-    };
+    return buildFailedCheck(
+      "env",
+      "inbox_runtime_missing_runtime_secret",
+      "INBOX_INTERNAL_RUNTIME_SECRET is not configured.",
+      {
+        requiredEnv: ["INBOX_INTERNAL_RUNTIME_SECRET"],
+      }
+    );
   }
 
-  return {
-    name: "env",
-    status: "ok",
-    message: "INTERNAL_API_SECRET is configured.",
-    details: {
-      requiredEnv: ["INTERNAL_API_SECRET"],
-    },
-  };
+  return buildOkCheck(
+    "env",
+    "inbox_runtime_runtime_secret_configured",
+    "INBOX_INTERNAL_RUNTIME_SECRET is configured.",
+    {
+      requiredEnv: ["INBOX_INTERNAL_RUNTIME_SECRET"],
+    }
+  );
+}
+
+function buildReadinessCheck(): InboxRuntimeCheck {
+  const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
+  const inboxLlmEnabled = process.env.INBOX_LLM_ENABLED !== "false";
+  const readinessMode: RuntimeReadinessMode =
+    hasOpenAiKey && inboxLlmEnabled
+      ? "openai_enabled"
+      : "deterministic_only";
+
+  return buildOkCheck(
+    "readiness",
+    readinessMode === "openai_enabled"
+      ? "inbox_runtime_readiness_openai_enabled"
+      : "inbox_runtime_readiness_deterministic_only",
+    readinessMode === "openai_enabled"
+      ? "Inbox is ready for OpenAI-backed interpretation."
+      : "Inbox is ready in deterministic-only mode.",
+    {
+      readinessMode,
+      inboxLlmEnabled,
+      hasOpenAiKey,
+    }
+  );
 }
 
 function buildSchemaCheck(
@@ -245,25 +327,20 @@ function buildSchemaCheck(
   );
 
   if (missingTables.length > 0) {
-    return {
-      name: "schema",
-      status: "failed",
-      message: "Inbox runtime tables are missing.",
-      details: {
+    return buildFailedCheck(
+      "schema",
+      "inbox_runtime_missing_tables",
+      "Inbox runtime tables are missing.",
+      {
         missingTables,
         requiredTables: [...requiredInboxRuntimeTables],
-      },
-    };
+      }
+    );
   }
 
-  return {
-    name: "schema",
-    status: "ok",
-    message: "Inbox runtime tables are available.",
-    details: {
-      requiredTables: [...requiredInboxRuntimeTables],
-    },
-  };
+  return buildOkCheck("schema", "inbox_runtime_tables_available", "Inbox runtime tables are available.", {
+    requiredTables: [...requiredInboxRuntimeTables],
+  });
 }
 
 async function readAppliedAppMigrations(ledgerPresent: boolean) {
@@ -290,14 +367,14 @@ async function buildItemsCheck(
   );
 
   if (missingTables.length > 0) {
-    return {
-      name: "items",
-      status: "failed",
-      message: "Inbox failure status could not be inspected because required tables are missing.",
-      details: {
+    return buildFailedCheck(
+      "items",
+      "inbox_runtime_missing_item_tables",
+      "Inbox failure status could not be inspected because required tables are missing.",
+      {
         missingTables,
-      },
-    };
+      }
+    );
   }
 
   const countRows = await sqlClient<
@@ -311,21 +388,13 @@ async function buildItemsCheck(
 
   const sampleRows = await sqlClient<
     {
-      item_id: string;
-      workspace_id: string | null;
-      map_id: string | null;
       updated_at: Date | string;
       attempt_no: number | null;
-      message: string | null;
     }[]
   >`
     select
-      item.id as item_id,
-      item.workspace_id,
-      item.map_id,
       item.updated_at,
-      failure.attempt_no,
-      failure.message
+      failure.attempt_no
     from app_private.inbox_items as item
     left join lateral (
       select
@@ -345,36 +414,32 @@ async function buildItemsCheck(
 
   const sample = sampleRows.map(
     (row): FailedInboxItemSample => ({
-      itemId: row.item_id,
-      workspaceId: row.workspace_id,
-      mapId: row.map_id,
       updatedAt: serializeTimestamp(row.updated_at),
       attemptNo: row.attempt_no,
-      message: row.message,
     })
   );
 
   if (failedCount > 0) {
-    return {
-      name: "items",
-      status: "degraded",
-      message: "Inbox has items waiting for manual review.",
-      details: {
+    return buildDegradedCheck(
+      "items",
+      "inbox_runtime_items_waiting_for_review",
+      "Inbox has items waiting for manual review.",
+      {
         failedNeedsReviewCount: failedCount,
         sample,
-      },
-    };
+      }
+    );
   }
 
-  return {
-    name: "items",
-    status: "ok",
-    message: "Inbox has no failed items waiting for review.",
-    details: {
+  return buildOkCheck(
+    "items",
+    "inbox_runtime_items_clear",
+    "Inbox has no failed items waiting for review.",
+    {
       failedNeedsReviewCount: 0,
       sample,
-    },
-  };
+    }
+  );
 }
 
 export async function buildExecutionsCheck(
@@ -385,15 +450,15 @@ export async function buildExecutionsCheck(
   );
 
   if (missingTables.length > 0) {
-    return {
-      name: "executions",
-      status: "failed",
-      message: "Inbox execution telemetry tables are missing.",
-      details: {
+    return buildFailedCheck(
+      "executions",
+      "inbox_runtime_missing_execution_tables",
+      "Inbox execution telemetry tables are missing.",
+      {
         missingTables,
         requiredTables: [...requiredInboxExecutionTables],
-      },
-    };
+      }
+    );
   }
 
   const [staleRunningRows, recentFailureRows, latencyRows, routeCountRows] =
@@ -508,20 +573,13 @@ export async function buildExecutionsCheck(
     ]);
 
   const staleRunningAttempts = staleRunningRows.map((row) => ({
-    attemptId: row.attempt_id,
-    itemId: row.item_id,
     attemptNo: row.attempt_no,
-    triggerKind: row.trigger_kind,
     startedAt: serializeTimestamp(row.started_at),
   }));
   const recentFailures = recentFailureRows.map((row) => ({
     scope: row.failure_scope,
-    itemId: row.item_id,
     attemptNo: row.attempt_no,
-    stepName: row.step_name,
     route: row.route,
-    failureCode: row.failure_code,
-    failureMessage: row.failure_message,
     recordedAt: serializeTimestamp(row.recorded_at),
   }));
   const stepLatencyP95 = latencyRows.map((row) => ({
@@ -535,78 +593,139 @@ export async function buildExecutionsCheck(
   }));
 
   if (staleRunningAttempts.length > 0) {
-    return {
-      name: "executions",
-      status: "failed",
-      message: "Inbox has pipeline attempts stuck in running state.",
-      details: {
+    return buildFailedCheck(
+      "executions",
+      "inbox_runtime_stuck_pipeline_attempts",
+      "Inbox has pipeline attempts stuck in running state.",
+      {
         staleRunningAttempts,
         recentFailures,
         stepLatencyP95,
         routeCounts,
-      },
-    };
+      }
+    );
   }
 
   if (recentFailures.length > 0) {
-    return {
-      name: "executions",
-      status: "degraded",
-      message: "Inbox execution telemetry shows recent failed attempts or steps.",
-      details: {
+    return buildDegradedCheck(
+      "executions",
+      "inbox_runtime_recent_execution_failures",
+      "Inbox execution telemetry shows recent failed attempts or steps.",
+      {
         staleRunningAttempts,
         recentFailures,
         stepLatencyP95,
         routeCounts,
-      },
-    };
+      }
+    );
   }
 
-  return {
-    name: "executions",
-    status: "ok",
-    message: "Inbox execution telemetry has no recent failures or stuck attempts.",
-    details: {
+  return buildOkCheck(
+    "executions",
+    "inbox_runtime_execution_telemetry_ok",
+    "Inbox execution telemetry has no recent failures or stuck attempts.",
+    {
       staleRunningAttempts,
       recentFailures,
       stepLatencyP95,
       routeCounts,
-    },
-  };
+    }
+  );
+}
+
+async function buildOperationalHealthCheck(
+  availableTables: readonly string[]
+): Promise<InboxRuntimeCheck> {
+  const requiredBridgeTables = [
+    "inbox_items",
+    "inbox_pipeline_attempts",
+    "inbox_step_runs",
+    ...requiredInboxLearningBridgeTables,
+  ] as const;
+  const missingTables = requiredBridgeTables.filter(
+    (tableName) => !availableTables.includes(tableName)
+  );
+
+  if (missingTables.length > 0) {
+    return buildFailedCheck(
+      "learning_bridge",
+      "inbox_runtime_missing_learning_bridge_tables",
+      "Inbox to Learning bridge could not be inspected.",
+      {
+        missingTables,
+      }
+    );
+  }
+
+  const [pendingReviewCountRows, pendingResolutionCountRows] =
+    await Promise.all([
+      sqlClient<{ pending_count: number }[]>`
+        select count(*)::int as pending_count
+        from learning.suggestion_batches as batch
+        where batch.batch_type = 'inbox_review'
+          and batch.status = 'pending'
+      `,
+      sqlClient<{ pending_count: number }[]>`
+        select count(*)::int as pending_count
+        from learning.suggestion_resolutions as resolution
+        where resolution.apply_status = 'pending'
+      `,
+    ]);
+
+  const pendingReviewCount = pendingReviewCountRows[0]?.pending_count ?? 0;
+  const pendingResolutionCount =
+    pendingResolutionCountRows[0]?.pending_count ?? 0;
+
+  if (pendingReviewCount > 0 || pendingResolutionCount > 0) {
+    return buildDegradedCheck(
+      "learning_bridge",
+      "inbox_runtime_learning_bridge_pending_work",
+      "Inbox to Learning bridge has pending review work.",
+      {
+        pendingReviewCount,
+        pendingResolutionCount,
+      }
+    );
+  }
+
+  return buildOkCheck(
+    "learning_bridge",
+    "inbox_runtime_learning_bridge_clear",
+    "Inbox to Learning bridge is clear.",
+    {
+      pendingReviewCount,
+      pendingResolutionCount,
+    }
+  );
 }
 
 export async function collectInboxRuntimeReport(): Promise<InboxRuntimeReport> {
-  const envCheck = buildEnvCheck(resolveInternalAuthSecret());
+  const envCheck = buildEnvCheck(env.INBOX_INTERNAL_RUNTIME_SECRET ?? null);
+  const readinessCheck = buildReadinessCheck();
 
   let repoMigrations: string[] = [];
-  let migrationReadError: string | null = null;
+  let migrationReadFailed = false;
   try {
     repoMigrations = await readRepoAppMigrations();
-  } catch (error) {
-    migrationReadError =
-      error instanceof Error
-        ? error.message
-        : "Unable to read repository migration files.";
+  } catch {
+    migrationReadFailed = true;
   }
 
   let availableTables: string[] | null = null;
-  let schemaReadError: string | null = null;
   try {
     availableTables = await readAvailableInboxTables();
-  } catch (error) {
-    schemaReadError =
-      error instanceof Error
-        ? error.message
-        : "Unable to inspect Inbox runtime tables.";
+  } catch {
+    availableTables = null;
   }
 
   const schemaCheck: InboxRuntimeCheck =
     availableTables === null
       ? buildFailedCheck(
           "schema",
+          "inbox_runtime_schema_inspection_failed",
           "Inbox runtime tables could not be inspected.",
           {
-            reason: schemaReadError,
+            failureCode: "inbox_runtime_schema_inspection_failed",
           }
         )
       : buildSchemaCheck(availableTables);
@@ -614,33 +733,32 @@ export async function collectInboxRuntimeReport(): Promise<InboxRuntimeReport> {
   const ledgerPresent = availableTables?.includes("app_migrations") ?? false;
 
   let appliedMigrations: string[] = [];
-  let appliedMigrationError: string | null = null;
+  let appliedMigrationReadFailed = false;
   if (availableTables !== null) {
     try {
       appliedMigrations = await readAppliedAppMigrations(ledgerPresent);
-    } catch (error) {
-      appliedMigrationError =
-        error instanceof Error
-          ? error.message
-          : "Unable to read applied app migrations.";
+    } catch {
+      appliedMigrationReadFailed = true;
     }
   }
 
   const migrationsCheck: InboxRuntimeCheck =
-    migrationReadError !== null
+    migrationReadFailed
       ? buildFailedCheck(
           "migrations",
+          "inbox_runtime_repo_migrations_unavailable",
           "Repository app migrations could not be read.",
           {
-            reason: migrationReadError,
+            failureCode: "inbox_runtime_repo_migrations_unavailable",
           }
         )
-      : appliedMigrationError !== null
+      : appliedMigrationReadFailed
         ? buildFailedCheck(
             "migrations",
+            "inbox_runtime_applied_migrations_unavailable",
             "Applied app migrations could not be read from the database.",
             {
-              reason: appliedMigrationError,
+              failureCode: "inbox_runtime_applied_migrations_unavailable",
             }
           )
         : buildMigrationDriftCheck({
@@ -653,23 +771,22 @@ export async function collectInboxRuntimeReport(): Promise<InboxRuntimeReport> {
   if (availableTables === null) {
     itemsCheck = buildFailedCheck(
       "items",
+      "inbox_runtime_item_status_inspection_failed",
       "Inbox item failure status could not be inspected.",
       {
-        reason: schemaReadError,
+        failureCode: "inbox_runtime_item_status_inspection_failed",
       }
     );
   } else {
     try {
       itemsCheck = await buildItemsCheck(availableTables);
-    } catch (error) {
+    } catch {
       itemsCheck = buildFailedCheck(
         "items",
+        "inbox_runtime_item_status_inspection_failed",
         "Inbox item failure status could not be inspected.",
         {
-          reason:
-            error instanceof Error
-              ? error.message
-              : "Unable to inspect failed Inbox items.",
+          failureCode: "inbox_runtime_item_status_inspection_failed",
         }
       );
     }
@@ -679,23 +796,47 @@ export async function collectInboxRuntimeReport(): Promise<InboxRuntimeReport> {
   if (availableTables === null) {
     executionsCheck = buildFailedCheck(
       "executions",
+      "inbox_runtime_execution_telemetry_unavailable",
       "Inbox execution telemetry could not be inspected.",
       {
-        reason: schemaReadError,
+        failureCode: "inbox_runtime_execution_telemetry_unavailable",
       }
     );
   } else {
     try {
       executionsCheck = await buildExecutionsCheck(availableTables);
-    } catch (error) {
+    } catch {
       executionsCheck = buildFailedCheck(
         "executions",
+        "inbox_runtime_execution_telemetry_unavailable",
         "Inbox execution telemetry could not be inspected.",
         {
-          reason:
-            error instanceof Error
-              ? error.message
-              : "Unable to inspect Inbox execution telemetry.",
+          failureCode: "inbox_runtime_execution_telemetry_unavailable",
+        }
+      );
+    }
+  }
+
+  let learningBridgeCheck: InboxRuntimeCheck;
+  if (availableTables === null) {
+    learningBridgeCheck = buildFailedCheck(
+      "learning_bridge",
+      "inbox_runtime_learning_bridge_unavailable",
+      "Inbox to Learning bridge could not be inspected.",
+      {
+        failureCode: "inbox_runtime_learning_bridge_unavailable",
+      }
+    );
+  } else {
+    try {
+      learningBridgeCheck = await buildOperationalHealthCheck(availableTables);
+    } catch {
+      learningBridgeCheck = buildFailedCheck(
+        "learning_bridge",
+        "inbox_runtime_learning_bridge_unavailable",
+        "Inbox to Learning bridge could not be inspected.",
+        {
+          failureCode: "inbox_runtime_learning_bridge_unavailable",
         }
       );
     }
@@ -703,10 +844,12 @@ export async function collectInboxRuntimeReport(): Promise<InboxRuntimeReport> {
 
   const checks: InboxRuntimeCheck[] = [
     envCheck,
+    readinessCheck,
     migrationsCheck,
     schemaCheck,
     itemsCheck,
     executionsCheck,
+    learningBridgeCheck,
   ];
 
   return {

@@ -2,20 +2,20 @@ import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import postgres from "postgres";
 
 type InternalResponse<T> = {
   data: T;
 };
 
-type InboxItemDetail = {
-  item: {
-    status: string;
-  };
-  clarificationRequests: Array<{
-    id: string;
-    status: string;
-  }>;
+type InternalErrorResponse = {
+  code: string;
+  error: string;
 };
+
+type InboxChannel = "create" | "process";
+
+let sqlClient: postgres.Sql | null = null;
 
 function readDotenvValue(name: string) {
   const dotenvPath = join(process.cwd(), ".env.local");
@@ -47,6 +47,26 @@ function readDotenvValue(name: string) {
   return null;
 }
 
+function getDatabaseUrl() {
+  const databaseUrl =
+    process.env.DATABASE_URL ?? readDotenvValue("DATABASE_URL");
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for inbox e2e database lookups.");
+  }
+
+  return databaseUrl;
+}
+
+function getSqlClient() {
+  sqlClient ??= postgres(getDatabaseUrl(), {
+    prepare: false,
+    max: 1,
+  });
+
+  return sqlClient;
+}
+
 function getInternalApiSecret() {
   const secret =
     process.env.INTERNAL_API_SECRET ?? readDotenvValue("INTERNAL_API_SECRET");
@@ -60,18 +80,55 @@ function getInternalApiSecret() {
   return secret;
 }
 
-async function postInternalInbox<T>(page: Page, path: string, payload?: object) {
+function getInboxInternalSecret(channel: InboxChannel) {
+  const envName =
+    channel === "create"
+      ? "INBOX_INTERNAL_CREATE_SECRET"
+      : "INBOX_INTERNAL_PROCESS_SECRET";
+  const secret = process.env[envName] ?? readDotenvValue(envName);
+
+  if (!secret) {
+    throw new Error(`${envName} is required for internal inbox e2e requests.`);
+  }
+
+  return secret;
+}
+
+function hasInboxInternalSecret(channel: InboxChannel) {
+  const envName =
+    channel === "create"
+      ? "INBOX_INTERNAL_CREATE_SECRET"
+      : "INBOX_INTERNAL_PROCESS_SECRET";
+
+  return Boolean(process.env[envName] ?? readDotenvValue(envName));
+}
+
+function getInboxInternalCaller(channel: InboxChannel) {
+  return channel === "create"
+    ? "inbox-create-service"
+    : "inbox-process-service";
+}
+
+function getInboxInternalHeaders(channel: InboxChannel) {
+  return {
+    authorization: `Bearer ${getInboxInternalSecret(channel)}`,
+    "x-internal-caller": getInboxInternalCaller(channel),
+  };
+}
+
+async function postInternalInbox<T>(
+  page: Page,
+  path: string,
+  payload?: object,
+  channel: InboxChannel = "process"
+) {
   const response =
     payload === undefined
       ? await page.request.post(path, {
-          headers: {
-            authorization: `Bearer ${getInternalApiSecret()}`,
-          },
+          headers: getInboxInternalHeaders(channel),
         })
       : await page.request.post(path, {
-          headers: {
-            authorization: `Bearer ${getInternalApiSecret()}`,
-          },
+          headers: getInboxInternalHeaders(channel),
           data: payload,
         });
 
@@ -84,20 +141,15 @@ async function postInternalInbox<T>(page: Page, path: string, payload?: object) 
   return (await response.json()) as InternalResponse<T>;
 }
 
-async function getInternalInbox<T>(page: Page, path: string) {
+async function getInternalInboxError(page: Page, path: string) {
   const response = await page.request.get(path, {
-    headers: {
-      authorization: `Bearer ${getInternalApiSecret()}`,
-    },
+    headers: getInboxInternalHeaders("process"),
   });
 
-  if (!response.ok()) {
-    throw new Error(
-      `Internal inbox request failed (${response.status()}): ${await response.text()}`
-    );
-  }
-
-  return (await response.json()) as InternalResponse<T>;
+  return {
+    status: response.status(),
+    body: (await response.json()) as InternalErrorResponse,
+  };
 }
 
 async function createMapThroughInternalApi(
@@ -124,6 +176,28 @@ async function createMapThroughInternalApi(
   }
 
   return (await response.json()) as InternalResponse<{ id: string }>;
+}
+
+async function lookupWorkspaceIdBySlug(workspaceSlug: string) {
+  const rows = await getSqlClient()<
+    {
+      id: string;
+    }[]
+  >`
+    select id
+    from public.workspaces
+    where slug = ${workspaceSlug}
+    limit 1
+  `;
+
+  const workspace = rows[0];
+  if (!workspace) {
+    throw new Error(
+      `Workspace ${workspaceSlug} was not found in the database.`
+    );
+  }
+
+  return workspace.id;
 }
 
 function normalizeWorkspaceSlug(input: string) {
@@ -161,7 +235,7 @@ async function createWorkspace(page: Page, userId: string) {
   const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
 
   await authenticateAsE2EUser(page, userId);
-  await page.goto("/app");
+  await page.goto("/app/new-workspace");
   await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
   await page.locator('input[name="name"]').fill(workspaceName);
@@ -170,7 +244,10 @@ async function createWorkspace(page: Page, userId: string) {
     timeout: 30_000,
   });
 
-  return { workspaceSlug };
+  return {
+    workspaceSlug,
+    workspaceId: await lookupWorkspaceIdBySlug(workspaceSlug),
+  };
 }
 
 async function createMap(page: Page, userId: string, workspaceSlug: string) {
@@ -185,6 +262,13 @@ async function createMap(page: Page, userId: string, workspaceSlug: string) {
 
   return { mapId: response.data.id };
 }
+
+test.afterAll(async () => {
+  if (sqlClient) {
+    await sqlClient.end({ timeout: 0 });
+    sqlClient = null;
+  }
+});
 
 test.describe("Inbox workbench", () => {
   test("creates an inbox item and shows clarification plus rerun state in the UI", async ({
@@ -201,7 +285,9 @@ test.describe("Inbox workbench", () => {
       "The reaction starts when the criticism comes from a close partner in front of other people.";
 
     await page.goto(`/app/${workspaceSlug}/inbox`);
-    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Inbox", exact: true })
+    ).toBeVisible();
 
     await page.locator('textarea[name="rawText"]').fill(rawText);
     await page.getByRole("button", { name: "Create inbox item" }).click();
@@ -218,120 +304,208 @@ test.describe("Inbox workbench", () => {
 
     await page.getByRole("button", { name: "Process item" }).click();
 
-    let clarificationRequestId = "";
-    await expect
-      .poll(async () => {
-        try {
-          const response = await getInternalInbox<InboxItemDetail>(
-            page,
-            `/api/internal/inbox/items/${itemId}`
-          );
-          clarificationRequestId =
-            response.data.clarificationRequests.find(
-              (request) => request.status === "pending"
-            )?.id ?? "";
-
-          return clarificationRequestId || null;
-        } catch {
-          return null;
-        }
-      }, {
-        timeout: 30_000,
-        intervals: [1_000, 2_000],
-      })
-      .toEqual(expect.any(String));
-
-    await page.reload();
-
     await expect(
-      page.getByText("Answer the pending clarification")
+      page.getByRole("heading", { name: "Answer the pending clarification" })
     ).toBeVisible({ timeout: 30_000 });
+    const executionTelemetryToggle = page.getByText("Execution telemetry", {
+      exact: true,
+    });
+    await expect(executionTelemetryToggle).toBeVisible();
+    await executionTelemetryToggle.click();
+    await expect(page.getByText("Attempt 2")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "persist_raw" }).first()).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Execution attempts" })
+      page
+        .getByText(
+          "A single clarification is likely to change the routing outcome more than it costs the user."
+        )
+        .first()
     ).toBeVisible();
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "attempt 2"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "manual process"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "persist_raw"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "Runtime"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "clarification requested"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "inbox-routing.v1"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "A single clarification is likely to change the routing outcome more than it costs the user."
-    );
 
-    await postInternalInbox(
-      page,
-      `/api/internal/inbox/clarification-requests/${clarificationRequestId}/answer`,
-      {
-        answerText,
-      }
-    );
-
-    await expect
-      .poll(async () => {
-        try {
-          const response = await getInternalInbox<InboxItemDetail>(
-            page,
-            `/api/internal/inbox/items/${itemId}`
-          );
-          return response.data.item.status;
-        } catch {
-          return "";
-        }
-      }, {
-        timeout: 60_000,
-        intervals: [1_000, 2_000, 3_000],
-      })
-      .toMatch(/ready_for_review|applied|parked|discarded/);
-
-    await page.reload();
+    await page.getByRole("textbox", { name: "Answer clarification" }).fill(answerText);
+    await page.getByRole("button", { name: "Answer clarification" }).click();
 
     await expect(
-      page.getByRole("button", { name: "Submit clarification answer" })
+      page.getByRole("button", { name: "Answer clarification" })
     ).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "answered"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(answerText);
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "Clarification answer fragments"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "clarification answer"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "attempt 3"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "clarification rerun"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText("route");
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "Route reason"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      "Policy notes"
-    );
-    await expect(page.locator(".sl-inbox-detail-stack")).toContainText(
-      /The signal is strong enough to emit a structured packet without forcing extra clarification.|The packet is preserved for review because it does not compile into deterministic canonical mutations yet.|Clarification cap reached after one answered request, so the signal is preserved as parked instead of asking again.|The signal should be preserved, but the current evidence is too weak for a hard structured promotion.|The signal is too weak to keep, and clarification would not improve the expected outcome enough./
-    );
+    await expect(page.getByText(answerText).first()).toBeVisible();
     await expect
       .poll(async () => {
         const text = await page.locator(".sl-inbox-detail-stack").textContent();
         return /ready for review|applied|parked|discarded/.test(text ?? "");
       })
       .toBe(true);
+
+    await expect(
+      page.getByRole("link", { name: /Review in Learning|Open Map/ }).first()
+    ).toBeVisible();
+  });
+
+  test("blocks cross-workspace inbox item access in routes and UI", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    test.skip(
+      !hasInboxInternalSecret("create"),
+      "INBOX_INTERNAL_CREATE_SECRET is required for create-channel e2e coverage."
+    );
+
+    const userId = randomUUID();
+    const workspaceOne = await createWorkspace(page, userId);
+    const { mapId: mapOneId } = await createMap(
+      page,
+      userId,
+      workspaceOne.workspaceSlug
+    );
+    const workspaceTwo = await createWorkspace(page, userId);
+    await createMap(page, userId, workspaceTwo.workspaceSlug);
+
+    const created = await postInternalInbox<{ id: string }>(
+      page,
+      "/api/internal/inbox/items",
+      {
+        userId,
+        workspaceId: workspaceOne.workspaceId,
+        mapId: mapOneId,
+        sourceType: "manual_note",
+        rawText: "Workspace one only signal.",
+        idempotencyKey: `cross-workspace-${randomUUID()}`,
+      },
+      "create"
+    );
+
+    const routeResponse = await getInternalInboxError(
+      page,
+      `/api/internal/inbox/items/${created.data.id}?workspaceId=${workspaceTwo.workspaceId}`
+    );
+
+    expect(routeResponse.status).toBe(404);
+    expect(routeResponse.body).toEqual({
+      code: "inbox_item_not_found",
+      error: "Inbox item not found.",
+    });
+
+    await authenticateAsE2EUser(page, userId);
+    await page.goto(
+      `/app/${workspaceTwo.workspaceSlug}/inbox?item=${created.data.id}`
+    );
+    await expect(
+      page.getByRole("heading", { name: "Inbox", exact: true })
+    ).toBeVisible();
+    await expect(page.getByText(/not available in this workspace/)).toBeVisible();
+    await expect(page.getByText("Workspace one only signal.")).toHaveCount(0);
+  });
+
+  test("keeps duplicate create semantics predictable across workspace scope", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    test.skip(
+      !hasInboxInternalSecret("create"),
+      "INBOX_INTERNAL_CREATE_SECRET is required for create-channel e2e coverage."
+    );
+
+    const userId = randomUUID();
+    const workspaceOne = await createWorkspace(page, userId);
+    const { mapId: mapOneId } = await createMap(
+      page,
+      userId,
+      workspaceOne.workspaceSlug
+    );
+    const workspaceTwo = await createWorkspace(page, userId);
+    const { mapId: mapTwoId } = await createMap(
+      page,
+      userId,
+      workspaceTwo.workspaceSlug
+    );
+    const idempotencyKey = `predictable-duplicate-${randomUUID()}`;
+    const payload = {
+      userId,
+      workspaceId: workspaceOne.workspaceId,
+      mapId: mapOneId,
+      sourceType: "manual_note",
+      rawText: "Predictable duplicate signal.",
+      idempotencyKey,
+    };
+
+    const first = await page.request.post("/api/internal/inbox/items", {
+      headers: getInboxInternalHeaders("create"),
+      data: payload,
+    });
+    const replay = await page.request.post("/api/internal/inbox/items", {
+      headers: getInboxInternalHeaders("create"),
+      data: payload,
+    });
+    const crossWorkspaceConflict = await page.request.post(
+      "/api/internal/inbox/items",
+      {
+        headers: getInboxInternalHeaders("create"),
+        data: {
+          ...payload,
+          workspaceId: workspaceTwo.workspaceId,
+          mapId: mapTwoId,
+        },
+      }
+    );
+
+    expect(first.status()).toBe(201);
+    expect(replay.status()).toBe(200);
+    expect(await replay.json()).toEqual(await first.json());
+    expect(crossWorkspaceConflict.status()).toBe(409);
+    expect(await crossWorkspaceConflict.json()).toEqual({
+      code: "inbox_duplicate_conflict",
+      error:
+        "Idempotency key already belongs to another workspace, map, or user.",
+    });
+  });
+});
+
+test.describe("Inbox workbench mobile smoke", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("keeps mobile triage usable without horizontal overflow", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const userId = randomUUID();
+    const { workspaceSlug } = await createWorkspace(page, userId);
+    await createMap(page, userId, workspaceSlug);
+
+    await page.goto(`/app/${workspaceSlug}/inbox`);
+    await expect(
+      page.getByRole("heading", { name: "Inbox", exact: true })
+    ).toBeVisible();
+
+    await page.locator('textarea[name="rawText"]').fill(
+      "Mobile triage smoke signal."
+    );
+    await page.getByRole("button", { name: "Create inbox item" }).click();
+    await page.waitForURL(new RegExp(`/app/${workspaceSlug}/inbox\\?item=`), {
+      timeout: 30_000,
+    });
+
+    await expect(page.locator(".sl-inbox-page")).toHaveAttribute(
+      "data-mobile-view",
+      "detail"
+    );
+    await expect(page.getByRole("link", { name: "Back to queue" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Triage Summary" })).toBeVisible();
+
+    const hasHorizontalOverflow = await page.evaluate(() => {
+      return (
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth
+      );
+    });
+
+    expect(hasHorizontalOverflow).toBe(false);
+
+    await page.getByRole("link", { name: "Back to queue" }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/${workspaceSlug}/inbox$`));
   });
 });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge, Button, Card, Flex, Heading, Text } from "@radix-ui/themes";
 
 import type { InspectorProvenancePayload } from "@/features/inspector/types";
+import { workspaceInboxPath } from "@/shared/config/routes";
 import type { SupportedLocale } from "@/shared/i18n/config";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
@@ -60,7 +61,12 @@ export function InspectorProvenanceSection({
             </Text>
             <Text size="2">{provenance.inboxItem.rawText}</Text>
             <Button asChild size="1" variant="soft">
-              <Link href={`/app/${workspaceSlug}/inbox?item=${provenance.inboxItem.id}`}>
+              <Link
+                href={{
+                  pathname: workspaceInboxPath(workspaceSlug),
+                  query: { item: provenance.inboxItem.id },
+                }}
+              >
                 {messages.inspector.provenanceOpenInbox}
               </Link>
             </Button>

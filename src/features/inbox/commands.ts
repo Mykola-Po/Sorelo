@@ -31,12 +31,14 @@ import { mapInboxItemRecord } from "@/features/inbox/mappers";
 import { getInboxItemDetailQuery } from "@/features/inbox/queries";
 import { materializeInboxReviewBatchWithTx } from "@/features/learning/commands";
 import {
-  clarificationAnswerInputSchema,
+  answerInboxClarificationWithScopeInputSchema,
   type InboxClarificationContextEntry,
   ingestInboxItemInputSchema,
+  processInboxItemInputSchema,
   structuredPacketDraftSchema,
-  type ClarificationAnswerInput,
+  type AnswerInboxClarificationWithScopeInput,
   type IngestInboxItemInput,
+  type ProcessInboxItemInput,
 } from "@/features/inbox/schemas";
 import {
   requireActiveMap,
@@ -63,17 +65,36 @@ import {
   type InboxWorkflowEventStatus,
 } from "@/shared/db/schema";
 
+export type InboxCommandErrorCode =
+  | "inbox_user_not_found"
+  | "inbox_workspace_access_required"
+  | "inbox_map_not_found"
+  | "inbox_item_not_found"
+  | "inbox_clarification_request_not_found"
+  | "inbox_structured_packet_not_found"
+  | "inbox_duplicate_conflict"
+  | "inbox_process_state_conflict"
+  | "inbox_clarification_state_conflict";
+
 export class InboxCommandError extends Error {
   readonly statusCode: number;
+  readonly code: InboxCommandErrorCode;
 
-  constructor(message: string, statusCode: number) {
+  constructor(
+    message: string,
+    statusCode: number,
+    code: InboxCommandErrorCode
+  ) {
     super(message);
     this.name = "InboxCommandError";
     this.statusCode = statusCode;
+    this.code = code;
   }
 }
 
-export function isInboxCommandError(error: unknown): error is InboxCommandError {
+export function isInboxCommandError(
+  error: unknown
+): error is InboxCommandError {
   return error instanceof InboxCommandError;
 }
 
@@ -136,6 +157,37 @@ function hashValue(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function getForbiddenError(message: string, code: InboxCommandErrorCode) {
+  return new InboxCommandError(message, 403, code);
+}
+
+function getNotFoundError(message: string, code: InboxCommandErrorCode) {
+  return new InboxCommandError(message, 404, code);
+}
+
+function getConflictError(
+  message: string,
+  code:
+    | "inbox_duplicate_conflict"
+    | "inbox_process_state_conflict"
+    | "inbox_clarification_state_conflict" = "inbox_process_state_conflict"
+) {
+  return new InboxCommandError(message, 409, code);
+}
+
+function isUniqueConstraintError(error: unknown, constraintName: string) {
+  return (
+    isRecord(error) &&
+    error.name === "PostgresError" &&
+    error.code === "23505" &&
+    error.constraint_name === constraintName
+  );
+}
+
 async function requireUser(userId: string) {
   const [user] = await db
     .select({ id: users.id })
@@ -148,6 +200,51 @@ async function requireUser(userId: string) {
   }
 
   return user;
+}
+
+async function requireUserOrThrow(userId: string) {
+  try {
+    return await requireUser(userId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "User not found.") {
+      throw getNotFoundError("User not found.", "inbox_user_not_found");
+    }
+
+    throw error;
+  }
+}
+
+async function requireWorkspaceMembershipOrThrow(
+  workspaceId: string,
+  userId: string
+) {
+  try {
+    return await requireWorkspaceMembership(workspaceId, userId);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "Workspace access required."
+    ) {
+      throw getForbiddenError(
+        "Workspace access required.",
+        "inbox_workspace_access_required"
+      );
+    }
+
+    throw error;
+  }
+}
+
+async function requireActiveMapOrThrow(workspaceId: string, mapId: string) {
+  try {
+    return await requireActiveMap(workspaceId, mapId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Map not found.") {
+      throw getNotFoundError("Map not found.", "inbox_map_not_found");
+    }
+
+    throw error;
+  }
 }
 
 async function getExistingMapConcepts(mapId: string, workspaceId: string) {
@@ -186,10 +283,12 @@ async function getNextAttemptNo(itemId: string) {
       .limit(1),
   ]);
 
-  return Math.max(
-    existingEventAttempt[0]?.attemptNo ?? 0,
-    existingPipelineAttempt[0]?.attemptNo ?? 0
-  ) + 1;
+  return (
+    Math.max(
+      existingEventAttempt[0]?.attemptNo ?? 0,
+      existingPipelineAttempt[0]?.attemptNo ?? 0
+    ) + 1
+  );
 }
 
 function measureLatencyMs(startedAt: Date, finishedAt: Date) {
@@ -322,10 +421,7 @@ async function failInboxPipelineAttempt(input: {
   return failure;
 }
 
-async function clearInboxAnalysisStateTx(
-  tx: DbTransaction,
-  itemId: string
-) {
+async function clearInboxAnalysisStateTx(tx: DbTransaction, itemId: string) {
   await tx
     .delete(inboxStructuredPackets)
     .where(eq(inboxStructuredPackets.itemId, itemId));
@@ -333,12 +429,8 @@ async function clearInboxAnalysisStateTx(
     .delete(inboxMergeCandidates)
     .where(eq(inboxMergeCandidates.itemId, itemId));
   await tx.delete(inboxAtoms).where(eq(inboxAtoms.itemId, itemId));
-  await tx
-    .delete(inboxHypotheses)
-    .where(eq(inboxHypotheses.itemId, itemId));
-  await tx
-    .delete(inboxFragments)
-    .where(eq(inboxFragments.itemId, itemId));
+  await tx.delete(inboxHypotheses).where(eq(inboxHypotheses.itemId, itemId));
+  await tx.delete(inboxFragments).where(eq(inboxFragments.itemId, itemId));
 }
 
 async function insertWorkflowEvent(input: {
@@ -366,7 +458,9 @@ function buildRouteWorkflowEventPayload(input: {
   clarificationRequestId?: string | null;
   suggestionBatchId?: string | null;
 }) {
-  const compatibility = deriveInboxRoutingCompatibility(input.route.routingPolicy);
+  const compatibility = deriveInboxRoutingCompatibility(
+    input.route.routingPolicy
+  );
 
   return {
     requestedRoute: compatibility.requestedRoute,
@@ -382,7 +476,9 @@ function buildRouteWorkflowEventPayload(input: {
     ...(input.clarificationRequestId
       ? { clarificationRequestId: input.clarificationRequestId }
       : {}),
-    ...(input.suggestionBatchId ? { suggestionBatchId: input.suggestionBatchId } : {}),
+    ...(input.suggestionBatchId
+      ? { suggestionBatchId: input.suggestionBatchId }
+      : {}),
   };
 }
 
@@ -392,7 +488,9 @@ function buildRouteStepMetadata(input: {
   packetStatus?: string | null;
   clarificationRequestId?: string | null;
 }) {
-  const compatibility = deriveInboxRoutingCompatibility(input.route.routingPolicy);
+  const compatibility = deriveInboxRoutingCompatibility(
+    input.route.routingPolicy
+  );
 
   return {
     requestedRoute: compatibility.requestedRoute,
@@ -416,7 +514,9 @@ function buildTerminalStepMetadata(input: {
   packetStatus?: string | null;
   promotedBatchId?: string | null;
 }) {
-  const compatibility = deriveInboxRoutingCompatibility(input.route.routingPolicy);
+  const compatibility = deriveInboxRoutingCompatibility(
+    input.route.routingPolicy
+  );
 
   return {
     requestedRoute: compatibility.requestedRoute,
@@ -427,7 +527,9 @@ function buildTerminalStepMetadata(input: {
       : {}),
     terminalStatus: input.terminalStatus,
     ...(input.packetStatus ? { packetStatus: input.packetStatus } : {}),
-    ...(input.promotedBatchId ? { promotedBatchId: input.promotedBatchId } : {}),
+    ...(input.promotedBatchId
+      ? { promotedBatchId: input.promotedBatchId }
+      : {}),
     routingPolicy: input.route.routingPolicy,
   };
 }
@@ -458,15 +560,46 @@ function getTerminalStatus(route: InboxRoute): InboxItemStatus {
   }
 }
 
-function getConflictError(message: string) {
-  return new InboxCommandError(message, 409);
+function matchesInboxCreateIntent(
+  existing: InboxItemRow,
+  input: IngestInboxItemInput
+) {
+  return (
+    existing.userId === input.userId &&
+    existing.workspaceId === input.workspaceId &&
+    existing.mapId === input.mapId &&
+    existing.sourceType === input.sourceType &&
+    (existing.sourceRef ?? null) === (input.sourceRef ?? null) &&
+    existing.rawText === input.rawText
+  );
+}
+
+async function findInboxItemsByIdempotencyKey(idempotencyKey: string) {
+  return db
+    .select()
+    .from(inboxItems)
+    .where(eq(inboxItems.idempotencyKey, idempotencyKey))
+    .orderBy(desc(inboxItems.createdAt));
+}
+
+function resolveExistingInboxItemByScope(
+  existingItems: InboxItemRow[],
+  input: IngestInboxItemInput
+) {
+  return existingItems.find(
+    (item) =>
+      item.workspaceId === input.workspaceId && item.mapId === input.mapId
+  );
+}
+
+function getIdempotencyConflictError(message: string) {
+  return getConflictError(message, "inbox_duplicate_conflict");
 }
 
 function coerceRouteForPromotionScope(
-  item: InboxItemRow,
   route: ReturnType<typeof buildInboxRouteDraft>["route"]
 ) {
-  if (route.route !== "promote" || (item.workspaceId && item.mapId)) {
+  if (route.route !== "promote") {
     return route;
   }
 
@@ -494,15 +627,13 @@ function resolveEffectiveRoute(input: {
 
     return {
       effectiveRoute,
-      overrideReason:
-        deriveInboxRoutingCompatibility(effectiveRoute.routingPolicy).overrideReason,
+      overrideReason: deriveInboxRoutingCompatibility(
+        effectiveRoute.routingPolicy
+      ).overrideReason,
     };
   }
 
-  const effectiveRoute = coerceRouteForPromotionScope(
-    input.item,
-    input.requestedRoute
-  );
+  const effectiveRoute = coerceRouteForPromotionScope(input.requestedRoute);
   const overrideReason = deriveInboxRoutingCompatibility(
     effectiveRoute.routingPolicy
   ).overrideReason;
@@ -520,14 +651,13 @@ async function getResolveContextForItem(item: InboxItemRow) {
       .from(inboxItems)
       .where(
         and(
-          eq(inboxItems.userId, item.userId),
+          eq(inboxItems.workspaceId, item.workspaceId),
+          eq(inboxItems.mapId, item.mapId),
           ne(inboxItems.id, item.id),
           isNotNull(inboxItems.normalizedText)
         )
       ),
-    item.workspaceId && item.mapId
-      ? getExistingMapConcepts(item.mapId, item.workspaceId)
-      : Promise.resolve([]),
+    getExistingMapConcepts(item.mapId, item.workspaceId),
   ]);
 
   return {
@@ -602,7 +732,9 @@ async function persistNormalizeStep(input: {
 async function persistSegmentStep(input: {
   item: InboxItemRow;
   attemptNo: number;
-  analysisFragments: ReturnType<typeof buildInboxSegmentationDraft>["analysisFragments"];
+  analysisFragments: ReturnType<
+    typeof buildInboxSegmentationDraft
+  >["analysisFragments"];
 }) {
   return db.transaction(async (tx) => {
     await clearInboxAnalysisStateTx(tx, input.item.id);
@@ -674,15 +806,15 @@ async function persistInterpretStep(input: {
               ? (fragmentIdByOrdinal.get(hypothesis.fragmentOrdinal) ?? null)
               : null,
           rank: hypothesis.rank,
-           hypothesisType: hypothesis.hypothesisType,
-           payload: hypothesis.payload,
-           confidence: hypothesis.confidence,
-           explanation: hypothesis.explanation,
-           modelName: input.modelName,
-           promptVersion: input.promptVersion,
-         }))
-       )
-       .returning();
+          hypothesisType: hypothesis.hypothesisType,
+          payload: hypothesis.payload,
+          confidence: hypothesis.confidence,
+          explanation: hypothesis.explanation,
+          modelName: input.modelName,
+          promptVersion: input.promptVersion,
+        }))
+      )
+      .returning();
 
     const primaryHypothesisId = hypothesisRows[0]?.id;
     if (primaryHypothesisId) {
@@ -938,9 +1070,7 @@ async function persistEmitStatusStep(input: {
   });
 }
 
-async function runInboxProcessingAttempt(
-  input: InboxProcessingAttemptInput
-) {
+async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
   const clarificationContext = input.clarificationContext ?? [];
   const recorder = buildDbInboxStepRecorder();
   const attempt = await createInboxPipelineAttempt({
@@ -1057,7 +1187,9 @@ async function runInboxProcessingAttempt(
       }
     );
 
-    const segmentHash = hashValue(JSON.stringify(segmentation.analysisFragments));
+    const segmentHash = hashValue(
+      JSON.stringify(segmentation.analysisFragments)
+    );
     const interpretAttemptRuntime = getConfiguredInboxInterpretRuntime();
     const interpretation = await runRecordedInboxStep(
       {
@@ -1071,7 +1203,8 @@ async function runInboxProcessingAttempt(
           promptVersion: interpretAttemptRuntime.promptVersion,
         },
         metadata: {
-          clarificationFragmentCount: segmentation.clarificationFragments.length,
+          clarificationFragmentCount:
+            segmentation.clarificationFragments.length,
           configuredProvider: interpretAttemptRuntime.provider,
         },
       },
@@ -1089,7 +1222,8 @@ async function runInboxProcessingAttempt(
           attemptNo: input.attemptNo,
           fragmentRows: segmentation.fragmentRows,
           interpretation: extraction.interpretation,
-          clarificationFragmentCount: segmentation.clarificationFragments.length,
+          clarificationFragmentCount:
+            segmentation.clarificationFragments.length,
           modelName: extraction.runtime.modelName,
           promptVersion: extraction.runtime.promptVersion,
           metadata: extraction.runtime.metadata,
@@ -1381,7 +1515,10 @@ async function runInboxProcessingAttempt(
     throw error;
   }
 
-  const detail = await getInboxItemDetailQuery(input.item.id);
+  const detail = await getInboxItemDetailQuery({
+    workspaceId: input.item.workspaceId,
+    itemId: input.item.id,
+  });
   if (!detail) {
     throw new Error("Processed inbox item detail could not be loaded.");
   }
@@ -1391,40 +1528,85 @@ async function runInboxProcessingAttempt(
 
 export async function createInboxItemCommand(input: IngestInboxItemInput) {
   const parsed = ingestInboxItemInputSchema.parse(input);
-  await requireUser(parsed.userId);
-  await requireWorkspaceMembership(parsed.workspaceId, parsed.userId);
-  await requireActiveMap(parsed.workspaceId, parsed.mapId);
+  await requireUserOrThrow(parsed.userId);
+  await requireWorkspaceMembershipOrThrow(parsed.workspaceId, parsed.userId);
+  await requireActiveMapOrThrow(parsed.workspaceId, parsed.mapId);
 
-  const [existing] = await db
-    .select()
-    .from(inboxItems)
-    .where(eq(inboxItems.idempotencyKey, parsed.idempotencyKey))
-    .limit(1);
+  const existingItems = await findInboxItemsByIdempotencyKey(
+    parsed.idempotencyKey
+  );
+  const existingInScope = resolveExistingInboxItemByScope(
+    existingItems,
+    parsed
+  );
 
-  if (existing) {
-    if (existing.userId !== parsed.userId) {
-      throw new Error("Idempotency key already belongs to another user.");
+  if (existingInScope) {
+    if (matchesInboxCreateIntent(existingInScope, parsed)) {
+      return {
+        created: false,
+        item: mapInboxItemRecord(existingInScope),
+      };
     }
 
-    return {
-      created: false,
-      item: mapInboxItemRecord(existing),
-    };
+    throw getIdempotencyConflictError(
+      "Idempotency key already belongs to a different inbox item in this workspace map."
+    );
   }
 
-  const [item] = await db
-    .insert(inboxItems)
-    .values({
-      userId: parsed.userId,
-      workspaceId: parsed.workspaceId,
-      mapId: parsed.mapId,
-      sourceType: parsed.sourceType,
-      sourceRef: parsed.sourceRef ?? null,
-      rawText: parsed.rawText,
-      idempotencyKey: parsed.idempotencyKey,
-      status: "received",
-    })
-    .returning();
+  if (existingItems.length > 0) {
+    throw getIdempotencyConflictError(
+      "Idempotency key already belongs to another workspace, map, or user."
+    );
+  }
+
+  let item: InboxItemRow | undefined;
+
+  try {
+    [item] = await db
+      .insert(inboxItems)
+      .values({
+        userId: parsed.userId,
+        workspaceId: parsed.workspaceId,
+        mapId: parsed.mapId,
+        sourceType: parsed.sourceType,
+        sourceRef: parsed.sourceRef ?? null,
+        rawText: parsed.rawText,
+        idempotencyKey: parsed.idempotencyKey,
+        status: "received",
+      })
+      .returning();
+  } catch (error) {
+    if (
+      isUniqueConstraintError(
+        error,
+        "inbox_items_workspace_map_idempotency_key"
+      )
+    ) {
+      const conflictingItems = await findInboxItemsByIdempotencyKey(
+        parsed.idempotencyKey
+      );
+      const conflictingInScope = resolveExistingInboxItemByScope(
+        conflictingItems,
+        parsed
+      );
+
+      if (
+        conflictingInScope &&
+        matchesInboxCreateIntent(conflictingInScope, parsed)
+      ) {
+        return {
+          created: false,
+          item: mapInboxItemRecord(conflictingInScope),
+        };
+      }
+
+      throw getIdempotencyConflictError(
+        "Idempotency key already belongs to another inbox item."
+      );
+    }
+
+    throw error;
+  }
 
   if (!item) {
     throw new Error("Inbox item creation failed.");
@@ -1459,7 +1641,7 @@ export async function materializePromotedPacketCommand(itemId: string) {
       .limit(1);
 
     if (!item) {
-      throw new InboxCommandError("Inbox item not found.", 404);
+      throw getNotFoundError("Inbox item not found.", "inbox_item_not_found");
     }
 
     const [packetRow] = await tx
@@ -1470,12 +1652,16 @@ export async function materializePromotedPacketCommand(itemId: string) {
       .limit(1);
 
     if (!packetRow) {
-      throw new InboxCommandError("Structured packet not found.", 404);
+      throw getNotFoundError(
+        "Structured packet not found.",
+        "inbox_structured_packet_not_found"
+      );
     }
 
     if (packetRow.route !== "promote") {
       throw getConflictError(
-        "Only promote-routed structured packets can be materialized."
+        "Only promote-routed structured packets can be materialized.",
+        "inbox_process_state_conflict"
       );
     }
 
@@ -1495,20 +1681,27 @@ export async function materializePromotedPacketCommand(itemId: string) {
   });
 }
 
-export async function processInboxItemCommand(itemId: string) {
+export async function processInboxItemCommand(input: ProcessInboxItemInput) {
+  const parsed = processInboxItemInputSchema.parse(input);
   const [item] = await db
     .select()
     .from(inboxItems)
-    .where(eq(inboxItems.id, itemId))
+    .where(
+      and(
+        eq(inboxItems.id, parsed.itemId),
+        eq(inboxItems.workspaceId, parsed.workspaceId)
+      )
+    )
     .limit(1);
 
   if (!item) {
-    throw new InboxCommandError("Inbox item not found.", 404);
+    throw getNotFoundError("Inbox item not found.", "inbox_item_not_found");
   }
 
   if (item.status === "clarification_requested") {
     throw getConflictError(
-      "Inbox item is waiting for a clarification answer and cannot be blindly reprocessed."
+      "Inbox item is waiting for a clarification answer and cannot be blindly reprocessed.",
+      "inbox_process_state_conflict"
     );
   }
 
@@ -1519,7 +1712,10 @@ export async function processInboxItemCommand(itemId: string) {
     item.status === "parked" ||
     item.status === "discarded"
   ) {
-    const detail = await getInboxItemDetailQuery(item.id);
+    const detail = await getInboxItemDetailQuery({
+      workspaceId: item.workspaceId,
+      itemId: item.id,
+    });
     if (!detail) {
       throw new Error("Inbox item detail could not be loaded.");
     }
@@ -1538,40 +1734,52 @@ export async function processInboxItemCommand(itemId: string) {
 }
 
 export async function answerInboxClarificationCommand(
-  requestId: string,
-  answerText: ClarificationAnswerInput["answerText"]
+  input: AnswerInboxClarificationWithScopeInput
 ) {
-  const parsedAnswer = clarificationAnswerInputSchema.parse({
-    answerText,
-  });
+  const parsed = answerInboxClarificationWithScopeInputSchema.parse(input);
 
   const [request] = await db
     .select()
     .from(inboxClarificationRequests)
-    .where(eq(inboxClarificationRequests.id, requestId))
+    .where(eq(inboxClarificationRequests.id, parsed.requestId))
     .limit(1);
 
   if (!request) {
-    throw new InboxCommandError("Clarification request not found.", 404);
+    throw getNotFoundError(
+      "Clarification request not found.",
+      "inbox_clarification_request_not_found"
+    );
   }
 
   const [item] = await db
     .select()
     .from(inboxItems)
-    .where(eq(inboxItems.id, request.itemId))
+    .where(
+      and(
+        eq(inboxItems.id, request.itemId),
+        eq(inboxItems.workspaceId, parsed.workspaceId)
+      )
+    )
     .limit(1);
 
   if (!item) {
-    throw new InboxCommandError("Inbox item not found.", 404);
+    throw getNotFoundError(
+      "Clarification request not found.",
+      "inbox_clarification_request_not_found"
+    );
   }
 
   if (request.status !== "pending") {
-    throw getConflictError("Clarification request is no longer pending.");
+    throw getConflictError(
+      "Clarification request is no longer pending.",
+      "inbox_clarification_state_conflict"
+    );
   }
 
   if (item.status !== "clarification_requested") {
     throw getConflictError(
-      "Parent inbox item is not waiting for a clarification answer."
+      "Parent inbox item is not waiting for a clarification answer.",
+      "inbox_clarification_state_conflict"
     );
   }
 
@@ -1583,37 +1791,52 @@ export async function answerInboxClarificationCommand(
     const [liveRequest] = await tx
       .select()
       .from(inboxClarificationRequests)
-      .where(eq(inboxClarificationRequests.id, requestId))
+      .where(eq(inboxClarificationRequests.id, parsed.requestId))
       .limit(1);
 
     if (!liveRequest) {
-      throw new InboxCommandError("Clarification request not found.", 404);
+      throw getNotFoundError(
+        "Clarification request not found.",
+        "inbox_clarification_request_not_found"
+      );
     }
 
     const [liveItem] = await tx
       .select()
       .from(inboxItems)
-      .where(eq(inboxItems.id, liveRequest.itemId))
+      .where(
+        and(
+          eq(inboxItems.id, liveRequest.itemId),
+          eq(inboxItems.workspaceId, parsed.workspaceId)
+        )
+      )
       .limit(1);
 
     if (!liveItem) {
-      throw new InboxCommandError("Inbox item not found.", 404);
+      throw getNotFoundError(
+        "Clarification request not found.",
+        "inbox_clarification_request_not_found"
+      );
     }
 
     if (liveRequest.status !== "pending") {
-      throw getConflictError("Clarification request is no longer pending.");
+      throw getConflictError(
+        "Clarification request is no longer pending.",
+        "inbox_clarification_state_conflict"
+      );
     }
 
     if (liveItem.status !== "clarification_requested") {
       throw getConflictError(
-        "Parent inbox item is not waiting for a clarification answer."
+        "Parent inbox item is not waiting for a clarification answer.",
+        "inbox_clarification_state_conflict"
       );
     }
 
     await tx.insert(inboxClarificationAnswers).values({
       id: answerId,
       requestId: liveRequest.id,
-      answerText: parsedAnswer.answerText,
+      answerText: parsed.answerText,
     });
 
     await tx
@@ -1653,7 +1876,7 @@ export async function answerInboxClarificationCommand(
         requestId: request.id,
         question: request.question,
         answerId,
-        answerText: parsedAnswer.answerText,
+        answerText: parsed.answerText,
       },
     ],
     clarificationRequestId: request.id,

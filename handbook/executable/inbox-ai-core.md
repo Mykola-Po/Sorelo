@@ -10,13 +10,13 @@ It is descriptive of the present implementation, not a promise that the full Inb
 
 Date: 2026-03-25
 
-For the current release, Inbox is a user-facing workspace section built on top of the internal Inbox AI Core.
+For the current release, Inbox is an internal operator workbench exposed as a workspace section on top of the internal Inbox AI Core.
 
 The release decision is:
 
-- User: the signed-in workspace member who captures raw notes, transcript fragments, or imports that may become map changes.
+- User: the signed-in workspace operator who captures raw notes, transcript fragments, or imports that may become map changes.
 - Queue unit: workspace queue. `/app/[workspaceSlug]/inbox` lists Inbox items for the current workspace, not a cross-workspace personal feed.
-- Review/apply: Inbox owns intake, clarification, routing, and inspection. Review and canonical apply happen in the Learning panel inside the target map workspace after promoted packets materialize review artifacts.
+- Review/apply: Inbox owns intake, clarification, routing, and provenance. Review and canonical apply happen in the Learning panel inside the target map workspace after promoted packets materialize review artifacts.
 - Navigation: Inbox must stay visible in workspace section navigation. It remains outside the top-level primary product nav while Maps stays the primary working loop.
 
 ## Current Boundary
@@ -25,15 +25,21 @@ Inbox AI Core remains an internal ingestion and routing layer and separate from 
 
 It does not replace Maps, Concepts, Links, Inspector, or Scenarios.
 
-The current Inbox UI at `/app/[workspaceSlug]/inbox` is user-facing for signed-in workspace members.
+The current Inbox UI at `/app/[workspaceSlug]/inbox` is user-facing for signed-in workspace operators.
 
-It is the workspace-visible intake section for ingestion tracing, clarification reruns, packet inspection, and review-bridge diagnostics before review/apply.
+It is the workspace-visible operator workbench for ingestion tracing, clarification reruns, packet inspection, routing provenance, and review-bridge diagnostics before review/apply.
 
 It does not replace the map-first product loop and it does not own final canonical review/apply.
 
 Today the queue is workspace-scoped and review/apply is carried by the Learning panel inside the target map workspace.
 
 Inbox should remain visible in workspace navigation even while the review handoff stays separate.
+
+The boundary is intentionally simple:
+
+1. Inbox accepts signal and records routing provenance.
+2. Inbox shows the target Map, the current handoff status, and the next canonical step.
+3. Learning in the target Map is where review, decision, and canonical apply happen.
 
 Its current role is to define how raw input can be:
 

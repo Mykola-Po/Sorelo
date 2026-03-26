@@ -32,11 +32,26 @@ jobs:
       - run: npm run typecheck
       - run: npm run db:check
       - run: npm run test
-      - run: npm run build
       - name: Bootstrap local Supabase DB
         run: |
           test -f supabase/config.toml || supabase init
           supabase db start
+      - run: npm run test:integration
+      - run: npm run build
+      - name: Start app for Inbox runtime check
+        run: |
+          npm run start -- --hostname 127.0.0.1 > "$RUNNER_TEMP/inbox-start.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/inbox-start.pid"
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000 >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/inbox-start.log"
+          exit 1
+      - name: Run Inbox runtime gate
+        run: npm run ops:inbox:check -- --base-url http://127.0.0.1:3000
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run Playwright browser flows

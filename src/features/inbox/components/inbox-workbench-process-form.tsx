@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 
+import type { InboxWorkbenchListState } from "@/features/inbox/workbench-state";
+import { toInboxWorkbenchHiddenFields } from "@/features/inbox/workbench-state";
 import {
   processInboxWorkbenchItemAction,
 } from "@/features/inbox/actions";
@@ -14,12 +16,14 @@ import { createIdleState } from "@/shared/validation/action-state";
 type InboxWorkbenchProcessFormProps = {
   workspaceSlug: string;
   itemId: string;
+  listState: InboxWorkbenchListState;
   label: string;
 };
 
 export function InboxWorkbenchProcessForm({
   workspaceSlug,
   itemId,
+  listState,
   label,
 }: InboxWorkbenchProcessFormProps) {
   const [state, formAction, isPending] = useActionState(
@@ -31,6 +35,9 @@ export function InboxWorkbenchProcessForm({
     <form action={formAction} className="sl-inbox-inline-form">
       <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
       <input type="hidden" name="itemId" value={itemId} />
+      {Object.entries(toInboxWorkbenchHiddenFields(listState)).map(([key, value]) => (
+        <input key={key} type="hidden" name={key} value={value} />
+      ))}
       <SubmitButton size="2" loading={isPending}>
         {label}
       </SubmitButton>

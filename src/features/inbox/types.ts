@@ -41,12 +41,20 @@ import type {
   inboxScoreBreakdownSchema,
   structuredPacketDraftSchema,
 } from "@/features/inbox/schemas";
+import type {
+  InboxWorkbenchListState,
+  InboxWorkbenchPageSize,
+  InboxWorkbenchQueueView,
+  InboxWorkbenchRouteFilter,
+  InboxWorkbenchSort,
+  InboxWorkbenchStatusFilter,
+} from "@/features/inbox/workbench-state";
 
 export type InboxItemRecord = {
   id: string;
   userId: string;
-  workspaceId: string | null;
-  mapId: string | null;
+  workspaceId: string;
+  mapId: string;
   sourceType: InboxSourceType;
   sourceRef: string | null;
   rawText: string;
@@ -242,6 +250,44 @@ export type InboxWorkspaceClarificationRequestRecord = {
   reason: string;
   status: InboxClarificationStatus;
   answeredAt: Date | null;
+};
+
+export type InboxNextActionKind =
+  | "review_learning"
+  | "open_map"
+  | "open_inspector"
+  | "answer_clarification"
+  | "process_item"
+  | "retry_processing"
+  | "closed"
+  | "none";
+
+export type InboxListItemRecord = InboxItemRecord & {
+  mapTitle: string | null;
+  mapSubjectLabel: string | null;
+  ownerLabel: string | null;
+  nextActionKind: InboxNextActionKind;
+  nextActionLabel: string;
+  nextActionHref: string | null;
+};
+
+export type InboxListQueryInput = {
+  workspaceId: string;
+  workspaceSlug: string;
+  listState: InboxWorkbenchListState;
+};
+
+export type InboxListPageRecord = {
+  items: InboxListItemRecord[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: InboxWorkbenchPageSize;
+  view: InboxWorkbenchQueueView;
+  status: InboxWorkbenchStatusFilter;
+  route: InboxWorkbenchRouteFilter;
+  mapId: string | "any";
+  sort: InboxWorkbenchSort;
 };
 
 export type InboxScoreBreakdownRecord = Infer<typeof inboxScoreBreakdownSchema>;

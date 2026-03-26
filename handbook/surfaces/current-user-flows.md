@@ -104,14 +104,15 @@ Recent Scenario runs are useful, but they must remain secondary to entering or c
 
 ### Purpose
 
-Inbox is the workspace-visible intake section for evidence that may become map changes.
+Inbox is the workspace-visible operator workbench for evidence that may become map changes.
 
 ### Current Release Contract
 
-- signed-in workspace members can open Inbox from workspace section navigation
+- signed-in workspace operators can open Inbox from workspace section navigation
 - the queue is scoped to the current workspace
 - the user chooses a target Map before creating an Inbox item
 - clarification and processing reruns happen in Inbox
+- Inbox explains routing status and provenance
 - review/apply happen in the Learning panel inside the target Map after promotion
 
 ### Expected Path
@@ -119,7 +120,7 @@ Inbox is the workspace-visible intake section for evidence that may become map c
 1. open Inbox from workspace navigation
 2. pick the target Map and create an Inbox item
 3. process the item or answer one clarification request
-4. open the target Map
+4. open the target Map Learning panel
 5. resolve the promoted Learning suggestions
 
 ## Map Workspace Flow

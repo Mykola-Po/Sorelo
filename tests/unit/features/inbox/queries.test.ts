@@ -12,6 +12,7 @@ import {
   inboxStructuredPackets,
   inboxStepRuns,
   inboxWorkflowEvents,
+  maps,
 } from "@/shared/db/schema";
 
 const { mockDb, tableResults } = vi.hoisted(() => {
@@ -75,6 +76,7 @@ function createItemRow(input: {
   id: string;
   userId: string;
   workspaceId?: string;
+  mapId?: string;
   rawText?: string;
   normalizedText?: string | null;
   status?: string;
@@ -85,9 +87,8 @@ function createItemRow(input: {
   return {
     id: input.id,
     userId: input.userId,
-    workspaceId:
-      input.workspaceId ?? "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-    mapId: null,
+    workspaceId: input.workspaceId ?? "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    mapId: input.mapId ?? "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     sourceType: "manual_note",
     sourceRef: null,
     rawText: input.rawText ?? `raw-${input.id}`,
@@ -146,21 +147,18 @@ function createRoutingPolicyTrace() {
         toRoute: "park",
         note: {
           id: "route.override.promotion_scope_requires_target_map",
-          text:
-            "The signal is preserved for review because a target map is required before promote materialization.",
+          text: "The signal is preserved for review because a target map is required before promote materialization.",
         },
       },
     ],
     decisionNotes: [
       {
         id: "route.promote.strong_signal_low_ambiguity",
-        text:
-          "The signal is strong enough to emit a structured packet without forcing extra clarification.",
+        text: "The signal is strong enough to emit a structured packet without forcing extra clarification.",
       },
       {
         id: "route.override.promotion_scope_requires_target_map",
-        text:
-          "The signal is preserved for review because a target map is required before promote materialization.",
+        text: "The signal is preserved for review because a target map is required before promote materialization.",
       },
     ],
   };
@@ -251,7 +249,10 @@ describe("inbox queries", () => {
       },
     ]);
 
-    const detail = await getInboxItemDetailQuery(itemId);
+    const detail = await getInboxItemDetailQuery({
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      itemId,
+    });
 
     expect(detail).not.toBeNull();
     expect(detail?.clarificationRequests[0]?.status).toBe("answered");
@@ -403,7 +404,10 @@ describe("inbox queries", () => {
       },
     ]);
 
-    const detail = await getInboxItemDetailQuery(itemId);
+    const detail = await getInboxItemDetailQuery({
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      itemId,
+    });
 
     expect(detail?.attempts).toHaveLength(1);
     expect(detail?.attempts[0]?.attemptNo).toBe(2);
@@ -419,9 +423,9 @@ describe("inbox queries", () => {
         }
       )?.policyVersion
     ).toBe("inbox-routing.v1");
-    expect(detail?.structuredPackets[0]?.metadata.routingPolicy?.finalDecision.ruleId).toBe(
-      "override.promotion_scope_requires_target_map"
-    );
+    expect(
+      detail?.structuredPackets[0]?.metadata.routingPolicy?.finalDecision.ruleId
+    ).toBe("override.promotion_scope_requires_target_map");
     expect(
       (
         detail?.workflowEvents[0]?.payload as {
@@ -461,13 +465,98 @@ describe("inbox queries", () => {
       }),
     ]);
 
-    const items = await listInboxItemsForWorkspaceQuery(workspaceId);
+    const page = await listInboxItemsForWorkspaceQuery({
+      workspaceId,
+      workspaceSlug: "demo-workspace",
+      listState: {
+        view: "needs-attention",
+        status: "any",
+        route: "any",
+        mapId: "any",
+        sort: "updated_desc",
+        page: 1,
+        pageSize: 25,
+      },
+    });
 
-    expect(items.map((item) => item.id)).toEqual([
+    expect(page.items.map((item) => item.id)).toEqual([
       "33333333-3333-4333-8333-333333333333",
       "11111111-1111-4111-8111-111111111111",
     ]);
-    expect(items.every((item) => item.workspaceId === workspaceId)).toBe(true);
+    expect(page.items.every((item) => item.workspaceId === workspaceId)).toBe(
+      true
+    );
+  });
+
+  it("enriches the triage queue with map context and next actions", async () => {
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const mapId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const recent = new Date("2026-03-20T14:00:00.000Z");
+    const older = new Date("2026-03-20T12:00:00.000Z");
+
+    tableResults.set(maps, [
+      {
+        id: mapId,
+        workspaceId,
+        title: "Alex map",
+        subjectLabel: "Alex",
+        description: "Workspace map used in queue tests.",
+        createdAt: older,
+        updatedAt: recent,
+        archivedAt: null,
+      },
+    ]);
+    tableResults.set(inboxItems, [
+      createItemRow({
+        id: "11111111-1111-4111-8111-111111111111",
+        userId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        workspaceId,
+        mapId,
+        status: "ready_for_review",
+        route: "promote",
+        rawText: "Promotable item.",
+        createdAt: older,
+        updatedAt: recent,
+      }),
+      createItemRow({
+        id: "22222222-2222-4222-8222-222222222222",
+        userId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        workspaceId,
+        mapId,
+        status: "discarded",
+        route: "discard",
+        rawText: "Closed item.",
+        createdAt: recent,
+        updatedAt: recent,
+      }),
+    ]);
+
+    const page = await listInboxItemsForWorkspaceQuery({
+      workspaceId,
+      workspaceSlug: "demo-workspace",
+      listState: {
+        view: "needs-attention",
+        status: "any",
+        route: "any",
+        mapId: "any",
+        sort: "updated_desc",
+        page: 1,
+        pageSize: 25,
+      },
+    });
+
+    expect(page.totalCount).toBe(1);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      mapTitle: "Alex map",
+      mapSubjectLabel: "Alex",
+      ownerLabel: null,
+      nextActionKind: "review_learning",
+      nextActionLabel: "Review in Learning",
+      nextActionHref:
+        "/app/demo-workspace/maps/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee?panel=learning",
+    });
   });
 
   it("returns null when an inbox item from another workspace is requested", async () => {
@@ -483,7 +572,10 @@ describe("inbox queries", () => {
     ]);
 
     const item = await getInboxItemForWorkspaceQuery(workspaceId, itemId);
-    const detail = await getInboxItemDetailForWorkspaceQuery(workspaceId, itemId);
+    const detail = await getInboxItemDetailForWorkspaceQuery(
+      workspaceId,
+      itemId
+    );
 
     expect(item).toBeNull();
     expect(detail).toBeNull();
@@ -510,7 +602,10 @@ describe("inbox queries", () => {
     tableResults.set(inboxClarificationAnswers, []);
     tableResults.set(inboxWorkflowEvents, []);
 
-    const detail = await getInboxItemDetailForWorkspaceQuery(workspaceId, itemId);
+    const detail = await getInboxItemDetailForWorkspaceQuery(
+      workspaceId,
+      itemId
+    );
 
     expect(detail?.item.id).toBe(itemId);
     expect(detail?.item.workspaceId).toBe(workspaceId);

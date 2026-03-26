@@ -3,20 +3,31 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sqlClientMock } = vi.hoisted(() => ({
+const { readdirMock, sqlClientMock, dbMock } = vi.hoisted(() => ({
+  readdirMock: vi.fn(),
   sqlClientMock: vi.fn(),
+  dbMock: {
+    select: vi.fn(),
+  },
 }));
 
-vi.mock("@/shared/auth/internal", () => ({
-  resolveInternalAuthSecret: () => "test-internal-secret",
+vi.mock("node:fs/promises", () => ({
+  readdir: readdirMock,
+}));
+
+vi.mock("@/shared/config/env", () => ({
+  env: {
+    INBOX_INTERNAL_RUNTIME_SECRET: "test-runtime-secret",
+  },
 }));
 
 vi.mock("@/shared/db/client", () => ({
-  db: {},
+  db: dbMock,
   sqlClient: sqlClientMock,
 }));
 
 import {
+  collectInboxRuntimeReport,
   buildExecutionsCheck,
   buildMigrationDriftCheck,
   deriveInboxRuntimeStatus,
@@ -25,7 +36,15 @@ import {
 
 describe("inbox operations", () => {
   beforeEach(() => {
+    readdirMock.mockReset();
+    readdirMock.mockResolvedValue([
+      {
+        name: "0015_inbox_workspace_scope.sql",
+        isFile: () => true,
+      },
+    ]);
     sqlClientMock.mockReset();
+    dbMock.select.mockReset();
   });
 
   it("filters and sorts repository app migrations", () => {
@@ -83,6 +102,125 @@ describe("inbox operations", () => {
     ).toBe("failed");
   });
 
+  it("reports runtime readiness and the learning bridge without exposing sensitive ids", async () => {
+    dbMock.select.mockImplementation(() => {
+      const chain = {
+        from() {
+            return {
+              orderBy: async () => [
+                {
+                  version: "0015_inbox_workspace_scope.sql",
+                },
+              ],
+            };
+        },
+      };
+
+      return chain;
+    });
+
+    sqlClientMock
+      .mockResolvedValueOnce([
+        { table_name: "app_migrations" },
+        { table_name: "clarification_requests" },
+        { table_name: "inbox_fragments" },
+        { table_name: "inbox_items" },
+        { table_name: "inbox_pipeline_attempts" },
+        { table_name: "inbox_step_runs" },
+        { table_name: "learning_suggestion_batches" },
+        { table_name: "learning_suggestion_resolutions" },
+        { table_name: "learning_suggestions" },
+        { table_name: "structured_packets" },
+        { table_name: "workflow_events" },
+      ])
+      .mockResolvedValueOnce([{ failed_count: 0 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ pending_count: 0 }])
+      .mockResolvedValueOnce([{ pending_count: 0 }]);
+
+    const report = await collectInboxRuntimeReport();
+
+    expect(report.status).toBe("ok");
+    expect(report.checks.map((check) => check.name)).toEqual([
+      "env",
+      "readiness",
+      "migrations",
+      "schema",
+      "items",
+      "executions",
+      "learning_bridge",
+    ]);
+    expect(report.checks.find((check) => check.name === "readiness")).toMatchObject(
+      {
+        status: "ok",
+        details: {
+          readinessMode: "deterministic_only",
+        },
+      }
+    );
+    expect(
+      JSON.stringify(report).match(/item-1|workspace-|map-/)
+    ).toBeNull();
+  });
+
+  it("redacts raw exception text from runtime report failures", async () => {
+    readdirMock.mockRejectedValueOnce(new Error("sensitive filesystem detail"));
+
+    dbMock.select.mockImplementation(() => {
+      const chain = {
+        from() {
+          return {
+            orderBy: async () => [
+              {
+                version: "0015_inbox_workspace_scope.sql",
+              },
+            ],
+          };
+        },
+      };
+
+      return chain;
+    });
+
+    sqlClientMock
+      .mockResolvedValueOnce([
+        { table_name: "app_migrations" },
+        { table_name: "clarification_requests" },
+        { table_name: "inbox_fragments" },
+        { table_name: "inbox_items" },
+        { table_name: "inbox_pipeline_attempts" },
+        { table_name: "inbox_step_runs" },
+        { table_name: "learning_suggestion_batches" },
+        { table_name: "learning_suggestion_resolutions" },
+        { table_name: "learning_suggestions" },
+        { table_name: "structured_packets" },
+        { table_name: "workflow_events" },
+      ])
+      .mockResolvedValueOnce([{ failed_count: 0 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ pending_count: 0 }])
+      .mockResolvedValueOnce([{ pending_count: 0 }]);
+
+    const report = await collectInboxRuntimeReport();
+
+    expect(report.status).toBe("failed");
+    expect(JSON.stringify(report)).not.toContain("sensitive filesystem detail");
+    expect(report.checks.find((check) => check.name === "migrations")).toMatchObject(
+      {
+        status: "failed",
+        code: "inbox_runtime_repo_migrations_unavailable",
+      }
+    );
+  });
+
   it("tracks the current latest repo migration for ledger bootstrap and drift checks", () => {
     const migrationDirectory = path.join(
       process.cwd(),
@@ -91,7 +229,7 @@ describe("inbox operations", () => {
     );
     const repoMigrations = listAppMigrationFilenames(readdirSync(migrationDirectory));
 
-    expect(repoMigrations.at(-1)).toBe("0014_inbox_routing_policy_trace.sql");
+    expect(repoMigrations.at(-1)).toBe("0015_inbox_workspace_scope.sql");
   });
 
   it("reports degraded execution telemetry when recent failures exist", async () => {
@@ -136,12 +274,8 @@ describe("inbox operations", () => {
         recentFailures: [
           {
             scope: "step",
-            itemId: "item-1",
             attemptNo: 2,
-            stepName: "route",
             route: "clarify",
-            failureCode: "pipeline",
-            failureMessage: "Router did not settle on a terminal outcome.",
             recordedAt: "2026-03-22T12:00:00.000Z",
           },
         ],
@@ -189,10 +323,7 @@ describe("inbox operations", () => {
       details: {
         staleRunningAttempts: [
           {
-            attemptId: "attempt-1",
-            itemId: "item-9",
             attemptNo: 5,
-            triggerKind: "clarification_rerun",
             startedAt: "2026-03-22T11:30:00.000Z",
           },
         ],
@@ -240,22 +371,15 @@ describe("inbox operations", () => {
       details: {
         staleRunningAttempts: [
           {
-            attemptId: "attempt-2",
-            itemId: "item-4",
             attemptNo: 1,
-            triggerKind: "manual_process",
             startedAt: "2026-03-22T10:15:00.000Z",
           },
         ],
         recentFailures: [
           {
             scope: "attempt",
-            itemId: "item-4",
             attemptNo: 1,
-            stepName: null,
             route: "canonical",
-            failureCode: "validation",
-            failureMessage: "Missing normalized packet.",
             recordedAt: "2026-03-22T10:20:00.000Z",
           },
         ],

@@ -50,6 +50,26 @@ function readArgument(name) {
   return process.argv[index + 1] ?? null;
 }
 
+function hasFlag(name) {
+  return process.argv.includes(name);
+}
+
+function isLoopbackHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function readAllowedBaseUrls() {
+  const raw = readSetting("INBOX_RUNTIME_ALLOWED_BASE_URLS");
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function fail(message, details) {
   console.error(message);
   if (details) {
@@ -63,15 +83,41 @@ if (!baseUrl) {
   fail("NEXT_PUBLIC_APP_URL or --base-url is required.");
 }
 
-const internalSecret = readSetting("INTERNAL_API_SECRET");
+let parsedBaseUrl;
+try {
+  parsedBaseUrl = new URL(baseUrl);
+} catch {
+  fail(`Invalid base URL: ${baseUrl}`);
+}
+
+const allowRemote = hasFlag("--allow-remote");
+const allowedBaseUrls = readAllowedBaseUrls();
+const isAllowedRemoteBaseUrl = allowedBaseUrls.includes(parsedBaseUrl.origin);
+const caller =
+  readArgument("--caller") ??
+  readSetting("INBOX_INTERNAL_RUNTIME_CALLER") ??
+  "inbox-runtime-check";
+
+if (!isLoopbackHost(parsedBaseUrl.hostname) && !allowRemote && !isAllowedRemoteBaseUrl) {
+  fail(
+    `Refusing to run Inbox runtime check against non-loopback base URL ${parsedBaseUrl.origin}.`,
+    {
+      hint:
+        "Pass --allow-remote and set INBOX_RUNTIME_ALLOWED_BASE_URLS when you intentionally need a remote target.",
+    }
+  );
+}
+
+const internalSecret = readSetting("INBOX_INTERNAL_RUNTIME_SECRET");
 if (!internalSecret) {
-  fail("INTERNAL_API_SECRET is required for Inbox runtime checks.");
+  fail("INBOX_INTERNAL_RUNTIME_SECRET is required for Inbox runtime checks.");
 }
 
 const endpoint = new URL("/api/internal/inbox/runtime", baseUrl);
 const response = await fetch(endpoint, {
   headers: {
     authorization: `Bearer ${internalSecret}`,
+    "x-internal-caller": caller,
   },
 });
 
@@ -85,10 +131,23 @@ try {
 }
 
 if (!response.ok && !(response.status === 503 && payload?.status === "failed")) {
-  fail(`Inbox runtime check request failed with status ${response.status}.`, payload);
+  fail(`Inbox runtime check request failed with status ${response.status}.`, {
+    status: payload?.status ?? null,
+    generatedAt: payload?.generatedAt ?? null,
+  });
 }
 
-console.log(JSON.stringify(payload, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      status: payload?.status ?? (response.ok ? "ok" : "failed"),
+      generatedAt: payload?.generatedAt ?? null,
+      checks: payload?.checks ?? [],
+    },
+    null,
+    2
+  )
+);
 
 if (payload?.status === "failed") {
   process.exit(1);

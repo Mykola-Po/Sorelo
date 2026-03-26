@@ -70,6 +70,56 @@ function createFormData(values: Record<string, string>) {
   return formData;
 }
 
+type RedirectListState = {
+  listView: string;
+  listStatus: string;
+  listRoute: string;
+  listMapId: string;
+  listSort: string;
+  listPage: string;
+  listPageSize: string;
+};
+
+function buildInboxRedirectDigest(
+  workspaceSlug: string,
+  itemId: string,
+  listState: RedirectListState
+) {
+  const params = new URLSearchParams();
+
+  if (listState.listView !== "needs-attention") {
+    params.set("view", listState.listView);
+  }
+
+  if (listState.listStatus !== "any") {
+    params.set("status", listState.listStatus);
+  }
+
+  if (listState.listRoute !== "any") {
+    params.set("route", listState.listRoute);
+  }
+
+  if (listState.listMapId !== "any") {
+    params.set("mapId", listState.listMapId);
+  }
+
+  if (listState.listSort !== "updated_desc") {
+    params.set("sort", listState.listSort);
+  }
+
+  if (listState.listPage !== "1") {
+    params.set("page", listState.listPage);
+  }
+
+  if (listState.listPageSize !== "25") {
+    params.set("pageSize", listState.listPageSize);
+  }
+
+  params.set("item", itemId);
+
+  return `/app/${workspaceSlug}/inbox?${params.toString()}`;
+}
+
 describe("inbox workbench actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -93,19 +143,33 @@ describe("inbox workbench actions", () => {
       },
     });
 
+    const listState = {
+      listView: "all",
+      listStatus: "clarification_requested",
+      listRoute: "clarify",
+      listMapId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      listSort: "created_desc",
+      listPage: "3",
+      listPageSize: "25",
+    };
+
     const formData = createFormData({
       workspaceSlug: "demo-workspace",
       mapId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       sourceType: "manual_note",
       rawText:
         "Public criticism from close people causes withdrawal and a defensive reaction.",
+      ...listState,
     });
 
     await expect(
       createInboxWorkbenchItemAction({ status: "idle" }, formData)
     ).rejects.toMatchObject({
-      digest:
-        "/app/demo-workspace/inbox?item=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      digest: buildInboxRedirectDigest(
+        "demo-workspace",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        listState
+      ),
     });
 
     expect(createInboxItemCommandMock).toHaveBeenCalledWith(
@@ -120,7 +184,9 @@ describe("inbox workbench actions", () => {
         idempotencyKey: expect.stringMatching(/^inbox-workbench-/),
       })
     );
-    expect(revalidatePathMock).toHaveBeenCalledWith("/app/demo-workspace/inbox");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/app/demo-workspace/inbox"
+    );
   });
 
   it("rejects process requests for inbox items outside the current workspace", async () => {
@@ -139,6 +205,45 @@ describe("inbox workbench actions", () => {
       message: "Inbox item not found.",
     });
     expect(processInboxItemCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("processes scoped inbox items inside the current workspace", async () => {
+    getInboxItemForWorkspaceQueryMock.mockResolvedValue({
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    });
+
+    const listState = {
+      listView: "needs-attention",
+      listStatus: "any",
+      listRoute: "any",
+      listMapId: "any",
+      listSort: "updated_desc",
+      listPage: "2",
+      listPageSize: "25",
+    };
+
+    await expect(
+      processInboxWorkbenchItemAction(
+        { status: "idle" },
+        createFormData({
+          workspaceSlug: "demo-workspace",
+          itemId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          ...listState,
+        })
+      )
+    ).rejects.toMatchObject({
+      digest: buildInboxRedirectDigest(
+        "demo-workspace",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        listState
+      ),
+    });
+
+    expect(processInboxItemCommandMock).toHaveBeenCalledWith({
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      itemId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    });
   });
 
   it("rejects clarification answers for requests outside the current workspace", async () => {
@@ -187,6 +292,62 @@ describe("inbox workbench actions", () => {
       status: "error",
       message: "Clarification request is no longer pending.",
     });
+    expect(answerInboxClarificationCommandMock).toHaveBeenCalledWith({
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      answerText: "It starts when the criticism comes from a close partner.",
+    });
     expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects clarification answers back to the selected item while preserving list state", async () => {
+    getInboxClarificationRequestForWorkspaceQueryMock.mockResolvedValue({
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      itemId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      question: "What exactly triggers the reaction first?",
+      reason: "Missing trigger detail.",
+      status: "pending",
+      answeredAt: null,
+    });
+    answerInboxClarificationCommandMock.mockResolvedValue({
+      item: {
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      },
+    });
+
+    const listState = {
+      listView: "all",
+      listStatus: "clarification_requested",
+      listRoute: "clarify",
+      listMapId: "any",
+      listSort: "updated_asc",
+      listPage: "4",
+      listPageSize: "25",
+    };
+
+    await expect(
+      answerInboxClarificationAction(
+        { status: "idle" },
+        createFormData({
+          workspaceSlug: "demo-workspace",
+          requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          answerText: "It starts when the criticism comes from a close partner.",
+          ...listState,
+        })
+      )
+    ).rejects.toMatchObject({
+      digest: buildInboxRedirectDigest(
+        "demo-workspace",
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        listState
+      ),
+    });
+
+    expect(answerInboxClarificationCommandMock).toHaveBeenCalledWith({
+      workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      answerText: "It starts when the criticism comes from a close partner.",
+    });
   });
 });

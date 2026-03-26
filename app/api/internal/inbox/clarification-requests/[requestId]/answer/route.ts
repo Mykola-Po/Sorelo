@@ -7,9 +7,12 @@ import {
 } from "@/features/inbox/commands";
 import {
   assertInternalInboxRequest,
+  createInboxCommandErrorResponse,
+  createInboxErrorResponse,
+  logInboxInternalRouteEvent,
   parseInternalInboxJson,
 } from "@/features/inbox/internal-api";
-import { clarificationAnswerInputSchema } from "@/features/inbox/schemas";
+import { answerInboxClarificationRequestSchema } from "@/features/inbox/schemas";
 
 export const runtime = "nodejs";
 
@@ -21,43 +24,73 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ requestId: string }> }
 ) {
-  const authResponse = assertInternalInboxRequest(request);
-  if (authResponse) {
-    return authResponse;
+  const authResult = assertInternalInboxRequest(request, "process");
+  if (!authResult.ok) {
+    return authResult.response;
   }
+
+  const { caller } = authResult;
 
   const parsedParams = paramsSchema.safeParse(await context.params);
   if (!parsedParams.success) {
-    return NextResponse.json(
-      { error: "Invalid clarification request id." },
-      { status: 400 }
-    );
+    logInboxInternalRouteEvent({
+      channel: "process",
+      caller,
+      outcome: "validation_error",
+      status: 400,
+      code: "inbox_invalid_payload",
+    });
+    return createInboxErrorResponse({
+      status: 400,
+      code: "inbox_invalid_payload",
+      error: "Invalid clarification request id.",
+      details: parsedParams.error.flatten(),
+    });
   }
 
   const parsedBody = await parseInternalInboxJson(
     request,
-    clarificationAnswerInputSchema
+    answerInboxClarificationRequestSchema
   );
   if (!parsedBody.success) {
+    logInboxInternalRouteEvent({
+      channel: "process",
+      caller,
+      outcome: "validation_error",
+      status: parsedBody.response.status,
+      code: "inbox_invalid_payload",
+    });
     return parsedBody.response;
   }
 
   try {
-    const detail = await answerInboxClarificationCommand(
-      parsedParams.data.requestId,
-      parsedBody.data.answerText
-    );
+    const detail = await answerInboxClarificationCommand({
+      workspaceId: parsedBody.data.workspaceId,
+      requestId: parsedParams.data.requestId,
+      answerText: parsedBody.data.answerText,
+    });
+
+    logInboxInternalRouteEvent({
+      channel: "process",
+      caller,
+      outcome: "success",
+      status: 200,
+      code: "inbox_clarification_answered",
+    });
 
     return NextResponse.json({ data: detail });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to answer clarification request.",
-      },
-      { status: isInboxCommandError(error) ? error.statusCode : 500 }
+    const response = createInboxCommandErrorResponse(
+      error,
+      "Unable to answer clarification request."
     );
+    logInboxInternalRouteEvent({
+      channel: "process",
+      caller,
+      outcome: "command_error",
+      status: response.status,
+      code: isInboxCommandError(error) ? error.code : "inbox_unexpected_error",
+    });
+    return response;
   }
 }

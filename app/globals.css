@@ -359,11 +359,25 @@ select {
   padding-bottom: 18px;
 }
 
-.marketing-section-card {
-  border-radius: 30px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: var(--shadow-soft);
+.sl-workspace-section-card,
+.section-card {
+  --card-radius: 32px;
+  --card-padding: 20px;
+  border-radius: var(--card-radius);
+  padding: var(--card-padding) !important;
+}
+
+.sl-workspace-map-card,
+.sl-workspace-run-card {
+  --inner-radius: calc(var(--card-radius, 32px) - var(--card-padding, 20px));
+  border-radius: var(--inner-radius);
+  border: 1px solid rgba(15, 15, 15, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 250, 250, 0.82)),
+    linear-gradient(135deg, rgba(10, 132, 255, 0.03), transparent 58%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 10px 22px rgba(15, 15, 15, 0.04);
 }
 
 .marketing-workflow-list,
@@ -1135,15 +1149,17 @@ select {
 }
 
 .sl-workspace-section-nav {
+  --nav-radius: 24px;
+  --nav-padding: 8px;
   border: 1px solid rgba(15, 15, 15, 0.08);
-  border-radius: 20px;
+  border-radius: var(--nav-radius);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 248, 248, 0.82)),
     rgba(255, 255, 255, 0.88);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
     0 16px 32px -28px rgba(15, 23, 42, 0.45);
-  padding: 12px 14px;
+  padding: var(--nav-padding) 12px;
 }
 
 .sl-workspace-section-nav-inner {
@@ -1157,6 +1173,8 @@ select {
 }
 
 .sl-workspace-section-link {
+  --inner-radius: calc(var(--nav-radius, 24px) - var(--nav-padding, 8px));
+  border-radius: var(--inner-radius) !important;
   min-width: fit-content;
 }
 
@@ -1191,8 +1209,10 @@ select {
 
 .sl-workspace-hero-panel,
 .sl-workspace-focus-card {
-  border-radius: 28px;
-  padding: 22px !important;
+  --panel-radius: 32px;
+  --panel-padding: 24px;
+  border-radius: var(--panel-radius);
+  padding: var(--panel-padding) !important;
 }
 
 .sl-workspace-hero-eyebrow,
@@ -1235,11 +1255,12 @@ select {
 }
 
 .sl-workspace-metric-card {
+  --inner-radius: calc(var(--panel-radius, 32px) - var(--panel-padding, 24px));
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: var(--inner-radius);
 }
 
 .sl-workspace-metric-value {
@@ -1247,11 +1268,12 @@ select {
 }
 
 .sl-workspace-summary-card {
+  --inner-radius: calc(var(--panel-radius, 32px) - var(--panel-padding, 24px));
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border-radius: 20px;
+  border-radius: var(--inner-radius);
   max-width: 34rem;
 }
 
@@ -1267,12 +1289,13 @@ select {
 }
 
 .sl-workspace-focus-meta {
+  --inner-radius: calc(var(--panel-radius, 32px) - var(--panel-padding, 24px));
   display: flex;
   flex-wrap: wrap;
   gap: 12px 18px;
   padding: 14px;
   border: 1px solid rgba(15, 15, 15, 0.07);
-  border-radius: 18px;
+  border-radius: var(--inner-radius);
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -1290,11 +1313,12 @@ select {
 }
 
 .sl-workspace-reason-card {
+  --inner-radius: calc(var(--panel-radius, 32px) - var(--panel-padding, 24px));
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: var(--inner-radius);
 }
 
 .sl-workspace-create-form-shell {
@@ -1370,9 +1394,10 @@ select {
 }
 
 .sl-workspace-step-card {
+  --inner-radius: calc(var(--panel-radius, 32px) - var(--panel-padding, 24px));
   min-height: 100%;
   padding: 16px;
-  border-radius: 18px;
+  border-radius: var(--inner-radius);
 }
 
 .maps-home-grid {
@@ -2534,11 +2559,13 @@ select {
   display: grid;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
   flex: 1 1 auto;
   min-height: 0;
 }
 
 .sl-inbox-rail,
+.sl-inbox-detail-pane,
 .sl-inbox-detail-stack {
   display: flex;
   flex-direction: column;
@@ -2549,6 +2576,9 @@ select {
 .sl-inbox-list-scroll,
 .sl-inbox-detail-scroll {
   min-height: 0;
+  max-height: calc(100dvh - 17rem);
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .sl-inbox-item-list,
@@ -2566,6 +2596,35 @@ select {
   display: block;
 }
 
+.sl-inbox-filter-form,
+.sl-inbox-filter-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-inbox-filter-form {
+  gap: 12px;
+}
+
+.sl-inbox-filter-grid,
+.sl-inbox-queue-meta-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.sl-inbox-filter-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sl-inbox-queue-meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.sl-inbox-filter-field {
+  gap: 6px;
+  min-width: 0;
+}
+
 .sl-inbox-item-card,
 .sl-inbox-fragment-card,
 .sl-inbox-analysis-card,
@@ -2581,7 +2640,7 @@ select {
     0 10px 22px rgba(15, 15, 15, 0.04);
 }
 
-.sl-inbox-item-link[data-selected="true"] .sl-inbox-item-card {
+.sl-inbox-item-card[data-selected="true"] {
   border-color: rgba(10, 132, 255, 0.26);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
@@ -2608,7 +2667,7 @@ select {
 
 .sl-inbox-select {
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   border-radius: 10px;
   border: 1px solid rgba(15, 15, 15, 0.12);
   background: rgba(255, 255, 255, 0.94);
@@ -2630,6 +2689,14 @@ select {
 
 .sl-inbox-meta-card {
   padding: 10px 12px;
+}
+
+.sl-inbox-mobile-back,
+.sl-inbox-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .sl-inbox-warning-card {
@@ -2673,6 +2740,33 @@ select {
 .sl-inbox-plain-pre {
   font-family: var(--font-sans), sans-serif;
   font-size: 13px;
+}
+
+.sl-inbox-disclosure {
+  border: 1px solid rgba(15, 15, 15, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 10px 22px rgba(15, 15, 15, 0.04);
+}
+
+.sl-inbox-disclosure summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 600;
+  color: var(--gray-12);
+}
+
+.sl-inbox-disclosure-content {
+  padding: 0 16px 16px;
+}
+
+.sl-inbox-page .rt-Button {
+  min-height: 44px;
 }
 
 .sl-inbox-runtime-warning {
@@ -3017,8 +3111,15 @@ select {
   }
 
   .sl-inbox-detail-meta-grid,
-  .sl-inbox-text-grid {
+  .sl-inbox-text-grid,
+  .sl-inbox-filter-grid,
+  .sl-inbox-queue-meta-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sl-inbox-list-scroll,
+  .sl-inbox-detail-scroll {
+    max-height: none;
   }
 
   .sl-workspace-metric-grid {
@@ -3225,8 +3326,42 @@ select {
   }
 
   .sl-inbox-detail-meta-grid,
-  .sl-inbox-text-grid {
+  .sl-inbox-text-grid,
+  .sl-inbox-filter-grid,
+  .sl-inbox-queue-meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sl-inbox-page[data-mobile-view="list"] .sl-inbox-detail-pane {
+    display: none;
+  }
+
+  .sl-inbox-page[data-mobile-view="detail"] .sl-inbox-rail {
+    display: none;
+  }
+
+  .sl-inbox-page[data-mobile-view="detail"] .sl-inbox-detail-pane {
+    display: flex;
+  }
+
+  .sl-inbox-list-scroll,
+  .sl-inbox-detail-scroll {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .sl-inbox-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sl-inbox-mobile-back .rt-Button,
+  .sl-inbox-pagination .rt-Button,
+  .sl-inbox-item-card .rt-Button,
+  .sl-inbox-answer-form-card .rt-Button {
+    justify-content: center;
+    width: 100%;
   }
 
   .sl-workspace-summary-card,

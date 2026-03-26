@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import postgres from "postgres";
 
 type InternalResponse<T> = {
   data: T;
@@ -40,6 +41,10 @@ type InboxItemDetail = {
     }>;
   }>;
 };
+
+type InboxChannel = "create" | "process";
+
+let sqlClient: postgres.Sql | null = null;
 
 function readDotenvValue(name: string) {
   const dotenvPath = join(process.cwd(), ".env.local");
@@ -84,6 +89,62 @@ function getInternalApiSecret() {
   return secret;
 }
 
+function getDatabaseUrl() {
+  const databaseUrl =
+    process.env.DATABASE_URL ?? readDotenvValue("DATABASE_URL");
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for inbox e2e database lookups.");
+  }
+
+  return databaseUrl;
+}
+
+function getSqlClient() {
+  sqlClient ??= postgres(getDatabaseUrl(), {
+    prepare: false,
+    max: 1,
+  });
+
+  return sqlClient;
+}
+
+function getInboxInternalSecret(channel: InboxChannel) {
+  const envName =
+    channel === "create"
+      ? "INBOX_INTERNAL_CREATE_SECRET"
+      : "INBOX_INTERNAL_PROCESS_SECRET";
+  const secret = process.env[envName] ?? readDotenvValue(envName);
+
+  if (!secret) {
+    throw new Error(`${envName} is required for internal inbox e2e requests.`);
+  }
+
+  return secret;
+}
+
+function hasInboxInternalSecret(channel: InboxChannel) {
+  const envName =
+    channel === "create"
+      ? "INBOX_INTERNAL_CREATE_SECRET"
+      : "INBOX_INTERNAL_PROCESS_SECRET";
+
+  return Boolean(process.env[envName] ?? readDotenvValue(envName));
+}
+
+function getInboxInternalCaller(channel: InboxChannel) {
+  return channel === "create"
+    ? "inbox-create-service"
+    : "inbox-process-service";
+}
+
+function getInboxInternalHeaders(channel: InboxChannel) {
+  return {
+    authorization: `Bearer ${getInboxInternalSecret(channel)}`,
+    "x-internal-caller": getInboxInternalCaller(channel),
+  };
+}
+
 function normalizeWorkspaceSlug(input: string) {
   const normalized = input
     .trim()
@@ -119,7 +180,7 @@ async function createWorkspaceAndOpenMap(page: Page, userId: string) {
   const workspaceSlug = normalizeWorkspaceSlug(workspaceName);
 
   await authenticateAsE2EUser(page, userId);
-  await page.goto("/app");
+  await page.goto("/app/new-workspace");
   await expect(page).toHaveURL(/\/app\/new-workspace$/);
 
   await page.locator('input[name="name"]').fill(workspaceName);
@@ -141,22 +202,46 @@ async function createWorkspaceAndOpenMap(page: Page, userId: string) {
 
   return {
     workspaceSlug,
+    workspaceId: await lookupWorkspaceIdBySlug(workspaceSlug),
     mapId: map.data.id,
   };
 }
 
-async function postInternalInbox<T>(page: Page, path: string, payload?: object) {
+async function lookupWorkspaceIdBySlug(workspaceSlug: string) {
+  const rows = await getSqlClient()<
+    {
+      id: string;
+    }[]
+  >`
+    select id
+    from public.workspaces
+    where slug = ${workspaceSlug}
+    limit 1
+  `;
+
+  const workspace = rows[0];
+  if (!workspace) {
+    throw new Error(
+      `Workspace ${workspaceSlug} was not found in the database.`
+    );
+  }
+
+  return workspace.id;
+}
+
+async function postInternalInbox<T>(
+  page: Page,
+  path: string,
+  payload?: object,
+  channel: InboxChannel = "process"
+) {
   const response =
     payload === undefined
       ? await page.request.post(path, {
-          headers: {
-            authorization: `Bearer ${getInternalApiSecret()}`,
-          },
+          headers: getInboxInternalHeaders(channel),
         })
       : await page.request.post(path, {
-          headers: {
-            authorization: `Bearer ${getInternalApiSecret()}`,
-          },
+          headers: getInboxInternalHeaders(channel),
           data: payload,
         });
 
@@ -197,9 +282,7 @@ async function createMapThroughInternalApi(
 
 async function getInternalInbox<T>(page: Page, path: string) {
   const response = await page.request.get(path, {
-    headers: {
-      authorization: `Bearer ${getInternalApiSecret()}`,
-    },
+    headers: getInboxInternalHeaders("process"),
   });
 
   if (!response.ok()) {
@@ -237,16 +320,25 @@ test.describe("Inbox canonical provenance", () => {
     page,
   }) => {
     test.setTimeout(120_000);
+    test.skip(
+      !hasInboxInternalSecret("process"),
+      "INBOX_INTERNAL_PROCESS_SECRET is required for provenance e2e coverage."
+    );
 
     const rawText =
       "Public criticism from close people causes withdrawal and a defensive reaction. What exactly triggers the reaction first? We need to know who is involved before promotion.";
     const answerText =
       "The reaction starts when the criticism comes from a close partner in front of other people.";
     const userId = randomUUID();
-    const { workspaceSlug, mapId } = await createWorkspaceAndOpenMap(page, userId);
+    const { workspaceSlug, workspaceId, mapId } = await createWorkspaceAndOpenMap(
+      page,
+      userId
+    );
 
     await page.goto(`/app/${workspaceSlug}/inbox`);
-    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Inbox", exact: true })
+    ).toBeVisible();
 
     await page.locator('textarea[name="rawText"]').fill(rawText);
     await page.getByRole("button", { name: "Create inbox item" }).click();
@@ -257,33 +349,43 @@ test.describe("Inbox canonical provenance", () => {
     const [, itemId = ""] = page.url().match(/[?&]item=([^&#]+)/) ?? [];
     expect(itemId).not.toBe("");
 
-    await postInternalInbox(page, `/api/internal/inbox/items/${itemId}/process`);
+    await postInternalInbox(
+      page,
+      `/api/internal/inbox/items/${itemId}/process`,
+      { workspaceId },
+      "process"
+    );
 
     let clarificationRequestId!: string;
     await expect
-      .poll(async () => {
-        const response = await getInternalInbox<InboxItemDetail>(
-          page,
-          `/api/internal/inbox/items/${itemId}`
-        );
-        clarificationRequestId =
-          response.data.clarificationRequests.find(
-            (request) => request.status === "pending"
-          )?.id ?? "";
+      .poll(
+        async () => {
+          const response = await getInternalInbox<InboxItemDetail>(
+            page,
+            `/api/internal/inbox/items/${itemId}?workspaceId=${workspaceId}`
+          );
+          clarificationRequestId =
+            response.data.clarificationRequests.find(
+              (request) => request.status === "pending"
+            )?.id ?? "";
 
-        return clarificationRequestId || null;
-      }, {
-        timeout: 30_000,
-        intervals: [1_000, 2_000],
-      })
+          return clarificationRequestId || null;
+        },
+        {
+          timeout: 30_000,
+          intervals: [1_000, 2_000],
+        }
+      )
       .toEqual(expect.any(String));
 
     await postInternalInbox(
       page,
       `/api/internal/inbox/clarification-requests/${clarificationRequestId}/answer`,
       {
+        workspaceId,
         answerText,
-      }
+      },
+      "process"
     );
 
     const conceptTitle = "Public criticism";
@@ -295,37 +397,36 @@ test.describe("Inbox canonical provenance", () => {
     };
 
     await expect
-      .poll(async () => {
-        const response = await getInternalInbox<InboxItemDetail>(
-          page,
-          `/api/internal/inbox/items/${itemId}`
-        );
-        const packetId = response.data.structuredPackets[0]?.id;
-        const evidenceFragment =
-          response.data.fragments.find(
-            (fragment) => fragment.sourceKind === "clarification_answer"
-          ) ?? response.data.fragments[0];
+      .poll(
+        async () => {
+          const response = await getInternalInbox<InboxItemDetail>(
+            page,
+            `/api/internal/inbox/items/${itemId}?workspaceId=${workspaceId}`
+          );
+          const packetId = response.data.structuredPackets[0]?.id;
+          const evidenceFragment =
+            response.data.fragments.find(
+              (fragment) => fragment.sourceKind === "clarification_answer"
+            ) ?? response.data.fragments[0];
 
-        if (
-          !response.data.item.workspaceId ||
-          !packetId ||
-          !evidenceFragment
-        ) {
-          return null;
+          if (!response.data.item.workspaceId || !packetId || !evidenceFragment) {
+            return null;
+          }
+
+          reviewContext = {
+            workspaceId: response.data.item.workspaceId,
+            packetId,
+            evidenceOrdinal: evidenceFragment.ordinal,
+            status: response.data.item.status,
+          };
+
+          return reviewContext;
+        },
+        {
+          timeout: 60_000,
+          intervals: [1_000, 2_000, 3_000],
         }
-
-        reviewContext = {
-          workspaceId: response.data.item.workspaceId,
-          packetId,
-          evidenceOrdinal: evidenceFragment.ordinal,
-          status: response.data.item.status,
-        };
-
-        return reviewContext;
-      }, {
-        timeout: 60_000,
-        intervals: [1_000, 2_000, 3_000],
-      })
+      )
       .toEqual(
         expect.objectContaining({
           workspaceId: expect.any(String),
@@ -415,22 +516,23 @@ test.describe("Inbox canonical provenance", () => {
     });
 
     await expect
-      .poll(async () => {
-        const graphResponse = await page.request.get(
-          `/api/maps/${mapId}/graph`
-        );
-        if (!graphResponse.ok()) {
-          return 0;
-        }
+      .poll(
+        async () => {
+          const graphResponse = await page.request.get(`/api/maps/${mapId}/graph`);
+          if (!graphResponse.ok()) {
+            return 0;
+          }
 
-        const graph = (await graphResponse.json()) as {
-          concepts: Array<{ id: string; title: string }>;
-        };
-        return graph.concepts.length;
-      }, {
-        timeout: 30_000,
-        intervals: [1_000, 2_000, 3_000],
-      })
+          const graph = (await graphResponse.json()) as {
+            concepts: Array<{ id: string; title: string }>;
+          };
+          return graph.concepts.length;
+        },
+        {
+          timeout: 30_000,
+          intervals: [1_000, 2_000, 3_000],
+        }
+      )
       .toBeGreaterThan(0);
 
     await page.reload();
@@ -452,4 +554,11 @@ test.describe("Inbox canonical provenance", () => {
       page.getByRole("link", { name: "Open in Inbox" })
     ).toBeVisible();
   });
+});
+
+test.afterAll(async () => {
+  if (sqlClient) {
+    await sqlClient.end({ timeout: 0 });
+    sqlClient = null;
+  }
 });

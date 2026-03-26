@@ -60,8 +60,12 @@ import {
 } from "@/shared/i18n/messages/map-workspace";
 
 type PanelTab = "inspector" | "scenario" | "learning";
+type MapWorkspaceViewProps = MapWorkspaceProps & {
+  initialPanelTab?: PanelTab;
+  initialInspectorSelection?: InspectorSelection | null;
+};
 
-export function MapWorkspace(props: MapWorkspaceProps) {
+export function MapWorkspace(props: MapWorkspaceViewProps) {
   return (
     <MapStoreProvider
       key={props.map.id}
@@ -83,12 +87,16 @@ function MapWorkspaceContent({
   scenarios,
   runs,
   learningSuggestions,
-}: MapWorkspaceProps) {
+  initialPanelTab,
+  initialInspectorSelection,
+}: MapWorkspaceViewProps) {
   const router = useRouter();
   const messages = getMapWorkspaceMessages(locale);
   const learningMessages = messages.learning;
   const isMobileViewport = useIsMobileViewport();
-  const [panelTab, setPanelTab] = useState<PanelTab>("inspector");
+  const [panelTab, setPanelTab] = useState<PanelTab>(
+    () => initialPanelTab ?? "inspector"
+  );
   const [mutationFeedback, setMutationFeedback] =
     useState<InspectorMutationFeedback | null>(null);
   const selection = useMapStore((state) => state.selection);
@@ -118,9 +126,11 @@ function MapWorkspaceContent({
   });
   const [panelOpen, setPanelOpen] = useState(
     () =>
-      graphMetrics.conceptCount === 0 &&
-      graphMetrics.linkCount === 0 &&
-      runs.length === 0
+      initialPanelTab !== undefined ||
+      initialInspectorSelection != null ||
+      (graphMetrics.conceptCount === 0 &&
+        graphMetrics.linkCount === 0 &&
+        runs.length === 0)
   );
   const {
     catalog: conceptCatalog,
@@ -132,6 +142,14 @@ function MapWorkspaceContent({
     () => new Map(conceptCatalog.map((concept) => [concept.id, concept])),
     [conceptCatalog]
   );
+
+  useEffect(() => {
+    if (!initialInspectorSelection) {
+      return;
+    }
+
+    setSelection(initialInspectorSelection);
+  }, [initialInspectorSelection, setSelection]);
 
   const guidedStep = deriveGuidedOnboardingStep({
     conceptCount: graphMetrics.conceptCount,
@@ -352,7 +370,7 @@ function MapWorkspaceContent({
     panelTab === "inspector"
       ? messages.scenario.mobileInspectorDescription
       : panelTab === "scenario"
-        ? messages.scenario.mobileScenarioDescription
+      ? messages.scenario.mobileScenarioDescription
         : learningMessages.mobileDescription;
   const panelTitleId = useId();
   const panelDescriptionId = useId();

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import {
   mapInboxAtomRecord,
@@ -18,9 +18,13 @@ import {
 import type {
   InboxItemDetailRecord,
   InboxItemRecord,
+  InboxListItemRecord,
+  InboxListPageRecord,
+  InboxListQueryInput,
   InboxWorkspaceClarificationRequestRecord,
 } from "@/features/inbox/types";
 import { db } from "@/shared/db/client";
+import { workspaceMapPath } from "@/shared/config/routes";
 import {
   inboxAtoms,
   inboxClarificationAnswers,
@@ -36,18 +40,45 @@ import {
   learningSuggestionBatches,
   learningSuggestionResolutions,
   learningSuggestions,
+  maps,
 } from "@/shared/db/schema";
 
-export async function getInboxItemDetailQuery(itemId: string) {
+const needsAttentionExcludedStatuses = new Set(["applied", "discarded"]);
+const processableStatuses = new Set([
+  "received",
+  "persisted",
+  "normalized",
+  "segmented",
+  "interpreted",
+  "scored",
+  "resolved",
+]);
+
+async function getInboxItemRowForWorkspace(
+  workspaceId: string,
+  itemId: string
+) {
   const [itemRow] = await db
     .select()
     .from(inboxItems)
-    .where(eq(inboxItems.id, itemId))
+    .where(
+      and(eq(inboxItems.id, itemId), eq(inboxItems.workspaceId, workspaceId))
+    )
     .limit(1);
 
   if (!itemRow) {
     return null;
   }
+
+  if (itemRow.id !== itemId || itemRow.workspaceId !== workspaceId) {
+    return null;
+  }
+
+  return itemRow;
+}
+
+async function buildInboxItemDetail(itemRow: typeof inboxItems.$inferSelect) {
+  const itemId = itemRow.id;
 
   const [
     fragmentRows,
@@ -71,10 +102,7 @@ export async function getInboxItemDetailQuery(itemId: string) {
       .from(inboxHypotheses)
       .where(eq(inboxHypotheses.itemId, itemId))
       .orderBy(asc(inboxHypotheses.rank)),
-    db
-      .select()
-      .from(inboxAtoms)
-      .where(eq(inboxAtoms.itemId, itemId)),
+    db.select().from(inboxAtoms).where(eq(inboxAtoms.itemId, itemId)),
     db
       .select()
       .from(inboxStructuredPackets)
@@ -144,7 +172,12 @@ export async function getInboxItemDetailQuery(itemId: string) {
       : await db
           .select()
           .from(inboxClarificationAnswers)
-          .where(inArray(inboxClarificationAnswers.requestId, clarificationRequestIds));
+          .where(
+            inArray(
+              inboxClarificationAnswers.requestId,
+              clarificationRequestIds
+            )
+          );
 
   const reviewBatchMap = new Map<
     string,
@@ -213,7 +246,7 @@ export async function getInboxItemDetailQuery(itemId: string) {
     stepRunsByAttemptId.set(row.stepRun.attemptId, existing);
   }
 
-  const detail: InboxItemDetailRecord = {
+  return {
     item: mapInboxItemRecord(itemRow),
     fragments: fragmentRows.map(mapInboxFragmentRecord),
     hypotheses: hypothesisRows.map(mapInboxHypothesisRecord),
@@ -234,13 +267,32 @@ export async function getInboxItemDetailQuery(itemId: string) {
       )
     ),
     workflowEvents: workflowEventRows.map(mapInboxWorkflowEventRecord),
-  };
-
-  return detail;
+  } satisfies InboxItemDetailRecord;
 }
 
-function sortInboxItemsDescending(items: InboxItemRecord[]) {
+function sortInboxItems(
+  items: InboxListItemRecord[],
+  sort: InboxListQueryInput["listState"]["sort"]
+) {
   return [...items].sort((left, right) => {
+    if (sort === "updated_asc") {
+      const updatedDelta = left.updatedAt.getTime() - right.updatedAt.getTime();
+      if (updatedDelta !== 0) {
+        return updatedDelta;
+      }
+
+      return left.createdAt.getTime() - right.createdAt.getTime();
+    }
+
+    if (sort === "created_desc") {
+      const createdDelta = right.createdAt.getTime() - left.createdAt.getTime();
+      if (createdDelta !== 0) {
+        return createdDelta;
+      }
+
+      return right.updatedAt.getTime() - left.updatedAt.getTime();
+    }
+
     const updatedDelta = right.updatedAt.getTime() - left.updatedAt.getTime();
     if (updatedDelta !== 0) {
       return updatedDelta;
@@ -250,34 +302,184 @@ function sortInboxItemsDescending(items: InboxItemRecord[]) {
   });
 }
 
-export async function listInboxItemsForWorkspaceQuery(
-  workspaceId: string,
-  limit = 50
+function matchesListState(
+  item: InboxItemRecord,
+  listState: InboxListQueryInput["listState"]
 ) {
-  const itemRows = await db
-    .select()
-    .from(inboxItems)
-    .where(eq(inboxItems.workspaceId, workspaceId))
-    .orderBy(desc(inboxItems.updatedAt), desc(inboxItems.createdAt));
+  if (
+    listState.view === "needs-attention" &&
+    needsAttentionExcludedStatuses.has(item.status)
+  ) {
+    return false;
+  }
 
-  return sortInboxItemsDescending(
-    itemRows
-      .map(mapInboxItemRecord)
-      .filter((item) => item.workspaceId === workspaceId)
-  ).slice(0, limit);
+  if (listState.status !== "any" && item.status !== listState.status) {
+    return false;
+  }
+
+  if (listState.route !== "any" && item.route !== listState.route) {
+    return false;
+  }
+
+  if (listState.mapId !== "any" && item.mapId !== listState.mapId) {
+    return false;
+  }
+
+  return true;
+}
+
+function deriveNextAction(item: InboxItemRecord, workspaceSlug: string) {
+  if (item.status === "clarification_requested") {
+    return {
+      nextActionKind: "answer_clarification" as const,
+      nextActionLabel: "Answer clarification",
+      nextActionHref: null,
+    };
+  }
+
+  if (item.status === "failed_needs_review") {
+    return {
+      nextActionKind: "retry_processing" as const,
+      nextActionLabel: "Retry processing",
+      nextActionHref: null,
+    };
+  }
+
+  if (processableStatuses.has(item.status)) {
+    return {
+      nextActionKind: "process_item" as const,
+      nextActionLabel: "Process item",
+      nextActionHref: null,
+    };
+  }
+
+  if (item.status === "ready_for_review" || item.status === "promoted") {
+    return {
+      nextActionKind: "review_learning" as const,
+      nextActionLabel: "Review in Learning",
+      nextActionHref: `${workspaceMapPath(workspaceSlug, item.mapId)}?panel=learning`,
+    };
+  }
+
+  if (item.status === "parked") {
+    return {
+      nextActionKind: "open_map" as const,
+      nextActionLabel: "Open Map",
+      nextActionHref: workspaceMapPath(workspaceSlug, item.mapId),
+    };
+  }
+
+  if (item.status === "discarded" || item.status === "applied") {
+    return {
+      nextActionKind: "closed" as const,
+      nextActionLabel: "Closed outcome",
+      nextActionHref: workspaceMapPath(workspaceSlug, item.mapId),
+    };
+  }
+
+  return {
+    nextActionKind: "none" as const,
+    nextActionLabel: "Open triage",
+    nextActionHref: null,
+  };
+}
+
+export async function getInboxItemDetailQuery(input: {
+  workspaceId: string;
+  itemId: string;
+}) {
+  const itemRow = await getInboxItemRowForWorkspace(
+    input.workspaceId,
+    input.itemId
+  );
+
+  if (!itemRow) {
+    return null;
+  }
+
+  return buildInboxItemDetail(itemRow);
+}
+
+export async function listInboxItemsForWorkspaceQuery(
+  input: InboxListQueryInput
+): Promise<InboxListPageRecord> {
+  const [itemRows, mapRows] = await Promise.all([
+    db
+      .select()
+      .from(inboxItems)
+      .where(eq(inboxItems.workspaceId, input.workspaceId))
+      .orderBy(desc(inboxItems.updatedAt), desc(inboxItems.createdAt)),
+    db
+      .select({
+        id: maps.id,
+        title: maps.title,
+        subjectLabel: maps.subjectLabel,
+      })
+      .from(maps)
+      .where(
+        and(eq(maps.workspaceId, input.workspaceId), isNull(maps.archivedAt))
+      )
+      .orderBy(desc(maps.updatedAt), maps.title),
+  ]);
+
+  const mapLookup = new Map(
+    mapRows.map((row) => [
+      row.id,
+      {
+        title: row.title,
+        subjectLabel: row.subjectLabel,
+      },
+    ])
+  );
+
+  const allItems = itemRows
+    .map((row) => {
+      const item = mapInboxItemRecord(row);
+      const mapInfo = mapLookup.get(item.mapId) ?? null;
+      const nextAction = deriveNextAction(item, input.workspaceSlug);
+
+      return {
+        ...item,
+        mapTitle: mapInfo?.title ?? null,
+        mapSubjectLabel: mapInfo?.subjectLabel ?? null,
+        ownerLabel: null,
+        ...nextAction,
+      } satisfies InboxListItemRecord;
+    })
+    .filter((item) => item.workspaceId === input.workspaceId);
+
+  const filteredItems = allItems.filter((item) =>
+    matchesListState(item, input.listState)
+  );
+  const sortedItems = sortInboxItems(filteredItems, input.listState.sort);
+  const totalCount = sortedItems.length;
+  const totalPages =
+    totalCount === 0
+      ? 1
+      : Math.max(1, Math.ceil(totalCount / input.listState.pageSize));
+  const page = Math.min(input.listState.page, totalPages);
+  const pageStart = (page - 1) * input.listState.pageSize;
+
+  return {
+    items: sortedItems.slice(pageStart, pageStart + input.listState.pageSize),
+    totalCount,
+    totalPages,
+    page,
+    pageSize: input.listState.pageSize,
+    view: input.listState.view,
+    status: input.listState.status,
+    route: input.listState.route,
+    mapId: input.listState.mapId,
+    sort: input.listState.sort,
+  };
 }
 
 export async function getInboxItemForWorkspaceQuery(
   workspaceId: string,
   itemId: string
 ) {
-  const [itemRow] = await db
-    .select()
-    .from(inboxItems)
-    .where(eq(inboxItems.id, itemId))
-    .limit(1);
-
-  if (!itemRow || itemRow.workspaceId !== workspaceId) {
+  const itemRow = await getInboxItemRowForWorkspace(workspaceId, itemId);
+  if (!itemRow) {
     return null;
   }
 
@@ -288,12 +490,7 @@ export async function getInboxItemDetailForWorkspaceQuery(
   workspaceId: string,
   itemId: string
 ) {
-  const item = await getInboxItemForWorkspaceQuery(workspaceId, itemId);
-  if (!item) {
-    return null;
-  }
-
-  return getInboxItemDetailQuery(itemId);
+  return getInboxItemDetailQuery({ workspaceId, itemId });
 }
 
 export async function getInboxClarificationRequestForWorkspaceQuery(
@@ -310,17 +507,16 @@ export async function getInboxClarificationRequestForWorkspaceQuery(
     return null;
   }
 
-  const [itemRow] = await db
-    .select()
-    .from(inboxItems)
-    .where(eq(inboxItems.id, requestRow.itemId))
-    .limit(1);
+  const itemRow = await getInboxItemRowForWorkspace(
+    workspaceId,
+    requestRow.itemId
+  );
 
-  if (!itemRow || itemRow.workspaceId !== workspaceId) {
+  if (!itemRow) {
     return null;
   }
 
-  const request: InboxWorkspaceClarificationRequestRecord = {
+  return {
     id: requestRow.id,
     itemId: requestRow.itemId,
     workspaceId,
@@ -328,7 +524,5 @@ export async function getInboxClarificationRequestForWorkspaceQuery(
     reason: requestRow.reason,
     status: requestRow.status,
     answeredAt: requestRow.answeredAt,
-  };
-
-  return request;
+  } satisfies InboxWorkspaceClarificationRequestRecord;
 }

@@ -161,6 +161,24 @@
           "tags": ["executable", "schema", "inbox", "ai-core", "workflow"]
         },
         {
+          "id": "inbox-operator-workbench-adr",
+          "title": "Inbox Operator Workbench ADR",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-operator-workbench-adr.md",
+          "summary": "Accepted decision that Inbox is an internal operator workbench and Learning remains the review/apply surface.",
+          "tags": ["executable", "inbox", "adr", "product"]
+        },
+        {
+          "id": "inbox-acceptance-checklist",
+          "title": "Inbox Acceptance Checklist",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-acceptance-checklist.md",
+          "summary": "Minimum product acceptance checklist for the Inbox triage-first release model.",
+          "tags": ["executable", "inbox", "acceptance", "checklist"]
+        },
+        {
           "id": "scenario-engine-v1",
           "title": "Scenario Engine V1",
           "status": "existing",
