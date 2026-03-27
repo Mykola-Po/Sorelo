@@ -44,6 +44,10 @@ import {
   deriveZoomBounds,
   type CanvasZoomState,
 } from "@/features/map-runtime/renderers/zoom-policy";
+import {
+  canEditMapGraph,
+  canManageMapMetadata,
+} from "@/shared/auth/policies";
 import { useCoreLoopTelemetry } from "@/features/maps/hooks/use-core-loop-telemetry";
 import {
   buildLinkDraftDefaults,
@@ -99,6 +103,8 @@ function MapWorkspaceContent({
   const router = useRouter();
   const messages = getMapWorkspaceMessages(locale);
   const learningMessages = messages.learning;
+  const canEditGraph = canEditMapGraph(workspaceRole);
+  const canManageMapMetadataAccess = canManageMapMetadata(workspaceRole);
   const isMobileViewport = useIsMobileViewport();
   const [panelTab, setPanelTab] = useState<PanelTab>(
     () => initialPanelTab ?? "inspector"
@@ -107,6 +113,7 @@ function MapWorkspaceContent({
     useState<InspectorMutationFeedback | null>(null);
   const selection = useMapStore((state) => state.selection);
   const snapshot = useMapStore((state) => state.snapshot);
+  const currentGraphRevision = snapshot?.revision ?? graphMetrics.revision;
   const ghostConcepts = useMapStore((state) => state.ghosts);
   const setSelection = useMapStore((state) => state.setSelection);
   const interactionMode = useMapStore((state) => state.interactionMode);
@@ -249,6 +256,10 @@ function MapWorkspaceContent({
   };
 
   const openMapSettings = () => {
+    if (!canManageMapMetadataAccess) {
+      return;
+    }
+
     setInteractionMode("inspect");
     setConnectLinkSourceId(null);
     setSelection({ kind: "map-settings" });
@@ -257,6 +268,10 @@ function MapWorkspaceContent({
   };
 
   const beginPlaceConcept = () => {
+    if (!canEditGraph) {
+      return;
+    }
+
     setInteractionMode("placeConcept");
     setConnectLinkSourceId(null);
     setSelection({ kind: "none" });
@@ -265,6 +280,10 @@ function MapWorkspaceContent({
   };
 
   const beginConnectLink = () => {
+    if (!canEditGraph) {
+      return;
+    }
+
     if (graphMetrics.conceptCount < 2) {
       setInteractionMode("inspect");
       setConnectLinkSourceId(null);
@@ -343,7 +362,10 @@ function MapWorkspaceContent({
           locale={locale}
           workspaceSlug={workspaceSlug}
           workspaceRole={workspaceRole}
+          canEditGraph={canEditGraph}
+          canManageMapMetadata={canManageMapMetadataAccess}
           map={map}
+          graphRevision={currentGraphRevision}
           conceptCount={graphMetrics.conceptCount}
           conceptCatalog={conceptCatalog}
           conceptCatalogError={conceptCatalogError}
@@ -367,6 +389,7 @@ function MapWorkspaceContent({
         <ScenarioPanel
           locale={locale}
           workspaceSlug={workspaceSlug}
+          workspaceRole={workspaceRole}
           map={map}
           conceptCatalog={conceptCatalog}
           conceptCatalogError={conceptCatalogError}
@@ -381,6 +404,7 @@ function MapWorkspaceContent({
       <LearningPanel
         locale={locale}
         workspaceSlug={workspaceSlug}
+        workspaceRole={workspaceRole}
         mapId={map.id}
         suggestions={learningSuggestions}
       />
@@ -430,6 +454,7 @@ function MapWorkspaceContent({
             locale={locale}
             map={map}
             graphMetrics={graphMetrics}
+            canEditGraph={canEditGraph}
             selection={selection}
             interactionMode={interactionMode}
             connectLinkSourceId={connectLinkSourceId}
@@ -506,6 +531,7 @@ function MapWorkspaceContent({
               scenarioOpen={isScenarioPanelOpen}
               learningOpen={isLearningPanelOpen}
               learningLabel={learningMessages.tabLabel}
+              canEditGraph={canEditGraph}
               onOpenInspector={openInspectorPanel}
               onOpenScenario={openScenarioPanel}
               onOpenLearning={openLearningPanel}
@@ -563,7 +589,7 @@ function MapWorkspaceContent({
                     justify="end"
                     className="map-dialog-header-actions"
                   >
-                    {panelTab === "inspector" ? (
+      {panelTab === "inspector" && canManageMapMetadataAccess ? (
                       <Button
                         type="button"
                         size="1"
@@ -1004,6 +1030,7 @@ type MapBottomDockProps = {
   scenarioOpen: boolean;
   learningOpen: boolean;
   learningLabel: string;
+  canEditGraph: boolean;
   onOpenInspector: () => void;
   onOpenScenario: () => void;
   onOpenLearning: () => void;
@@ -1024,6 +1051,7 @@ function MapBottomDock({
   scenarioOpen,
   learningOpen,
   learningLabel,
+  canEditGraph,
   onOpenInspector,
   onOpenScenario,
   onOpenLearning,
@@ -1092,26 +1120,32 @@ function MapBottomDock({
         </div>
 
         <div className="map-bottom-dock-group is-clustered">
-          <MapIconAction
-            label={messages.topBar.createLink}
-            active={
-              interactionMode === "connectLink" || selectionKind === "create-link"
-            }
-            onClick={onStartCreateLink}
-            mobileHint={messages.topBar.createLink}
-          >
-            <Link2Icon />
-          </MapIconAction>
-          <MapIconAction
-            label={messages.topBar.newConcept}
-            active={
-              interactionMode === "placeConcept" || selectionKind === "create-concept"
-            }
-            onClick={onStartCreateConcept}
-            mobileHint={messages.topBar.newConcept}
-          >
-            <PlusIcon />
-          </MapIconAction>
+          {canEditGraph ? (
+            <>
+              <MapIconAction
+                label={messages.topBar.createLink}
+                active={
+                  interactionMode === "connectLink" ||
+                  selectionKind === "create-link"
+                }
+                onClick={onStartCreateLink}
+                mobileHint={messages.topBar.createLink}
+              >
+                <Link2Icon />
+              </MapIconAction>
+              <MapIconAction
+                label={messages.topBar.newConcept}
+                active={
+                  interactionMode === "placeConcept" ||
+                  selectionKind === "create-concept"
+                }
+                onClick={onStartCreateConcept}
+                mobileHint={messages.topBar.newConcept}
+              >
+                <PlusIcon />
+              </MapIconAction>
+            </>
+          ) : null}
         </div>
 
         <div className="map-bottom-dock-group">

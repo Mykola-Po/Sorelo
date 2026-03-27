@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { repositionConceptCommand } from "@/features/concepts/commands";
+import { MapRevisionConflictError } from "@/features/maps/commands";
 import { getMapRevision } from "@/features/maps/queries";
 import { patchConceptPositionRouteSchema } from "@/features/map-runtime/schemas";
 import { parseRouteJson, requireMapRuntimeAccess } from "@/features/map-runtime/server";
@@ -28,6 +29,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
+      expectedRevision: parsed.data.expectedRevision,
       conceptId,
       x: parsed.data.x,
       y: parsed.data.y,
@@ -40,6 +42,17 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       concept,
     });
   } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          error: error.message,
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         error:

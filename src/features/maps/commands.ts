@@ -3,18 +3,35 @@ import "server-only";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
-import { requireActiveMap, requireWorkspaceMembership } from "@/features/maps/access";
+import {
+  requireActiveMap,
+  requireWorkspaceGraphEditAccess,
+  requireWorkspaceMapMetadataAccess,
+} from "@/features/maps/access";
 import { normalizeMapSlug } from "@/features/maps/utils";
 import { db } from "@/shared/db/client";
 import { maps } from "@/shared/db/schema";
 
-type MapRevisionWriter = Pick<typeof db, "update">;
+type MapRevisionWriter = Pick<typeof db, "select" | "update">;
+
+export class MapRevisionConflictError extends Error {
+  readonly statusCode = 409;
+  readonly code = "map_revision_conflict";
+  readonly currentRevision: number;
+
+  constructor(currentRevision: number) {
+    super("Map changed since your last snapshot. Refresh and try again.");
+    this.name = "MapRevisionConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
 
 export async function bumpMapGraphRevision(
   dbOrTx: MapRevisionWriter,
   input: {
     workspaceId: string;
     mapId: string;
+    expectedRevision: number;
   }
 ) {
   const [map] = await dbOrTx
@@ -27,13 +44,32 @@ export async function bumpMapGraphRevision(
       and(
         eq(maps.id, input.mapId),
         eq(maps.workspaceId, input.workspaceId),
-        isNull(maps.archivedAt)
+        isNull(maps.archivedAt),
+        eq(maps.graphRevision, input.expectedRevision)
       )
     )
     .returning({ graphRevision: maps.graphRevision });
 
   if (!map) {
-    throw new Error("Map not found.");
+    const [currentMap] = await dbOrTx
+      .select({
+        revision: maps.graphRevision,
+      })
+      .from(maps)
+      .where(
+        and(
+          eq(maps.id, input.mapId),
+          eq(maps.workspaceId, input.workspaceId),
+          isNull(maps.archivedAt)
+        )
+      )
+      .limit(1);
+
+    if (!currentMap) {
+      throw new Error("Map not found.");
+    }
+
+    throw new MapRevisionConflictError(currentMap.revision);
   }
 
   return map.graphRevision;
@@ -47,7 +83,7 @@ export async function createMapCommand(input: {
   subjectLabel: string;
   description?: string | null;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
 
   return db.transaction(async (tx) => {
     const [map] = await tx
@@ -90,7 +126,7 @@ export async function renameMapCommand(input: {
   subjectLabel: string;
   description?: string | null;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceMapMetadataAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   const [map] = await db
@@ -134,15 +170,8 @@ export async function archiveMapCommand(input: {
   actorUserId: string;
   mapId: string;
 }) {
-  const membership = await requireWorkspaceMembership(
-    input.workspaceId,
-    input.actorUserId
-  );
+  await requireWorkspaceMapMetadataAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
-
-  if (membership.role === "member") {
-    throw new Error("Only admins and owners can archive a map.");
-  }
 
   const [map] = await db
     .update(maps)

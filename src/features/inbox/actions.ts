@@ -135,7 +135,9 @@ export async function processInboxWorkbenchItemAction(
   const listState = readWorkbenchListState(formData);
 
   try {
-    const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const { user, access } = await requireWorkspaceAccess(
+      parsed.data.workspaceSlug
+    );
     const item = await getInboxItemForWorkspaceQuery(
       access.workspace.id,
       parsed.data.itemId
@@ -150,6 +152,7 @@ export async function processInboxWorkbenchItemAction(
     await processInboxItemCommand({
       workspaceId: access.workspace.id,
       itemId: item.id,
+      actorUserId: user.id,
     });
     revalidatePath(workspaceInboxPath(parsed.data.workspaceSlug));
     redirect(
@@ -188,7 +191,9 @@ export async function answerInboxClarificationAction(
   const listState = readWorkbenchListState(formData);
 
   try {
-    const { access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
+    const { user, access } = await requireWorkspaceAccess(
+      parsed.data.workspaceSlug
+    );
     const request = await getInboxClarificationRequestForWorkspaceQuery(
       access.workspace.id,
       parsed.data.requestId
@@ -203,6 +208,7 @@ export async function answerInboxClarificationAction(
     await answerInboxClarificationCommand({
       workspaceId: access.workspace.id,
       requestId: request.id,
+      actorUserId: user.id,
       answerText: parsed.data.answerText,
     });
     revalidatePath(workspaceInboxPath(parsed.data.workspaceSlug));

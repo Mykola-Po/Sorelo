@@ -80,7 +80,10 @@ type InspectorPanelProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   workspaceRole: WorkspaceRole;
+  canEditGraph: boolean;
+  canManageMapMetadata: boolean;
   map: MapDetail;
+  graphRevision: number;
   conceptCount: number;
   conceptCatalog: ConceptCatalogEntry[];
   conceptCatalogLoading: boolean;
@@ -101,7 +104,10 @@ export function InspectorPanel({
   locale,
   workspaceSlug,
   workspaceRole,
+  canEditGraph,
+  canManageMapMetadata,
   map,
+  graphRevision,
   conceptCount,
   conceptCatalog,
   conceptCatalogLoading,
@@ -117,6 +123,7 @@ export function InspectorPanel({
   onOpenScenario,
   onCancelInteraction,
 }: InspectorPanelProps) {
+  const messages = getMapWorkspaceMessages(locale);
   const { payload, isLoading, error } = useInspectorPayload(map.id, selection);
 
   return (
@@ -128,6 +135,7 @@ export function InspectorPanel({
           interactionMode={interactionMode}
           linkingSourceConceptTitle={linkingSourceConceptTitle}
           conceptCount={conceptCount}
+          canEditGraph={canEditGraph}
           onStartCreateConcept={onStartCreateConcept}
           onStartCreateLink={onStartCreateLink}
           onOpenScenario={onOpenScenario}
@@ -136,33 +144,49 @@ export function InspectorPanel({
       ) : null}
 
       {selection.kind === "create-concept" ? (
-        <CreateConceptCard
-          locale={locale}
-          workspaceSlug={workspaceSlug}
-          mapId={map.id}
-          conceptCount={conceptCount}
-          initialX={selection.x}
-          initialY={selection.y}
-          onSelect={onSelect}
-          onMutationFeedback={onMutationFeedback}
-        />
+        canEditGraph ? (
+          <CreateConceptCard
+            locale={locale}
+            workspaceSlug={workspaceSlug}
+            mapId={map.id}
+            expectedRevision={graphRevision}
+            conceptCount={conceptCount}
+            initialX={selection.x}
+            initialY={selection.y}
+            onSelect={onSelect}
+            onMutationFeedback={onMutationFeedback}
+          />
+        ) : (
+          <ReadOnlyAccessCard
+            locale={locale}
+            title={messages.inspector.newConcept}
+          />
+        )
       ) : null}
 
       {selection.kind === "create-link" ? (
-        <CreateLinkCard
-          locale={locale}
-          workspaceSlug={workspaceSlug}
-          mapId={map.id}
-          conceptCatalog={conceptCatalog}
-          conceptCatalogLoading={conceptCatalogLoading}
-          conceptCatalogError={conceptCatalogError}
-          initialSourceConceptId={selection.sourceConceptId}
-          initialTargetConceptId={selection.targetConceptId}
-          initialRelationType={selection.relationType}
-          initialStrength={selection.strength}
-          onSelect={onSelect}
-          onMutationFeedback={onMutationFeedback}
-        />
+        canEditGraph ? (
+          <CreateLinkCard
+            locale={locale}
+            workspaceSlug={workspaceSlug}
+            mapId={map.id}
+            expectedRevision={graphRevision}
+            conceptCatalog={conceptCatalog}
+            conceptCatalogLoading={conceptCatalogLoading}
+            conceptCatalogError={conceptCatalogError}
+            initialSourceConceptId={selection.sourceConceptId}
+            initialTargetConceptId={selection.targetConceptId}
+            initialRelationType={selection.relationType}
+            initialStrength={selection.strength}
+            onSelect={onSelect}
+            onMutationFeedback={onMutationFeedback}
+          />
+        ) : (
+          <ReadOnlyAccessCard
+            locale={locale}
+            title={messages.inspector.createLink}
+          />
+        )
       ) : null}
 
       {selection.kind === "map-settings" ? (
@@ -170,6 +194,7 @@ export function InspectorPanel({
           locale={locale}
           workspaceSlug={workspaceSlug}
           workspaceRole={workspaceRole}
+          canManageMapMetadata={canManageMapMetadata}
           map={map}
         />
       ) : null}
@@ -194,6 +219,8 @@ export function InspectorPanel({
           locale={locale}
           workspaceSlug={workspaceSlug}
           mapId={map.id}
+          expectedRevision={graphRevision}
+          canEditGraph={canEditGraph}
           payload={payload}
           onSelect={onSelect}
           onMutationFeedback={onMutationFeedback}
@@ -205,6 +232,8 @@ export function InspectorPanel({
           locale={locale}
           workspaceSlug={workspaceSlug}
           mapId={map.id}
+          expectedRevision={graphRevision}
+          canEditGraph={canEditGraph}
           conceptCatalog={conceptCatalog}
           conceptCatalogLoading={conceptCatalogLoading}
           conceptCatalogError={conceptCatalogError}
@@ -223,6 +252,7 @@ type GuidedInspectorStateProps = {
   interactionMode: CanvasInteractionMode;
   linkingSourceConceptTitle: string | null;
   conceptCount: number;
+  canEditGraph: boolean;
   onStartCreateConcept: () => void;
   onStartCreateLink: () => void;
   onOpenScenario: () => void;
@@ -235,6 +265,7 @@ function GuidedInspectorState({
   interactionMode,
   linkingSourceConceptTitle,
   conceptCount,
+  canEditGraph,
   onStartCreateConcept,
   onStartCreateLink,
   onOpenScenario,
@@ -319,7 +350,7 @@ function GuidedInspectorState({
   }
 
   const guidedCopy = messages.guided[guidedStep];
-  const primaryAction =
+  const primaryAction = canEditGraph ? (
     guidedStep === "no_concepts" || guidedStep === "one_concept_no_link" ? (
       <Button type="button" onClick={onStartCreateConcept}>
         {guidedCopy.actionLabel}
@@ -344,7 +375,12 @@ function GuidedInspectorState({
           {messages.topBar.runScenario}
         </Button>
       </>
-    );
+    )
+  ) : (
+    <Text size="2" color="gray">
+      Read-only access.
+    </Text>
+  );
 
   return (
     <Flex direction="column" gap="3">
@@ -400,10 +436,37 @@ function GuidedInspectorState({
   );
 }
 
+function ReadOnlyAccessCard({
+  locale,
+  title,
+}: {
+  locale: SupportedLocale;
+  title: string;
+}) {
+  const message =
+    locale === "uk"
+      ? "Доступ лише для читання. Перейдіть у роль редактора, щоб змінювати цю поверхню."
+      : locale === "ru"
+        ? "Доступ только для чтения. Переключитесь на роль редактора, чтобы изменять эту поверхность."
+        : "Read-only access. Switch to an editor role to change this view.";
+
+  return (
+    <Card className="panel-card">
+      <Flex direction="column" gap="2">
+        <Heading size="4">{title}</Heading>
+        <Text size="2" color="gray">
+          {message}
+        </Text>
+      </Flex>
+    </Card>
+  );
+}
+
 type CreateConceptCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
   conceptCount: number;
   initialX: number | undefined;
   initialY: number | undefined;
@@ -415,6 +478,7 @@ function CreateConceptCard({
   locale,
   workspaceSlug,
   mapId,
+  expectedRevision,
   conceptCount,
   initialX,
   initialY,
@@ -457,6 +521,7 @@ function CreateConceptCard({
       <form action={formAction}>
         <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
         <input type="hidden" name="mapId" value={mapId} />
+        <input type="hidden" name="expectedRevision" value={expectedRevision} />
         <input type="hidden" name="x" value={x} />
         <input type="hidden" name="y" value={y} />
         <Flex direction="column" gap="3">
@@ -550,6 +615,8 @@ type ConceptInspectorCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
+  canEditGraph: boolean;
   payload: InspectorConceptPayload;
   onSelect: (selection: InspectorSelection) => void;
   onMutationFeedback: (feedback: InspectorMutationFeedback) => void;
@@ -559,6 +626,8 @@ function ConceptInspectorCard({
   locale,
   workspaceSlug,
   mapId,
+  expectedRevision,
+  canEditGraph,
   payload,
   onSelect,
   onMutationFeedback,
@@ -588,6 +657,31 @@ function ConceptInspectorCard({
     state.status,
   ]);
 
+  if (!canEditGraph) {
+    return (
+      <Card className="panel-card">
+        <Flex direction="column" gap="3">
+          <Flex direction="column" gap="1">
+            <Heading size="4">{payload.concept.title}</Heading>
+            <StatusBadge
+              status={payload.concept.conceptType}
+              label={messages.labels.conceptTypes[payload.concept.conceptType]}
+            />
+          </Flex>
+          <Text size="2" color="gray">
+            Read-only access. Switch to an editor role to modify Concepts or archive this one.
+          </Text>
+          <Separator size="4" />
+          <InspectorProvenanceSection
+            locale={locale}
+            workspaceSlug={workspaceSlug}
+            provenance={payload.provenance}
+          />
+        </Flex>
+      </Card>
+    );
+  }
+
   return (
     <Card className="panel-card">
       <Flex direction="column" gap="3">
@@ -610,6 +704,7 @@ function ConceptInspectorCard({
           >
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={mapId} />
+            <input type="hidden" name="expectedRevision" value={expectedRevision} />
             <input type="hidden" name="conceptId" value={payload.concept.id} />
           </ConfirmDialog>
         </Flex>
@@ -617,6 +712,7 @@ function ConceptInspectorCard({
         <form action={formAction}>
           <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
           <input type="hidden" name="mapId" value={mapId} />
+          <input type="hidden" name="expectedRevision" value={expectedRevision} />
           <input type="hidden" name="conceptId" value={payload.concept.id} />
           <input type="hidden" name="x" value={payload.concept.x} />
           <input type="hidden" name="y" value={payload.concept.y} />
@@ -742,6 +838,7 @@ type CreateLinkCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
   conceptCatalog: ConceptCatalogEntry[];
   conceptCatalogLoading: boolean;
   conceptCatalogError: string | null;
@@ -757,6 +854,7 @@ function CreateLinkCard({
   locale,
   workspaceSlug,
   mapId,
+  expectedRevision,
   conceptCatalog,
   conceptCatalogLoading,
   conceptCatalogError,
@@ -827,6 +925,7 @@ function CreateLinkCard({
       <form action={formAction}>
         <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
         <input type="hidden" name="mapId" value={mapId} />
+        <input type="hidden" name="expectedRevision" value={expectedRevision} />
         <Flex direction="column" gap="3">
           <Heading size="4">{messages.inspector.createLink}</Heading>
           <InlineFormField
@@ -964,6 +1063,8 @@ type LinkInspectorCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
+  canEditGraph: boolean;
   conceptCatalog: ConceptCatalogEntry[];
   conceptCatalogLoading: boolean;
   conceptCatalogError: string | null;
@@ -976,6 +1077,8 @@ function LinkInspectorCard({
   locale,
   workspaceSlug,
   mapId,
+  expectedRevision,
+  canEditGraph,
   conceptCatalog,
   conceptCatalogLoading,
   conceptCatalogError,
@@ -1000,6 +1103,10 @@ function LinkInspectorCard({
     () => new Map(conceptCatalog.map((concept) => [concept.id, concept.title])),
     [conceptCatalog]
   );
+  const sourceTitle =
+    catalogById.get(sourceConceptId) ?? messages.inspector.unknownConcept;
+  const targetTitle =
+    catalogById.get(targetConceptId) ?? messages.inspector.unknownConcept;
 
   useEffect(() => {
     if (state.status !== "success" || !state.payload) {
@@ -1027,10 +1134,63 @@ function LinkInspectorCard({
     return <ErrorCard locale={locale} message={conceptCatalogError} />;
   }
 
-  const sourceTitle =
-    catalogById.get(sourceConceptId) ?? messages.inspector.unknownConcept;
-  const targetTitle =
-    catalogById.get(targetConceptId) ?? messages.inspector.unknownConcept;
+  if (!canEditGraph) {
+    return (
+      <Card className="panel-card">
+        <Flex direction="column" gap="3">
+          <Flex direction="column" gap="1">
+            <Heading size="4">{messages.inspector.linkTitle}</Heading>
+            <Flex gap="2" wrap="wrap">
+              <StatusBadge
+                status={payload.link.relationType}
+                label={messages.labels.relationTypes[payload.link.relationType]}
+              />
+              <Badge color="orange" variant="surface">
+                {messages.inspector.strengthValue(payload.link.strength)}
+              </Badge>
+            </Flex>
+          </Flex>
+          <Text size="2" color="gray">
+            Read-only access. Switch to an editor role to modify Links or delete this one.
+          </Text>
+          <Card variant="surface" className="panel-surface-card">
+            <Flex direction="column" gap="2">
+              <Text size="2" color="gray">
+                {messages.inspector.currentDirection}
+              </Text>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  onSelect({ kind: "concept", id: payload.link.sourceConceptId })
+                }
+              >
+                {sourceTitle}
+              </Button>
+              <Text size="2" color="gray">
+                {messages.labels.relationTypes[payload.link.relationType]}
+              </Text>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  onSelect({ kind: "concept", id: payload.link.targetConceptId })
+                }
+              >
+                {targetTitle}
+              </Button>
+            </Flex>
+          </Card>
+          <Separator size="4" />
+          <InspectorProvenanceSection
+            locale={locale}
+            workspaceSlug={workspaceSlug}
+            provenance={payload.provenance}
+          />
+        </Flex>
+      </Card>
+    );
+  }
 
   return (
     <Card className="panel-card">
@@ -1059,6 +1219,7 @@ function LinkInspectorCard({
           >
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={mapId} />
+            <input type="hidden" name="expectedRevision" value={expectedRevision} />
             <input type="hidden" name="linkId" value={payload.link.id} />
           </ConfirmDialog>
         </Flex>
@@ -1095,6 +1256,7 @@ function LinkInspectorCard({
         <form action={formAction}>
           <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
           <input type="hidden" name="mapId" value={mapId} />
+          <input type="hidden" name="expectedRevision" value={expectedRevision} />
           <input type="hidden" name="linkId" value={payload.link.id} />
           <Flex direction="column" gap="3">
             <InlineFormField
@@ -1246,6 +1408,7 @@ type MapSettingsCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
   workspaceRole: WorkspaceRole;
+  canManageMapMetadata: boolean;
   map: MapDetail;
 };
 
@@ -1253,6 +1416,7 @@ function MapSettingsCard({
   locale,
   workspaceSlug,
   workspaceRole,
+  canManageMapMetadata,
   map,
 }: MapSettingsCardProps) {
   const messages = getMapWorkspaceMessages(locale);
@@ -1260,6 +1424,39 @@ function MapSettingsCard({
     renameMapAction,
     mapFormState
   );
+
+  if (!canManageMapMetadata) {
+    return (
+      <Card className="panel-card">
+        <Flex direction="column" gap="3">
+          <Heading size="4">{messages.inspector.mapSettings}</Heading>
+          <Text size="2" color="gray">
+            Read-only access. Switch to an admin or owner role to manage map metadata.
+          </Text>
+          <Flex direction="column" gap="2">
+            <Text size="2" weight="medium">
+              {messages.inspector.titleLabel}
+            </Text>
+            <Text size="2" color="gray">
+              {map.title}
+            </Text>
+            <Text size="2" weight="medium">
+              {messages.inspector.subjectLabel}
+            </Text>
+            <Text size="2" color="gray">
+              {map.subjectLabel}
+            </Text>
+            <Text size="2" weight="medium">
+              {messages.inspector.descriptionLabel}
+            </Text>
+            <Text size="2" color="gray">
+              {map.description ?? "No description provided."}
+            </Text>
+          </Flex>
+        </Flex>
+      </Card>
+    );
+  }
 
   return (
     <Card className="panel-card">
@@ -1323,7 +1520,7 @@ function MapSettingsCard({
           </Button>
         </Flex>
       </form>
-      {workspaceRole !== "member" ? (
+      {workspaceRole === "admin" || workspaceRole === "owner" ? (
         <>
           <Separator size="4" my="4" />
           <ConfirmDialog

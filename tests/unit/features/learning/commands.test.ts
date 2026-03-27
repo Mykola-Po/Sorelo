@@ -7,6 +7,7 @@ import {
   learningCanonicalMutationProvenance,
   learningMapVersions,
   learningSuggestions,
+  maps,
 } from "@/shared/db/schema";
 
 const {
@@ -164,6 +165,7 @@ describe("applyInboxReviewResolutionTx", () => {
     const txState = createMockTx();
 
     createConceptWithTxMock.mockResolvedValue({ id: conceptId });
+    txState.queueSelect(maps, [{ revision: 1 }]);
     txState.queueSelect(learningMapVersions, [{ id: mapVersionId }]);
     txState.queueSelect(inboxFragments, [
       {
@@ -275,6 +277,7 @@ describe("applyInboxReviewResolutionTx", () => {
         y: 180,
       },
     ]);
+    txState.queueSelect(maps, [{ revision: 1 }]);
     txState.queueSelect(learningMapVersions, [{ id: mapVersionId }]);
     txState.queueSelect(inboxFragments, [
       {
@@ -398,6 +401,7 @@ describe("applyInboxReviewResolutionTx", () => {
         y: 280,
       },
     ]);
+    txState.queueSelect(maps, [{ revision: 1 }]);
     txState.queueSelect(learningMapVersions, [{ id: mapVersionId }]);
     txState.queueSelect(inboxFragments, [
       {

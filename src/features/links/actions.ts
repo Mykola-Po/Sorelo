@@ -67,6 +67,7 @@ export async function createLinkAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
       sourceConceptId: parsed.data.sourceConceptId,
       targetConceptId: parsed.data.targetConceptId,
       relationType: parsed.data.relationType,
@@ -118,6 +119,7 @@ export async function updateLinkAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
       linkId: parsed.data.linkId,
       sourceConceptId: parsed.data.sourceConceptId,
       targetConceptId: parsed.data.targetConceptId,
@@ -159,6 +161,7 @@ export async function deleteLinkAction(formData: FormData) {
     workspaceId: access.workspace.id,
     actorUserId: user.id,
     mapId: parsed.data.mapId,
+    expectedRevision: parsed.data.expectedRevision,
     linkId: parsed.data.linkId,
   });
 

@@ -67,6 +67,7 @@ export async function createConceptAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
       summary: parsed.data.summary || null,
@@ -122,6 +123,7 @@ export async function updateConceptAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
       conceptId: parsed.data.conceptId,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
@@ -151,6 +153,7 @@ export async function updateConceptAction(
 export async function repositionConceptAction(input: {
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
   conceptId: string;
   x: number;
   y: number;
@@ -166,6 +169,7 @@ export async function repositionConceptAction(input: {
     workspaceId: access.workspace.id,
     actorUserId: user.id,
     mapId: parsed.data.mapId,
+    expectedRevision: parsed.data.expectedRevision,
     conceptId: parsed.data.conceptId,
     x: parsed.data.x,
     y: parsed.data.y,
@@ -186,12 +190,13 @@ export async function archiveConceptAction(formData: FormData) {
   }
 
   const { user, access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
-  await archiveConceptCommand({
-    workspaceId: access.workspace.id,
-    actorUserId: user.id,
-    mapId: parsed.data.mapId,
-    conceptId: parsed.data.conceptId,
-  });
+    await archiveConceptCommand({
+      workspaceId: access.workspace.id,
+      actorUserId: user.id,
+      mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
+      conceptId: parsed.data.conceptId,
+    });
 
   revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
 }

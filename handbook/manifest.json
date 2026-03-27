@@ -218,6 +218,24 @@
           "legacyNote": "Do not remove legacy tables or compatibility redirects in the current cycle."
         }
       ]
+    },
+    {
+      "id": "work-files",
+      "title": "Work Files",
+      "tier": "executable",
+      "summary": "Execution-facing work records that capture active implementation plans, status windows, and delivery scope without replacing canon or executable truth.",
+      "documents": [
+        {
+          "id": "collaboration-runtime-delta-rollout-2026-03-27",
+          "title": "Collaboration Runtime Delta Rollout",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/work-items/collaboration-runtime-delta-rollout-2026-03-27.md",
+          "summary": "Detailed rollout plan for evolving the map runtime from snapshot-first invalidation toward scalable delta transport, op-log replay, and structural tombstones.",
+          "tags": ["work", "roadmap", "collaboration", "realtime", "maps", "scale"],
+          "derivedFrom": ["project-working-guide", "public-schema", "learning-schema", "map-runtime-architecture"]
+        }
+      ]
     }
   ]
 }

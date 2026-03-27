@@ -53,6 +53,7 @@ type CameraSnapshot = {
 };
 
 type PositionSavePayload = {
+  expectedRevision: number;
   positions: Array<{
     conceptId: string;
     x: number;
@@ -329,6 +330,20 @@ test.describe("Map Runtime WebGL Canvas", () => {
         return;
       }
 
+      if (payload && payload.expectedRevision !== currentGraphSnapshot.revision) {
+        await route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "map_revision_conflict",
+            error:
+              "Map changed since your last snapshot. Refresh and try again.",
+            currentRevision: currentGraphSnapshot.revision,
+          }),
+        });
+        return;
+      }
+
       if (payload) {
         currentGraphSnapshot = {
           ...currentGraphSnapshot,
@@ -483,6 +498,7 @@ test.describe("Map Runtime WebGL Canvas", () => {
     expect(after.x).not.toBe(before.x);
     expect(after.y).not.toBe(before.y);
     expect(positionSavePayloads[0]).toEqual({
+      expectedRevision: 1,
       positions: [
         {
           conceptId: "node-a",
@@ -897,5 +913,56 @@ test.describe("Map Runtime WebGL Canvas", () => {
     await expect(
       page.getByText("Unable to update concept positions.")
     ).not.toBeVisible({ timeout: 1_500 });
+  });
+
+  test("Window focus refreshes the graph snapshot when the revision advances", async ({
+    page,
+  }) => {
+    currentGraphSnapshot = {
+      ...currentGraphSnapshot,
+      revision: currentGraphSnapshot.revision + 1,
+      concepts: currentGraphSnapshot.concepts.map((concept) =>
+        concept.id === "node-a"
+          ? {
+              ...concept,
+              x: concept.x + 48,
+              y: concept.y + 24,
+            }
+          : concept
+      ),
+    };
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await expect.poll(() => graphRequestCount).toBe(1);
+    await expect.poll(() => getNodePosition(page, "node-a")).toEqual({
+      x: 148,
+      y: 124,
+    });
+  });
+
+  test("Stale position saves surface a conflict and do not retry", async ({
+    page,
+  }) => {
+    currentGraphSnapshot = {
+      ...currentGraphSnapshot,
+      revision: currentGraphSnapshot.revision + 1,
+    };
+
+    const card = page.getByRole("button", { name: /Node A/ }).first();
+    await dragLocatorWithMouse(page, card, {
+      deltaX: 80,
+      deltaY: 40,
+    });
+
+    await expect.poll(() => positionSavePayloads.length).toBe(1);
+    await expect(
+      page.getByText(
+        "Map changed since your last snapshot. Refresh and try again."
+      )
+    ).toBeVisible({ timeout: 4_500 });
+    await expect.poll(() => graphRequestCount).toBe(1);
   });
 });

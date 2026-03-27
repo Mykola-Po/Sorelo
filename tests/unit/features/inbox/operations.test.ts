@@ -67,7 +67,7 @@ describe("inbox operations", () => {
     readdirMock.mockReset();
     readdirMock.mockResolvedValue([
       {
-        name: "0015_inbox_workspace_scope.sql",
+        name: "0016_product_scale_collaboration_hardening.sql",
         isFile: () => true,
       },
     ]);
@@ -140,8 +140,8 @@ describe("inbox operations", () => {
         from() {
             return {
               orderBy: async () => [
-                {
-                  version: "0015_inbox_workspace_scope.sql",
+              {
+                  version: "0016_product_scale_collaboration_hardening.sql",
                 },
               ],
             };
@@ -210,7 +210,7 @@ describe("inbox operations", () => {
           return {
             orderBy: async () => [
               {
-                version: "0015_inbox_workspace_scope.sql",
+                version: "0016_product_scale_collaboration_hardening.sql",
               },
             ],
           };
@@ -265,7 +265,7 @@ describe("inbox operations", () => {
           return {
             orderBy: async () => [
               {
-                version: "0015_inbox_workspace_scope.sql",
+                version: "0016_product_scale_collaboration_hardening.sql",
               },
             ],
           };
@@ -318,7 +318,9 @@ describe("inbox operations", () => {
     );
     const repoMigrations = listAppMigrationFilenames(readdirSync(migrationDirectory));
 
-    expect(repoMigrations.at(-1)).toBe("0015_inbox_workspace_scope.sql");
+    expect(repoMigrations.at(-1)).toBe(
+      "0016_product_scale_collaboration_hardening.sql"
+    );
   });
 
   it("reports degraded execution telemetry when recent failures exist", async () => {

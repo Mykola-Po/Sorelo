@@ -10,6 +10,7 @@ const roundedCoordinateSchema = z
   .transform((value) => Math.round(value));
 
 export const createConceptRouteSchema = z.object({
+  expectedRevision: z.coerce.number().int().min(0),
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum(conceptTypeEnum.enumValues),
   summary: z.string().trim().max(280).optional().nullable(),
@@ -21,11 +22,13 @@ export const createConceptRouteSchema = z.object({
 export const updateConceptRouteSchema = createConceptRouteSchema;
 
 export const patchConceptPositionRouteSchema = z.object({
+  expectedRevision: z.coerce.number().int().min(0),
   x: roundedCoordinateSchema,
   y: roundedCoordinateSchema,
 });
 
 export const patchConceptPositionsRouteSchema = z.object({
+  expectedRevision: z.coerce.number().int().min(0),
   positions: z
     .array(
       z.object({
@@ -39,6 +42,7 @@ export const patchConceptPositionsRouteSchema = z.object({
 });
 
 export const createLinkRouteSchema = z.object({
+  expectedRevision: z.coerce.number().int().min(0),
   sourceConceptId: z.string().uuid(),
   targetConceptId: z.string().uuid(),
   relationType: z.enum(relationTypeEnum.enumValues),
@@ -47,3 +51,7 @@ export const createLinkRouteSchema = z.object({
 });
 
 export const updateLinkRouteSchema = createLinkRouteSchema;
+
+export const deleteLinkRouteSchema = z.object({
+  expectedRevision: z.coerce.number().int().min(0),
+});

@@ -22,6 +22,7 @@ import type {
   GraphSnapshot,
 } from "@/features/map-runtime/types";
 import type { SupportedLocale } from "@/shared/i18n/config";
+import { createBrowserSupabaseClient } from "@/shared/auth/supabase/browser";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
 import { useMapStore } from "../store/map-store-provider";
@@ -76,6 +77,8 @@ type ViewportNodePosition = {
 type ConceptPositionPatchResponse = {
   ok?: boolean;
   revision?: number;
+  currentRevision?: number;
+  code?: string;
   concepts?: Array<{
     id: string;
     x: number;
@@ -87,6 +90,8 @@ type ConceptPositionPatchResponse = {
 type GhostCreateConceptResponse = {
   ok?: boolean;
   revision?: number;
+  currentRevision?: number;
+  code?: string;
   concept?: {
     id: string;
     title: string;
@@ -99,6 +104,16 @@ type GhostCreateConceptResponse = {
   } | null;
   error?: string;
 };
+
+class GraphRevisionConflictError extends Error {
+  readonly currentRevision: number | null;
+
+  constructor(message: string, currentRevision: number | null) {
+    super(message);
+    this.name = "GraphRevisionConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
 
 type ConceptDragSession = {
   conceptId: string;
@@ -161,6 +176,7 @@ type GraphCanvasRuntimeProps = {
   locale: SupportedLocale;
   map: MapDetail;
   graphMetrics: GraphMetrics;
+  canEditGraph: boolean;
   selection: InspectorSelection;
   interactionMode: CanvasInteractionMode;
   connectLinkSourceId: string | null;
@@ -178,6 +194,7 @@ export function GraphCanvasRuntime({
   locale,
   map,
   graphMetrics,
+  canEditGraph,
   selection,
   interactionMode,
   connectLinkSourceId,
@@ -231,6 +248,8 @@ export function GraphCanvasRuntime({
   const snapshotRequestControllerRef = useRef<AbortController | null>(null);
   const snapshotRequestIdRef = useRef(0);
   const positionSaveRequestIdRef = useRef(0);
+  const pendingRemoteSnapshotRefreshRef = useRef(false);
+  const hasRealtimeSubscriptionRef = useRef(false);
   const ghostCreateControllersRef = useRef<Map<string, AbortController>>(new Map());
   const ghostCreateInFlightIdsRef = useRef<Set<string>>(new Set());
   const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -483,6 +502,42 @@ export function GraphCanvasRuntime({
     [map.id, setSnapshot]
   );
 
+  const hasActiveDragMutation = useCallback(() => {
+    const phase = dragStateRef.current.phase;
+    return phase === "press" || phase === "dragging" || phase === "saving";
+  }, []);
+
+  const queueRemoteSnapshotRefresh = useCallback(
+    (remoteRevision?: number | null) => {
+      const currentRevision = snapshotRef.current?.revision ?? -1;
+      if (
+        typeof remoteRevision === "number" &&
+        Number.isFinite(remoteRevision) &&
+        remoteRevision <= currentRevision
+      ) {
+        return;
+      }
+
+      if (hasActiveDragMutation()) {
+        pendingRemoteSnapshotRefreshRef.current = true;
+        return;
+      }
+
+      pendingRemoteSnapshotRefreshRef.current = false;
+      void fetchLatestSnapshot();
+    },
+    [fetchLatestSnapshot, hasActiveDragMutation]
+  );
+
+  const flushPendingRemoteSnapshotRefresh = useCallback(() => {
+    if (!pendingRemoteSnapshotRefreshRef.current || hasActiveDragMutation()) {
+      return;
+    }
+
+    pendingRemoteSnapshotRefreshRef.current = false;
+    void fetchLatestSnapshot();
+  }, [fetchLatestSnapshot, hasActiveDragMutation]);
+
   useEffect(() => {
     if (snapshot !== null) {
       setIsSnapshotLoading(false);
@@ -491,6 +546,64 @@ export function GraphCanvasRuntime({
 
     void fetchLatestSnapshot();
   }, [fetchLatestSnapshot, snapshot]);
+
+  useEffect(() => {
+    if (dragState.phase !== "idle") {
+      return;
+    }
+
+    flushPendingRemoteSnapshotRefresh();
+  }, [dragState.phase, flushPendingRemoteSnapshotRefresh]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel(`map-runtime-${map.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "maps",
+          filter: `id=eq.${map.id}`,
+        },
+        (payload) => {
+          const nextRevision =
+            typeof payload.new === "object" &&
+            payload.new !== null &&
+            "graphRevision" in payload.new &&
+            typeof (payload.new as { graphRevision?: unknown }).graphRevision === "number"
+              ? (payload.new as { graphRevision: number }).graphRevision
+              : null;
+
+          queueRemoteSnapshotRefresh(nextRevision);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (hasRealtimeSubscriptionRef.current) {
+            queueRemoteSnapshotRefresh();
+          } else {
+            hasRealtimeSubscriptionRef.current = true;
+          }
+        }
+      });
+
+    const handleWindowFocus = () => {
+      queueRemoteSnapshotRefresh();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      void supabase.removeChannel(channel);
+    };
+  }, [map.id, queueRemoteSnapshotRefresh]);
 
   // --- Map Coordinates Save Logic ---
   const clearPositionRetryTimer = useCallback(() => {
@@ -555,7 +668,10 @@ export function GraphCanvasRuntime({
         x: Math.round(update.x),
         y: Math.round(update.y),
       }));
-      const payload = JSON.stringify({ positions: normalizedUpdates });
+      const payload = JSON.stringify({
+        expectedRevision: snapshotRef.current?.revision ?? 0,
+        positions: normalizedUpdates,
+      });
       const response = await fetch(`/api/maps/${map.id}/concepts/positions`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -565,6 +681,13 @@ export function GraphCanvasRuntime({
       const body = (await response.json().catch(() => null)) as
         | ConceptPositionPatchResponse
         | null;
+
+      if (response.status === 409) {
+        throw new GraphRevisionConflictError(
+          body?.error ?? "Map changed since your last snapshot. Refresh and try again.",
+          typeof body?.currentRevision === "number" ? body.currentRevision : null
+        );
+      }
 
       if (!response.ok || !body?.ok) {
         throw new Error(body?.error ?? "Unable to update concept positions.");
@@ -708,6 +831,37 @@ export function GraphCanvasRuntime({
           return;
         }
 
+        if (error instanceof GraphRevisionConflictError) {
+          clearPositionRetryTimer();
+          pendingRemoteSnapshotRefreshRef.current = false;
+          void fetchLatestSnapshot();
+
+          const errorState = reducePositionPersistenceState(
+            {
+              phase: "saving",
+              retryCount,
+              errorMessage: null,
+            },
+            {
+              type: "error",
+              message: error.message,
+            }
+          );
+
+          if (dragSessionRef.current === null) {
+            setDragState({
+              ...dragStateRef.current,
+              phase: errorState.phase,
+              conceptId,
+              currentGraphPosition: { x, y },
+              pendingLongPress: false,
+              retryCount: errorState.retryCount,
+              errorMessage: errorState.errorMessage,
+            });
+          }
+          return;
+        }
+
         if (retryCount < 1) {
           clearPositionRetryTimer();
           positionRetryTimerRef.current = setTimeout(() => {
@@ -751,6 +905,7 @@ export function GraphCanvasRuntime({
     },
     [
       clearPositionRetryTimer,
+      fetchLatestSnapshot,
       messages.canvas.positionSaveFailed,
       resetDragState,
       sendPositionsBatch,
@@ -1370,6 +1525,10 @@ export function GraphCanvasRuntime({
 
   const prepareConceptDragSession = useCallback(
     (conceptId: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!canEditGraph) {
+        return;
+      }
+
       const pointerType = deriveGesturePointerType(event.nativeEvent);
 
       if (interactionModeRef.current !== "inspect" || isZoomedOutRef.current) {
@@ -1524,6 +1683,7 @@ export function GraphCanvasRuntime({
     [
       clearPositionRetryTimer,
       clearAutoPanDelayTimer,
+      canEditGraph,
       completeConceptDrag,
       resetDragState,
       setDragState,
@@ -1640,7 +1800,7 @@ export function GraphCanvasRuntime({
       }
     },
     {
-      enabled: interactionMode === "inspect" && !isZoomedOut,
+      enabled: canEditGraph && interactionMode === "inspect" && !isZoomedOut,
       filterTaps: true,
       pointer: {
         buttons: 1,
@@ -1729,6 +1889,10 @@ export function GraphCanvasRuntime({
     sigma.on("clickNode", (e) => {
       const ghost = ghostsRef.current.find((candidate) => candidate.id === e.node);
       if (ghost) {
+        if (!canEditGraph) {
+          return;
+        }
+
         if (ghostCreateInFlightIdsRef.current.has(ghost.id)) {
           return;
         }
@@ -1744,6 +1908,7 @@ export function GraphCanvasRuntime({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            expectedRevision: snapshotRef.current?.revision ?? 0,
             title: ghost.title || "Unknown",
             conceptType: ghost.conceptType || "custom",
             summary: ghost.summary,
@@ -1760,6 +1925,16 @@ export function GraphCanvasRuntime({
 
             if (controller.signal.aborted) {
               return;
+            }
+
+            if (response.status === 409) {
+              void fetchLatestSnapshot();
+              throw new GraphRevisionConflictError(
+                data?.error ?? "Map changed since your last snapshot. Refresh and try again.",
+                typeof data?.currentRevision === "number"
+                  ? data.currentRevision
+                  : null
+              );
             }
 
             if (!response.ok || !data?.ok || !data.concept) {
@@ -1805,7 +1980,7 @@ export function GraphCanvasRuntime({
 
     sigma.on("clickStage", (e) => {
       const mode = interactionModeRef.current;
-      if (mode === "placeConcept") {
+      if (mode === "placeConcept" && canEditGraph) {
         const graphCoords = sigma.viewportToGraph({ x: e.event.x, y: e.event.y });
         onOpenCreateConceptRef.current(
           Math.round(graphCoords.x),
@@ -1852,6 +2027,7 @@ export function GraphCanvasRuntime({
     ensureStableSigmaBBox,
     fetchLatestSnapshot,
     handleConceptActivation,
+    canEditGraph,
     map.id,
     mergeCreatedConceptIntoSnapshot,
     setGhosts,

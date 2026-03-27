@@ -5,6 +5,7 @@ const coordinateSchema = z.coerce.number().int().min(-2000).max(4000);
 export const createConceptSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
+  expectedRevision: z.coerce.number().int().min(0),
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum([
     "thought",
@@ -24,6 +25,7 @@ export const createConceptSchema = z.object({
 export const updateConceptSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
+  expectedRevision: z.coerce.number().int().min(0),
   conceptId: z.string().uuid(),
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum([
@@ -44,6 +46,7 @@ export const updateConceptSchema = z.object({
 export const repositionConceptSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
+  expectedRevision: z.coerce.number().int().min(0),
   conceptId: z.string().uuid(),
   x: coordinateSchema,
   y: coordinateSchema,
@@ -52,5 +55,6 @@ export const repositionConceptSchema = z.object({
 export const archiveConceptSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
+  expectedRevision: z.coerce.number().int().min(0),
   conceptId: z.string().uuid(),
 });

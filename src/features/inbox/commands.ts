@@ -2,7 +2,20 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import {
   buildInboxRouteDraft,
@@ -42,7 +55,7 @@ import {
 } from "@/features/inbox/schemas";
 import {
   requireActiveMap,
-  requireWorkspaceMembership,
+  requireWorkspaceGraphEditAccess,
 } from "@/features/maps/access";
 import { db } from "@/shared/db/client";
 import {
@@ -107,6 +120,7 @@ type InboxFragmentRow = typeof inboxFragments.$inferSelect;
 type InboxProcessingAttemptInput = {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   triggerKind: InboxPipelineAttemptTriggerKind;
   clarificationContext?: InboxClarificationContextEntry[];
   clarificationRequestId?: string | null;
@@ -127,6 +141,7 @@ type InboxAttemptRecord = {
 type PersistRouteStepInput = {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   requestedRoute: ReturnType<typeof buildInboxRouteDraft>["route"];
   effectiveRoute: ReturnType<typeof buildInboxRouteDraft>["route"];
   persistClarificationDraft: boolean;
@@ -141,6 +156,7 @@ type PersistRouteStepResult = {
 type PersistTerminalStepInput = {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   effectiveRoute: ReturnType<typeof buildInboxRouteDraft>["route"];
   packetId: string | null;
   packetStatus: string | null;
@@ -152,6 +168,28 @@ type PersistTerminalStepResult = {
   packetStatus: string | null;
   promotedBatchId: string | null;
 };
+
+type InboxProcessingLease = {
+  claimId: string;
+  attemptNo: number;
+  item: InboxItemRow;
+};
+
+const INBOX_PROCESSING_LEASE_MS = 60_000;
+const PROCESSABLE_INBOX_ITEM_STATUSES = [
+  "received",
+  "persisted",
+  "normalized",
+  "segmented",
+  "interpreted",
+  "scored",
+  "resolved",
+  "failed_needs_review",
+] satisfies InboxItemStatus[];
+const INBOX_ACTIVE_LEASE_CONFLICT_MESSAGE =
+  "Inbox item is already being processed by another worker.";
+const INBOX_STALE_LEASE_MESSAGE =
+  "Inbox processing lease expired or was claimed by another worker.";
 
 function hashValue(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -219,11 +257,11 @@ async function requireWorkspaceMembershipOrThrow(
   userId: string
 ) {
   try {
-    return await requireWorkspaceMembership(workspaceId, userId);
+    return await requireWorkspaceGraphEditAccess(workspaceId, userId);
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message === "Workspace access required."
+      error.message === "Map edit access required."
     ) {
       throw getForbiddenError(
         "Workspace access required.",
@@ -267,28 +305,193 @@ async function getExistingMapConcepts(mapId: string, workspaceId: string) {
     .orderBy(asc(concepts.title));
 }
 
-async function getNextAttemptNo(itemId: string) {
-  const [existingEventAttempt, existingPipelineAttempt] = await Promise.all([
-    db
-      .select({ attemptNo: inboxWorkflowEvents.attemptNo })
-      .from(inboxWorkflowEvents)
-      .where(eq(inboxWorkflowEvents.itemId, itemId))
-      .orderBy(desc(inboxWorkflowEvents.attemptNo))
-      .limit(1),
-    db
-      .select({ attemptNo: inboxPipelineAttempts.attemptNo })
-      .from(inboxPipelineAttempts)
-      .where(eq(inboxPipelineAttempts.itemId, itemId))
-      .orderBy(desc(inboxPipelineAttempts.attemptNo))
-      .limit(1),
-  ]);
+function getInboxLeaseExpiry(now: Date) {
+  return new Date(now.getTime() + INBOX_PROCESSING_LEASE_MS);
+}
 
+function isTerminalInboxItemStatus(status: InboxItemStatus) {
   return (
-    Math.max(
-      existingEventAttempt[0]?.attemptNo ?? 0,
-      existingPipelineAttempt[0]?.attemptNo ?? 0
-    ) + 1
+    status === "promoted" ||
+    status === "ready_for_review" ||
+    status === "applied" ||
+    status === "parked" ||
+    status === "discarded"
   );
+}
+
+async function failRunningInboxPipelineAttemptsTx(
+  tx: DbTransaction,
+  itemId: string
+) {
+  const finishedAt = new Date();
+
+  await tx
+    .update(inboxPipelineAttempts)
+    .set({
+      status: "failed",
+      failureCode: "conflict",
+      failureMessage: INBOX_STALE_LEASE_MESSAGE,
+      finishedAt,
+    })
+    .where(
+      and(
+        eq(inboxPipelineAttempts.itemId, itemId),
+        eq(inboxPipelineAttempts.status, "running")
+      )
+    );
+}
+
+async function acquireInboxProcessingLeaseTx(
+  tx: DbTransaction,
+  input: {
+    itemId: string;
+    workspaceId: string;
+    actorUserId?: string;
+    allowedStatuses: InboxItemStatus[];
+  }
+): Promise<InboxProcessingLease> {
+  const now = new Date();
+  const claimId = randomUUID();
+  const leaseExpiresAt = getInboxLeaseExpiry(now);
+
+  const [claimedItem] = await tx
+    .update(inboxItems)
+    .set({
+      processingClaimId: claimId,
+      processingClaimedByUserId: input.actorUserId ?? null,
+      processingLeaseExpiresAt: leaseExpiresAt,
+      processingAttemptSeq: sql`${inboxItems.processingAttemptSeq} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(inboxItems.id, input.itemId),
+        eq(inboxItems.workspaceId, input.workspaceId),
+        inArray(inboxItems.status, input.allowedStatuses),
+        or(
+          isNull(inboxItems.processingClaimId),
+          isNull(inboxItems.processingLeaseExpiresAt),
+          lt(inboxItems.processingLeaseExpiresAt, now)
+        )
+      )
+    )
+    .returning();
+
+  if (claimedItem) {
+    await failRunningInboxPipelineAttemptsTx(tx, claimedItem.id);
+
+    return {
+      claimId,
+      attemptNo: claimedItem.processingAttemptSeq,
+      item: claimedItem,
+    };
+  }
+
+  const [currentItem] = await tx
+    .select({
+      id: inboxItems.id,
+      status: inboxItems.status,
+      processingClaimId: inboxItems.processingClaimId,
+      processingLeaseExpiresAt: inboxItems.processingLeaseExpiresAt,
+    })
+    .from(inboxItems)
+    .where(
+      and(
+        eq(inboxItems.id, input.itemId),
+        eq(inboxItems.workspaceId, input.workspaceId)
+      )
+    )
+    .limit(1);
+
+  if (!currentItem) {
+    throw getNotFoundError("Inbox item not found.", "inbox_item_not_found");
+  }
+
+  if (!input.allowedStatuses.includes(currentItem.status)) {
+    throw getConflictError(
+      currentItem.status === "clarification_requested"
+        ? "Inbox item is waiting for a clarification answer and cannot be blindly reprocessed."
+        : "Inbox item is not in a processable state.",
+      currentItem.status === "clarification_requested"
+        ? "inbox_clarification_state_conflict"
+        : "inbox_process_state_conflict"
+    );
+  }
+
+  if (
+    currentItem.processingClaimId &&
+    currentItem.processingLeaseExpiresAt &&
+    currentItem.processingLeaseExpiresAt >= now
+  ) {
+    throw getConflictError(
+      INBOX_ACTIVE_LEASE_CONFLICT_MESSAGE,
+      "inbox_process_state_conflict"
+    );
+  }
+
+  throw getConflictError(
+    "Inbox item changed while processing was starting. Refresh and try again.",
+    "inbox_process_state_conflict"
+  );
+}
+
+async function renewInboxProcessingLeaseTx(
+  tx: DbTransaction,
+  input: {
+    itemId: string;
+    workspaceId: string;
+    claimId: string;
+  }
+) {
+  const now = new Date();
+  const leaseExpiresAt = getInboxLeaseExpiry(now);
+
+  const [claimedItem] = await tx
+    .update(inboxItems)
+    .set({
+      processingLeaseExpiresAt: leaseExpiresAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(inboxItems.id, input.itemId),
+        eq(inboxItems.workspaceId, input.workspaceId),
+        eq(inboxItems.processingClaimId, input.claimId),
+        gt(inboxItems.processingLeaseExpiresAt, now)
+      )
+    )
+    .returning({
+      id: inboxItems.id,
+    });
+
+  if (!claimedItem) {
+    throw getConflictError(
+      INBOX_STALE_LEASE_MESSAGE,
+      "inbox_process_state_conflict"
+    );
+  }
+}
+
+async function releaseInboxProcessingLease(input: {
+  itemId: string;
+  workspaceId: string;
+  claimId: string;
+}) {
+  await db
+    .update(inboxItems)
+    .set({
+      processingClaimId: null,
+      processingClaimedByUserId: null,
+      processingLeaseExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(inboxItems.id, input.itemId),
+        eq(inboxItems.workspaceId, input.workspaceId),
+        eq(inboxItems.processingClaimId, input.claimId)
+      )
+    );
 }
 
 function measureLatencyMs(startedAt: Date, finishedAt: Date) {
@@ -671,9 +874,16 @@ async function getResolveContextForItem(item: InboxItemRow) {
 async function persistRawStep(
   item: InboxItemRow,
   attemptNo: number,
+  claimId: string,
   rawHash: string
 ) {
   await db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: item.id,
+      workspaceId: item.workspaceId,
+      claimId,
+    });
+
     await tx
       .update(inboxItems)
       .set({
@@ -699,11 +909,18 @@ async function persistRawStep(
 async function persistNormalizeStep(input: {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   normalizer: ReturnType<typeof normalizeInboxText>;
   inputHash: string;
   outputHash: string;
 }) {
   await db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     await tx
       .update(inboxItems)
       .set({
@@ -732,11 +949,18 @@ async function persistNormalizeStep(input: {
 async function persistSegmentStep(input: {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   analysisFragments: ReturnType<
     typeof buildInboxSegmentationDraft
   >["analysisFragments"];
 }) {
   return db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     await clearInboxAnalysisStateTx(tx, input.item.id);
 
     const fragmentRows = await tx
@@ -781,6 +1005,7 @@ async function persistSegmentStep(input: {
 async function persistInterpretStep(input: {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   fragmentRows: InboxFragmentRow[];
   interpretation: Awaited<
     ReturnType<typeof extractInboxInterpretation>
@@ -791,6 +1016,12 @@ async function persistInterpretStep(input: {
   metadata: Record<string, unknown>;
 }) {
   return db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     const fragmentIdByOrdinal = new Map(
       input.fragmentRows.map((row) => [row.ordinal, row.id] as const)
     );
@@ -858,9 +1089,16 @@ async function persistInterpretStep(input: {
 async function persistScoreStep(input: {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   scorer: ReturnType<typeof scoreInboxInterpretation>;
 }) {
   await db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     await tx
       .update(inboxItems)
       .set({
@@ -890,9 +1128,16 @@ async function persistScoreStep(input: {
 async function persistResolveStep(input: {
   item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   resolver: ReturnType<typeof resolveInboxInterpretation>;
 }) {
   await db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     if (input.resolver.mergeCandidates.length > 0) {
       await tx.insert(inboxMergeCandidates).values(
         input.resolver.mergeCandidates.map((candidate) => ({
@@ -931,6 +1176,12 @@ async function persistRouteStep(
   input: PersistRouteStepInput
 ): Promise<PersistRouteStepResult> {
   return db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     let packetId: string | null = null;
     let clarificationRequestId: string | null = null;
 
@@ -1000,6 +1251,12 @@ async function persistTerminalStep(
   input: PersistTerminalStepInput
 ): Promise<PersistTerminalStepResult> {
   return db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
     let packetStatus = input.packetStatus;
     let promotedBatchId: string | null = null;
 
@@ -1053,39 +1310,53 @@ async function persistTerminalStep(
 }
 
 async function persistEmitStatusStep(input: {
-  itemId: string;
+  item: InboxItemRow;
   attemptNo: number;
+  claimId: string;
   eventType: string;
   terminalStatus: InboxItemStatus;
 }) {
-  await insertWorkflowEvent({
-    itemId: input.itemId,
-    attemptNo: input.attemptNo,
-    eventType: input.eventType,
-    stepName: "emit_status",
-    status: "completed",
-    payload: {
-      finalStatus: input.terminalStatus,
-    },
+  await db.transaction(async (tx) => {
+    await renewInboxProcessingLeaseTx(tx, {
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
+
+    await tx.insert(inboxWorkflowEvents).values({
+      itemId: input.item.id,
+      attemptNo: input.attemptNo,
+      eventType: input.eventType,
+      stepName: "emit_status",
+      status: "completed",
+      payload: {
+        finalStatus: input.terminalStatus,
+      },
+    });
   });
 }
 
 async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
   const clarificationContext = input.clarificationContext ?? [];
   const recorder = buildDbInboxStepRecorder();
-  const attempt = await createInboxPipelineAttempt({
-    itemId: input.item.id,
-    attemptNo: input.attemptNo,
-    triggerKind: input.triggerKind,
-    ...(input.clarificationRequestId === undefined
-      ? {}
-      : { clarificationRequestId: input.clarificationRequestId }),
-    ...(input.clarificationAnswerId === undefined
-      ? {}
-      : { clarificationAnswerId: input.clarificationAnswerId }),
-  });
+  let attempt: InboxAttemptRecord | null = null;
+  let detail: Awaited<
+    ReturnType<typeof getInboxItemDetailQuery>
+  > | null = null;
 
   try {
+    attempt = await createInboxPipelineAttempt({
+      itemId: input.item.id,
+      attemptNo: input.attemptNo,
+      triggerKind: input.triggerKind,
+      ...(input.clarificationRequestId === undefined
+        ? {}
+        : { clarificationRequestId: input.clarificationRequestId }),
+      ...(input.clarificationAnswerId === undefined
+        ? {}
+        : { clarificationAnswerId: input.clarificationAnswerId }),
+    });
+
     const rawHash = hashValue(input.item.rawText);
 
     await runRecordedInboxStep(
@@ -1101,7 +1372,12 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         },
       },
       async () => {
-        await persistRawStep(input.item, input.attemptNo, rawHash);
+        await persistRawStep(
+          input.item,
+          input.attemptNo,
+          input.claimId,
+          rawHash
+        );
 
         return {
           result: null,
@@ -1132,6 +1408,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         await persistNormalizeStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           normalizer: result,
           inputHash: rawHash,
           outputHash,
@@ -1169,6 +1446,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         const fragmentRows = await persistSegmentStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           analysisFragments: result.analysisFragments,
         });
 
@@ -1220,6 +1498,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         await persistInterpretStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           fragmentRows: segmentation.fragmentRows,
           interpretation: extraction.interpretation,
           clarificationFragmentCount:
@@ -1268,6 +1547,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         await persistScoreStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           scorer: result,
         });
 
@@ -1310,6 +1590,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         await persistResolveStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           resolver,
         });
 
@@ -1359,6 +1640,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         const routePersistence = await persistRouteStep({
           item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           requestedRoute,
           effectiveRoute,
           persistClarificationDraft: input.persistClarificationDraft,
@@ -1415,6 +1697,7 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         const result = await persistTerminalStep({
           item: itemForTerminal,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           effectiveRoute: routeState.effectiveRoute,
           packetId: routeState.routePersistence.packetId,
           packetStatus: routeState.routePersistence.packetStatus,
@@ -1458,8 +1741,9 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
       },
       async () => {
         await persistEmitStatusStep({
-          itemId: input.item.id,
+          item: input.item,
           attemptNo: input.attemptNo,
+          claimId: input.claimId,
           eventType: terminalState.terminalEventType,
           terminalStatus: terminalState.terminalStatus,
         });
@@ -1485,40 +1769,65 @@ async function runInboxProcessingAttempt(input: InboxProcessingAttemptInput) {
         routeState.routePersistence.clarificationRequestId ??
         attempt.clarificationRequestId,
     });
-  } catch (error) {
-    const failure = await failInboxPipelineAttempt({
-      attemptId: attempt.id,
-      startedAt: attempt.startedAt,
-      error,
-    });
-
-    await db
-      .update(inboxItems)
-      .set({
-        status: "failed_needs_review",
-        updatedAt: new Date(),
-      })
-      .where(eq(inboxItems.id, input.item.id));
-
-    await insertWorkflowEvent({
+    detail = await getInboxItemDetailQuery({
+      workspaceId: input.item.workspaceId,
       itemId: input.item.id,
-      attemptNo: input.attemptNo,
-      eventType: "item.failed",
-      stepName: "emit_status",
-      status: "failed",
-      payload: {
-        message: failure.message,
-        failureCode: failure.code,
-      },
     });
+  } catch (error) {
+    if (attempt) {
+      const failure = await failInboxPipelineAttempt({
+        attemptId: attempt.id,
+        startedAt: attempt.startedAt,
+        error,
+      });
+
+      try {
+        await db.transaction(async (tx) => {
+          await renewInboxProcessingLeaseTx(tx, {
+            itemId: input.item.id,
+            workspaceId: input.item.workspaceId,
+            claimId: input.claimId,
+          });
+
+          await tx
+            .update(inboxItems)
+            .set({
+              status: "failed_needs_review",
+              updatedAt: new Date(),
+            })
+            .where(eq(inboxItems.id, input.item.id));
+
+          await tx.insert(inboxWorkflowEvents).values({
+            itemId: input.item.id,
+            attemptNo: input.attemptNo,
+            eventType: "item.failed",
+            stepName: "emit_status",
+            status: "failed",
+            payload: {
+              message: failure.message,
+              failureCode: failure.code,
+            },
+          });
+        });
+      } catch (leaseError) {
+        if (
+          !isInboxCommandError(leaseError) ||
+          leaseError.code !== "inbox_process_state_conflict"
+        ) {
+          throw leaseError;
+        }
+      }
+    }
 
     throw error;
+  } finally {
+    await releaseInboxProcessingLease({
+      itemId: input.item.id,
+      workspaceId: input.item.workspaceId,
+      claimId: input.claimId,
+    });
   }
 
-  const detail = await getInboxItemDetailQuery({
-    workspaceId: input.item.workspaceId,
-    itemId: input.item.id,
-  });
   if (!detail) {
     throw new Error("Processed inbox item detail could not be loaded.");
   }
@@ -1683,6 +1992,13 @@ export async function materializePromotedPacketCommand(itemId: string) {
 
 export async function processInboxItemCommand(input: ProcessInboxItemInput) {
   const parsed = processInboxItemInputSchema.parse(input);
+
+  if (parsed.actorUserId) {
+    await requireWorkspaceMembershipOrThrow(
+      parsed.workspaceId,
+      parsed.actorUserId
+    );
+  }
   const [item] = await db
     .select()
     .from(inboxItems)
@@ -1705,13 +2021,7 @@ export async function processInboxItemCommand(input: ProcessInboxItemInput) {
     );
   }
 
-  if (
-    item.status === "promoted" ||
-    item.status === "ready_for_review" ||
-    item.status === "applied" ||
-    item.status === "parked" ||
-    item.status === "discarded"
-  ) {
+  if (isTerminalInboxItemStatus(item.status)) {
     const detail = await getInboxItemDetailQuery({
       workspaceId: item.workspaceId,
       itemId: item.id,
@@ -1723,11 +2033,21 @@ export async function processInboxItemCommand(input: ProcessInboxItemInput) {
     return detail;
   }
 
-  const attemptNo = await getNextAttemptNo(item.id);
+  const lease = await db.transaction(async (tx) =>
+    acquireInboxProcessingLeaseTx(tx, {
+      itemId: item.id,
+      workspaceId: item.workspaceId,
+      ...(parsed.actorUserId === undefined
+        ? {}
+        : { actorUserId: parsed.actorUserId }),
+      allowedStatuses: PROCESSABLE_INBOX_ITEM_STATUSES,
+    })
+  );
 
   return runInboxProcessingAttempt({
-    item,
-    attemptNo,
+    item: lease.item,
+    attemptNo: lease.attemptNo,
+    claimId: lease.claimId,
     triggerKind: "manual_process",
     persistClarificationDraft: true,
   });
@@ -1738,148 +2058,142 @@ export async function answerInboxClarificationCommand(
 ) {
   const parsed = answerInboxClarificationWithScopeInputSchema.parse(input);
 
-  const [request] = await db
-    .select()
-    .from(inboxClarificationRequests)
-    .where(eq(inboxClarificationRequests.id, parsed.requestId))
-    .limit(1);
-
-  if (!request) {
-    throw getNotFoundError(
-      "Clarification request not found.",
-      "inbox_clarification_request_not_found"
-    );
-  }
-
-  const [item] = await db
-    .select()
-    .from(inboxItems)
-    .where(
-      and(
-        eq(inboxItems.id, request.itemId),
-        eq(inboxItems.workspaceId, parsed.workspaceId)
-      )
-    )
-    .limit(1);
-
-  if (!item) {
-    throw getNotFoundError(
-      "Clarification request not found.",
-      "inbox_clarification_request_not_found"
-    );
-  }
-
-  if (request.status !== "pending") {
-    throw getConflictError(
-      "Clarification request is no longer pending.",
-      "inbox_clarification_state_conflict"
-    );
-  }
-
-  if (item.status !== "clarification_requested") {
-    throw getConflictError(
-      "Parent inbox item is not waiting for a clarification answer.",
-      "inbox_clarification_state_conflict"
+  if (parsed.actorUserId) {
+    await requireWorkspaceMembershipOrThrow(
+      parsed.workspaceId,
+      parsed.actorUserId
     );
   }
 
   const answerId = randomUUID();
-  const attemptNo = await getNextAttemptNo(item.id);
   const answeredAt = new Date();
-
-  await db.transaction(async (tx) => {
-    const [liveRequest] = await tx
-      .select()
-      .from(inboxClarificationRequests)
-      .where(eq(inboxClarificationRequests.id, parsed.requestId))
-      .limit(1);
-
-    if (!liveRequest) {
-      throw getNotFoundError(
-        "Clarification request not found.",
-        "inbox_clarification_request_not_found"
-      );
-    }
-
-    const [liveItem] = await tx
-      .select()
-      .from(inboxItems)
+  const { lease, clarificationRequest } = await db.transaction(async (tx) => {
+    const [updatedRequest] = await tx
+      .update(inboxClarificationRequests)
+      .set({
+        status: "answered",
+        answeredAt,
+      })
       .where(
         and(
-          eq(inboxItems.id, liveRequest.itemId),
-          eq(inboxItems.workspaceId, parsed.workspaceId)
+          eq(inboxClarificationRequests.id, parsed.requestId),
+          eq(inboxClarificationRequests.status, "pending")
         )
       )
-      .limit(1);
+      .returning({
+        id: inboxClarificationRequests.id,
+        itemId: inboxClarificationRequests.itemId,
+        question: inboxClarificationRequests.question,
+      });
 
-    if (!liveItem) {
-      throw getNotFoundError(
-        "Clarification request not found.",
-        "inbox_clarification_request_not_found"
-      );
-    }
+    if (!updatedRequest) {
+      const [existingRequest] = await tx
+        .select({ id: inboxClarificationRequests.id })
+        .from(inboxClarificationRequests)
+        .where(eq(inboxClarificationRequests.id, parsed.requestId))
+        .limit(1);
 
-    if (liveRequest.status !== "pending") {
+      if (!existingRequest) {
+        throw getNotFoundError(
+          "Clarification request not found.",
+          "inbox_clarification_request_not_found"
+        );
+      }
+
       throw getConflictError(
         "Clarification request is no longer pending.",
         "inbox_clarification_state_conflict"
       );
     }
 
-    if (liveItem.status !== "clarification_requested") {
-      throw getConflictError(
-        "Parent inbox item is not waiting for a clarification answer.",
-        "inbox_clarification_state_conflict"
-      );
+    try {
+      await tx.insert(inboxClarificationAnswers).values({
+        id: answerId,
+        requestId: updatedRequest.id,
+        answerText: parsed.answerText,
+      });
+    } catch (error) {
+      if (
+        isUniqueConstraintError(
+          error,
+          "inbox_clarification_answers_request_key"
+        )
+      ) {
+        throw getConflictError(
+          "Clarification request is no longer pending.",
+          "inbox_clarification_state_conflict"
+        );
+      }
+
+      throw error;
     }
 
-    await tx.insert(inboxClarificationAnswers).values({
-      id: answerId,
-      requestId: liveRequest.id,
-      answerText: parsed.answerText,
-    });
+    let nextLease: InboxProcessingLease;
 
-    await tx
-      .update(inboxClarificationRequests)
-      .set({
-        status: "answered",
-        answeredAt,
-      })
-      .where(eq(inboxClarificationRequests.id, liveRequest.id));
+    try {
+      nextLease = await acquireInboxProcessingLeaseTx(tx, {
+        itemId: updatedRequest.itemId,
+        workspaceId: parsed.workspaceId,
+        ...(parsed.actorUserId === undefined
+          ? {}
+          : { actorUserId: parsed.actorUserId }),
+        allowedStatuses: ["clarification_requested"],
+      });
+    } catch (error) {
+      if (isInboxCommandError(error)) {
+        if (error.code === "inbox_item_not_found") {
+          throw getNotFoundError(
+            "Clarification request not found.",
+            "inbox_clarification_request_not_found"
+          );
+        }
+
+        if (error.code === "inbox_process_state_conflict") {
+          throw getConflictError(
+            "Parent inbox item is not waiting for a clarification answer.",
+            "inbox_clarification_state_conflict"
+          );
+        }
+      }
+
+      throw error;
+    }
 
     await tx.insert(inboxWorkflowEvents).values({
-      itemId: liveItem.id,
-      attemptNo,
+      itemId: updatedRequest.itemId,
+      attemptNo: nextLease.attemptNo,
       eventType: "item.clarification_answered",
       stepName: "answer_clarification",
       status: "completed",
       payload: {
-        requestId: liveRequest.id,
+        requestId: updatedRequest.id,
         answerId,
       },
     });
 
-    await tx
-      .update(inboxItems)
-      .set({
-        updatedAt: answeredAt,
-      })
-      .where(eq(inboxItems.id, liveItem.id));
+    return {
+      lease: nextLease,
+      clarificationRequest: {
+        id: updatedRequest.id,
+        question: updatedRequest.question,
+      },
+    };
   });
 
   return runInboxProcessingAttempt({
-    item,
-    attemptNo,
+    item: lease.item,
+    attemptNo: lease.attemptNo,
+    claimId: lease.claimId,
     triggerKind: "clarification_rerun",
     clarificationContext: [
       {
-        requestId: request.id,
-        question: request.question,
+        requestId: clarificationRequest.id,
+        question: clarificationRequest.question,
         answerId,
         answerText: parsed.answerText,
       },
     ],
-    clarificationRequestId: request.id,
+    clarificationRequestId: clarificationRequest.id,
     clarificationAnswerId: answerId,
     persistClarificationDraft: false,
   });

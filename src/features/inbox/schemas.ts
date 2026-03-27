@@ -409,6 +409,7 @@ export const processInboxItemRequestSchema = inboxWorkspaceScopeSchema;
 
 export const processInboxItemInputSchema = inboxWorkspaceScopeSchema.extend({
   itemId: uuidSchema,
+  actorUserId: uuidSchema.optional(),
 });
 
 export const answerInboxClarificationRequestSchema =
@@ -419,6 +420,7 @@ export const answerInboxClarificationRequestSchema =
 export const answerInboxClarificationWithScopeInputSchema =
   answerInboxClarificationRequestSchema.extend({
     requestId: uuidSchema,
+    actorUserId: uuidSchema.optional(),
   });
 
 export const inboxWorkbenchCreateActionSchema = z.object({

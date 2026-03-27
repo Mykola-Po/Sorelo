@@ -22,7 +22,8 @@ import {
 export const workspaceRoleEnum = pgEnum("workspace_role", [
   "owner",
   "admin",
-  "member",
+  "viewer",
+  "editor",
 ]);
 export const projectStatusEnum = pgEnum("project_status", [
   "active",
@@ -362,7 +363,7 @@ export const workspaceMembers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    role: workspaceRoleEnum("role").notNull().default("member"),
+    role: workspaceRoleEnum("role").notNull().default("editor"),
     invitedByUserId: uuid("invited_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -1144,6 +1145,19 @@ export const inboxItems = appPrivateSchema.table(
     ambiguity: inboxScoreColumn("ambiguity"),
     risk: inboxScoreColumn("risk"),
     route: inboxRouteEnum("route"),
+    processingClaimId: uuid("processing_claim_id"),
+    processingClaimedByUserId: uuid("processing_claimed_by_user_id").references(
+      () => users.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    processingLeaseExpiresAt: timestamp("processing_lease_expires_at", {
+      withTimezone: true,
+    }),
+    processingAttemptSeq: integer("processing_attempt_seq")
+      .notNull()
+      .default(0),
     idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -1173,6 +1187,7 @@ export const inboxItems = appPrivateSchema.table(
     ),
     index("inbox_items_map_created_idx").on(table.mapId, table.createdAt.desc()),
     index("inbox_items_status_route_idx").on(table.status, table.route),
+    index("inbox_items_processing_lease_idx").on(table.processingLeaseExpiresAt),
   ]
 );
 
@@ -1301,7 +1316,12 @@ export const inboxClarificationRequests = appPrivateSchema.table(
     reason: text("reason").notNull(),
     status: inboxClarificationStatusEnum("status").notNull().default("pending"),
     answeredAt: timestamp("answered_at", { withTimezone: true }),
-  }
+  },
+  (table) => [
+    uniqueIndex("inbox_clarification_requests_item_pending_key")
+      .on(table.itemId)
+      .where(sql`${table.status} = 'pending'`),
+  ]
 );
 
 export const inboxClarificationAnswers = appPrivateSchema.table(
@@ -1415,6 +1435,9 @@ export const inboxPipelineAttempts = appPrivateSchema.table(
       table.failureCode,
       table.startedAt.desc()
     ),
+    uniqueIndex("inbox_pipeline_attempts_item_running_key")
+      .on(table.itemId)
+      .where(sql`${table.status} = 'running'`),
   ]
 );
 

@@ -13,8 +13,8 @@ describe("workspace utils", () => {
   });
 
   it("prevents non-admin role transitions and owner rewrites", () => {
-    expect(canTransitionMemberRole("member", "member", "admin")).toBe(false);
-    expect(canTransitionMemberRole("admin", "member", "admin")).toBe(true);
-    expect(canTransitionMemberRole("owner", "owner", "member")).toBe(false);
+    expect(canTransitionMemberRole("viewer", "editor", "admin")).toBe(false);
+    expect(canTransitionMemberRole("admin", "viewer", "editor")).toBe(true);
+    expect(canTransitionMemberRole("owner", "owner", "editor")).toBe(false);
   });
 });

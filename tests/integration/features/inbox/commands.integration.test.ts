@@ -292,6 +292,41 @@ describe.sequential("inbox commands integration", () => {
     );
   });
 
+  it("returns a conflict when another worker already holds the processing lease", async () => {
+    const scope = await createInboxScopeFixture("lease");
+    const created = await createInboxItemCommand({
+      userId: scope.userId,
+      workspaceId: scope.workspaceId,
+      mapId: scope.mapId,
+      sourceType: "manual_note",
+      rawText: "This item is already being processed elsewhere.",
+      sourceRef: null,
+      idempotencyKey: `lease-${randomUUID()}`,
+    });
+
+    await db
+      .update(inboxItems)
+      .set({
+        processingClaimId: randomUUID(),
+        processingClaimedByUserId: scope.userId,
+        processingLeaseExpiresAt: new Date(Date.now() + 60_000),
+        updatedAt: new Date(),
+      })
+      .where(eq(inboxItems.id, created.item.id));
+
+    await expectInboxCommandError(
+      processInboxItemCommand({
+        workspaceId: scope.workspaceId,
+        itemId: created.item.id,
+      }),
+      {
+        statusCode: 409,
+        code: "inbox_process_state_conflict",
+        message: "Inbox item is already being processed by another worker.",
+      }
+    );
+  });
+
   it("reruns clarification answers inside the declared workspace and blocks cross-workspace answers", async () => {
     const scope = await createInboxScopeFixture("clarification");
     const otherScope = await createInboxScopeFixture("clarification-other");

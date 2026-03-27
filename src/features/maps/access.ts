@@ -2,6 +2,11 @@ import "server-only";
 
 import { and, eq, isNull } from "drizzle-orm";
 
+import {
+  canEditMapGraph,
+  canManageMapMetadata,
+  canReviewLearning,
+} from "@/shared/auth/policies";
 import { db } from "@/shared/db/client";
 import { maps, workspaceMembers } from "@/shared/db/schema";
 
@@ -25,6 +30,54 @@ export async function requireWorkspaceMembership(
   if (!membership) {
     throw new Error("Workspace access required.");
   }
+
+  return membership;
+}
+
+function assertWorkspaceCapability(
+  allowed: boolean,
+  message: string
+): void {
+  if (!allowed) {
+    throw new Error(message);
+  }
+}
+
+export async function requireWorkspaceGraphEditAccess(
+  workspaceId: string,
+  userId: string
+) {
+  const membership = await requireWorkspaceMembership(workspaceId, userId);
+  assertWorkspaceCapability(
+    canEditMapGraph(membership.role),
+    "Map edit access required."
+  );
+
+  return membership;
+}
+
+export async function requireWorkspaceMapMetadataAccess(
+  workspaceId: string,
+  userId: string
+) {
+  const membership = await requireWorkspaceMembership(workspaceId, userId);
+  assertWorkspaceCapability(
+    canManageMapMetadata(membership.role),
+    "Map management access required."
+  );
+
+  return membership;
+}
+
+export async function requireWorkspaceLearningReviewAccess(
+  workspaceId: string,
+  userId: string
+) {
+  const membership = await requireWorkspaceMembership(workspaceId, userId);
+  assertWorkspaceCapability(
+    canReviewLearning(membership.role),
+    "Learning review access required."
+  );
 
   return membership;
 }

@@ -30,6 +30,8 @@ import { EmptyState } from "@/shared/ui/components/empty-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
 import { StatusBadge } from "@/shared/ui/components/status-badge";
 import type { ActionState } from "@/shared/validation/action-state";
+import { canEditMapGraph } from "@/shared/auth/policies";
+import type { WorkspaceRole } from "@/shared/db/schema";
 
 const initialScenarioState: ActionState<
   "title" | "situation" | "seedConceptIds"
@@ -44,6 +46,7 @@ const initialStepFeedbackState: ActionState<
 type ScenarioPanelProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
+  workspaceRole: WorkspaceRole;
   map: MapDetail;
   conceptCatalog?: Array<{ id: string; title: string }>;
   conceptCatalogLoading?: boolean;
@@ -57,6 +60,7 @@ type ScenarioSecondaryTab = "save" | "saved" | "runs";
 export function ScenarioPanel({
   locale,
   workspaceSlug,
+  workspaceRole,
   map,
   conceptCatalog: preloadedCatalog,
   conceptCatalogLoading: preloadedLoading,
@@ -66,6 +70,7 @@ export function ScenarioPanel({
 }: ScenarioPanelProps) {
   const messages = getMapWorkspaceMessages(locale);
   const intlLocale = getIntlLocale(locale);
+  const canEditGraph = canEditMapGraph(workspaceRole);
   const conceptCatalog = preloadedCatalog ?? [];
   const conceptCatalogLoading = preloadedLoading ?? false;
   const conceptCatalogError = preloadedError ?? null;
@@ -105,8 +110,14 @@ export function ScenarioPanel({
             <Text color="gray" size="2">
               {messages.scenario.runDescription}
             </Text>
+            {!canEditGraph ? (
+              <Text color="gray" size="2">
+                Read-only access. Switch to an editor role to create, run, or review scenario feedback.
+              </Text>
+            ) : null}
           </Flex>
-          <form action={runScenarioAction}>
+          {canEditGraph ? (
+            <form action={runScenarioAction}>
             <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
             <input type="hidden" name="mapId" value={map.id} />
             {draftSeeds.map((seedId) => (
@@ -142,7 +153,8 @@ export function ScenarioPanel({
                 {messages.scenario.runCta}
               </Button>
             </Flex>
-          </form>
+            </form>
+          ) : null}
 
           {latestRun ? (
             <Card variant="surface" className="panel-surface-card">
@@ -206,58 +218,69 @@ export function ScenarioPanel({
 
       <Flex direction="column" gap="3" mt="2">
         {secondaryTab === "save" ? (
-          <Card className="panel-card">
-            <form action={formAction}>
-              <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-              <input type="hidden" name="mapId" value={map.id} />
-              {draftSeeds.map((seedId) => (
-                <input
-                  key={`draft-scenario-${seedId}`}
-                  type="hidden"
-                  name="seedConceptIds"
-                  value={seedId}
-                />
-              ))}
-              <Flex direction="column" gap="3">
+          canEditGraph ? (
+            <Card className="panel-card">
+              <form action={formAction}>
+                <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
+                <input type="hidden" name="mapId" value={map.id} />
+                {draftSeeds.map((seedId) => (
+                  <input
+                    key={`draft-scenario-${seedId}`}
+                    type="hidden"
+                    name="seedConceptIds"
+                    value={seedId}
+                  />
+                ))}
+                <Flex direction="column" gap="3">
+                  <Heading size="4">{messages.scenario.saveTitle}</Heading>
+                  <InlineFormField
+                    label={messages.inspector.titleLabel}
+                    error={state.fieldErrors?.title?.[0]}
+                  >
+                    {({ controlProps }) => (
+                      <TextField.Root
+                        {...controlProps}
+                        name="title"
+                        placeholder={messages.scenario.saveTitlePlaceholder}
+                        size="2"
+                      />
+                    )}
+                  </InlineFormField>
+                  <InlineFormField
+                    label={messages.scenario.situationLabel}
+                    error={state.fieldErrors?.situation?.[0]}
+                  >
+                    {({ controlProps }) => (
+                      <TextArea
+                        {...controlProps}
+                        name="situation"
+                        placeholder={messages.scenario.saveSituationPlaceholder}
+                        defaultValue={triggerText}
+                        rows={3}
+                      />
+                    )}
+                  </InlineFormField>
+                  {state.message ? (
+                    <Text color="red" size="2">
+                      {state.message}
+                    </Text>
+                  ) : null}
+                  <Button type="submit" size="2" loading={isPending}>
+                    {messages.scenario.saveCta}
+                  </Button>
+                </Flex>
+              </form>
+            </Card>
+          ) : (
+            <Card className="panel-card">
+              <Flex direction="column" gap="2">
                 <Heading size="4">{messages.scenario.saveTitle}</Heading>
-                <InlineFormField
-                  label={messages.inspector.titleLabel}
-                  error={state.fieldErrors?.title?.[0]}
-                >
-                  {({ controlProps }) => (
-                    <TextField.Root
-                      {...controlProps}
-                      name="title"
-                      placeholder={messages.scenario.saveTitlePlaceholder}
-                      size="2"
-                    />
-                  )}
-                </InlineFormField>
-                <InlineFormField
-                  label={messages.scenario.situationLabel}
-                  error={state.fieldErrors?.situation?.[0]}
-                >
-                  {({ controlProps }) => (
-                    <TextArea
-                      {...controlProps}
-                      name="situation"
-                      placeholder={messages.scenario.saveSituationPlaceholder}
-                      defaultValue={triggerText}
-                      rows={3}
-                    />
-                  )}
-                </InlineFormField>
-                {state.message ? (
-                  <Text color="red" size="2">
-                    {state.message}
-                  </Text>
-                ) : null}
-                <Button type="submit" size="2" loading={isPending}>
-                  {messages.scenario.saveCta}
-                </Button>
+                <Text size="2" color="gray">
+                  Read-only access. Switch to an editor role to create new Scenarios.
+                </Text>
               </Flex>
-            </form>
-          </Card>
+            </Card>
+          )
         ) : null}
 
         {secondaryTab === "saved" ? (
@@ -295,7 +318,8 @@ export function ScenarioPanel({
                         </Badge>
                       ))}
                     </Flex>
-                    <form action={runScenarioAction}>
+                    {canEditGraph ? (
+                      <form action={runScenarioAction}>
                       <input
                         type="hidden"
                         name="workspaceSlug"
@@ -323,7 +347,8 @@ export function ScenarioPanel({
                       <Button type="submit" size="2" variant="soft">
                         {messages.scenario.runSavedScenario}
                       </Button>
-                    </form>
+                      </form>
+                    ) : null}
                   </Flex>
                 </Card>
               ))}
@@ -428,24 +453,28 @@ export function ScenarioPanel({
                                   </Text>
                                 ) : null}
                                 <Text size="2">{step.explanation}</Text>
-                                <StepFeedbackForm
-                                  locale={locale}
-                                  workspaceSlug={workspaceSlug}
-                                  mapId={map.id}
-                                  run={run}
-                                  step={step}
-                                />
-                              </Flex>
-                            ))}
-                          </Flex>
-                          <RunFeedbackForm
+                        {canEditGraph ? (
+                          <StepFeedbackForm
                             locale={locale}
                             workspaceSlug={workspaceSlug}
                             mapId={map.id}
                             run={run}
+                            step={step}
                           />
-                        </>
-                      ) : null}
+                        ) : null}
+                      </Flex>
+                    ))}
+                  </Flex>
+                  {canEditGraph ? (
+                    <RunFeedbackForm
+                      locale={locale}
+                      workspaceSlug={workspaceSlug}
+                      mapId={map.id}
+                      run={run}
+                    />
+                  ) : null}
+                </>
+              ) : null}
                     </Flex>
                   </Card>
                 );

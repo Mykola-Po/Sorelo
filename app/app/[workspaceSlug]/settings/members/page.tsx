@@ -44,6 +44,7 @@ export default async function MembersPage({ params }: MembersPageProps) {
                 workspaceSlug={workspaceSlug}
                 userId={member.userId}
                 currentRole={member.role}
+                actorRole={access.role}
               />,
             ])}
           />

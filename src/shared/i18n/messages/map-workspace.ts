@@ -754,7 +754,8 @@ export const mapWorkspaceMessages: Record<
       workspaceRoles: {
         owner: "owner",
         admin: "admin",
-        member: "member",
+        editor: "editor",
+        viewer: "viewer",
       },
       scenarioStatuses: {
         pending: "pending",
@@ -974,7 +975,8 @@ export const mapWorkspaceMessages: Record<
       workspaceRoles: {
         owner: "власник",
         admin: "адмін",
-        member: "учасник",
+        editor: "редактор",
+        viewer: "спостерігач",
       },
       scenarioStatuses: {
         pending: "очікує",
@@ -1195,7 +1197,8 @@ export const mapWorkspaceMessages: Record<
       workspaceRoles: {
         owner: "владелец",
         admin: "админ",
-        member: "участник",
+        editor: "редактор",
+        viewer: "наблюдатель",
       },
       scenarioStatuses: {
         pending: "ожидает",

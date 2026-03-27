@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import { createConceptWithTx, updateConceptWithTx } from "@/features/concepts/commands";
 import {
@@ -33,6 +33,7 @@ import {
   mapSuggestionRecord,
   mapSuggestionResolutionRecord,
 } from "@/features/learning/mappers";
+import { requireWorkspaceLearningReviewAccess } from "@/features/maps/access";
 import { db } from "@/shared/db/client";
 import {
   concepts,
@@ -101,8 +102,53 @@ type SuggestionApplyOutcome = {
   evidenceCount: number;
 };
 
+export type LearningCommandErrorCode =
+  | "learning_suggestion_resolution_conflict";
+
+export class LearningCommandError extends Error {
+  readonly statusCode: number;
+  readonly code: LearningCommandErrorCode;
+
+  constructor(
+    message: string,
+    statusCode: number,
+    code: LearningCommandErrorCode
+  ) {
+    super(message);
+    this.name = "LearningCommandError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export function isLearningCommandError(
+  error: unknown
+): error is LearningCommandError {
+  return error instanceof LearningCommandError;
+}
+
 function hashValue(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function getLearningConflictError(
+  message: string,
+  code: LearningCommandErrorCode = "learning_suggestion_resolution_conflict"
+) {
+  return new LearningCommandError(message, 409, code);
+}
+
+function isUniqueConstraintError(error: unknown, constraintName: string) {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "PostgresError" &&
+    "code" in error &&
+    error.code === "23505" &&
+    "constraint_name" in error &&
+    error.constraint_name === constraintName
+  );
 }
 
 async function requireActiveWorkspace(workspaceId: string) {
@@ -117,6 +163,30 @@ async function requireActiveWorkspace(workspaceId: string) {
   }
 
   return workspace;
+}
+
+async function getMapGraphRevisionTx(
+  tx: DbTransaction,
+  workspaceId: string,
+  mapId: string
+) {
+  const [map] = await tx
+    .select({ revision: maps.graphRevision })
+    .from(maps)
+    .where(
+      and(
+        eq(maps.id, mapId),
+        eq(maps.workspaceId, workspaceId),
+        isNull(maps.archivedAt)
+      )
+    )
+    .limit(1);
+
+  if (!map) {
+    throw new Error("Map not found.");
+  }
+
+  return map.revision;
 }
 
 async function assertMapIdsBelongToWorkspace(
@@ -612,23 +682,23 @@ async function syncReviewAggregateStateTx(
       : "parked"
     : "ready_for_review";
 
-  const [item] = await tx
-    .select({ status: inboxItems.status })
-    .from(inboxItems)
-    .where(eq(inboxItems.id, input.inboxItemId))
-    .limit(1);
-
-  if (!item || item.status === nextItemStatus) {
-    return;
-  }
-
-  await tx
+  const [updatedItem] = await tx
     .update(inboxItems)
     .set({
       status: nextItemStatus,
       updatedAt: new Date(),
     })
-    .where(eq(inboxItems.id, input.inboxItemId));
+    .where(
+      and(
+        eq(inboxItems.id, input.inboxItemId),
+        ne(inboxItems.status, nextItemStatus)
+      )
+    )
+    .returning({ id: inboxItems.id });
+
+  if (!updatedItem) {
+    return;
+  }
 
   if (allResolved) {
     const attemptNo = await getNextInboxAttemptNoTx(tx, input.inboxItemId);
@@ -999,6 +1069,11 @@ export async function applyInboxReviewResolutionTx(
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
       mapId: input.mapId,
+      expectedRevision: await getMapGraphRevisionTx(
+        tx,
+        input.workspaceId,
+        input.mapId
+      ),
       title: afterSnapshot.title,
       conceptType: afterSnapshot.conceptType,
       summary: afterSnapshot.summary,
@@ -1053,6 +1128,11 @@ export async function applyInboxReviewResolutionTx(
       actorUserId: input.actorUserId,
       mapId: input.mapId,
       conceptId: operation.conceptId,
+      expectedRevision: await getMapGraphRevisionTx(
+        tx,
+        input.workspaceId,
+        input.mapId
+      ),
       title: afterSnapshot.title,
       conceptType: afterSnapshot.conceptType,
       summary: afterSnapshot.summary,
@@ -1104,6 +1184,11 @@ export async function applyInboxReviewResolutionTx(
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
       mapId: input.mapId,
+      expectedRevision: await getMapGraphRevisionTx(
+        tx,
+        input.workspaceId,
+        input.mapId
+      ),
       sourceConceptId,
       targetConceptId,
       relationType: afterSnapshot.relationType,
@@ -1333,20 +1418,14 @@ export async function resolveSuggestionCommand(input: SuggestionResolutionInput)
     parsed.workspaceId,
     parsed.mapId ? [parsed.mapId] : []
   );
+  await requireWorkspaceLearningReviewAccess(
+    parsed.workspaceId,
+    parsed.actorUserId
+  );
 
   const suggestion = await getSuggestionRow(parsed.suggestionId, parsed.workspaceId);
   if (parsed.mapId && suggestion.mapId && suggestion.mapId !== parsed.mapId) {
     throw new Error("Resolution map does not match suggestion map.");
-  }
-
-  const [existingResolution] = await db
-    .select({ id: learningSuggestionResolutions.id })
-    .from(learningSuggestionResolutions)
-    .where(eq(learningSuggestionResolutions.suggestionId, parsed.suggestionId))
-    .limit(1);
-
-  if (existingResolution) {
-    throw new Error("Suggestion already has a terminal resolution.");
   }
 
   const artifact = parseInboxReviewArtifact(suggestion.proposedPayload ?? {});
@@ -1356,22 +1435,38 @@ export async function resolveSuggestionCommand(input: SuggestionResolutionInput)
   const initialApplyStatus = shouldApply ? "pending" : "not_applicable";
   const effectiveMapId = parsed.mapId ?? suggestion.mapId;
 
-  const [resolution] = await db
-    .insert(learningSuggestionResolutions)
-    .values({
-      suggestionId: parsed.suggestionId,
-      workspaceId: parsed.workspaceId,
-      mapId: effectiveMapId ?? null,
-      actorUserId: parsed.actorUserId,
-      resolutionType: parsed.resolutionType,
-      beforePayload: resolvedBeforePayload,
-      afterPayload: resolvedAfterPayload,
-      applyStatus: initialApplyStatus,
-      reasonText: parsed.reasonText ?? null,
-      latencyMs: parsed.latencyMs ?? null,
-      resolvedAt: parsed.resolvedAt ?? new Date(),
-    })
-    .returning();
+  let resolution;
+  try {
+    [resolution] = await db
+      .insert(learningSuggestionResolutions)
+      .values({
+        suggestionId: parsed.suggestionId,
+        workspaceId: parsed.workspaceId,
+        mapId: effectiveMapId ?? null,
+        actorUserId: parsed.actorUserId,
+        resolutionType: parsed.resolutionType,
+        beforePayload: resolvedBeforePayload,
+        afterPayload: resolvedAfterPayload,
+        applyStatus: initialApplyStatus,
+        reasonText: parsed.reasonText ?? null,
+        latencyMs: parsed.latencyMs ?? null,
+        resolvedAt: parsed.resolvedAt ?? new Date(),
+      })
+      .returning();
+  } catch (error) {
+    if (
+      isUniqueConstraintError(
+        error,
+        "learning_suggestion_resolutions_suggestion_key"
+      )
+    ) {
+      throw getLearningConflictError(
+        "Suggestion already has a terminal resolution."
+      );
+    }
+
+    throw error;
+  }
 
   if (!resolution) {
     throw new Error("Suggestion resolution failed.");

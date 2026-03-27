@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { repositionConceptsBatchCommand } from "@/features/concepts/commands";
+import { MapRevisionConflictError } from "@/features/maps/commands";
 import { getMapRevision } from "@/features/maps/queries";
 import { patchConceptPositionsRouteSchema } from "@/features/map-runtime/schemas";
 import { parseRouteJson, requireMapRuntimeAccess } from "@/features/map-runtime/server";
@@ -27,6 +28,7 @@ async function handlePositionsPatch(request: Request, params: RouteParams["param
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
+      expectedRevision: parsed.data.expectedRevision,
       positions: parsed.data.positions,
     });
     const revision = await getMapRevision(mapId, access.workspaceId);
@@ -37,6 +39,17 @@ async function handlePositionsPatch(request: Request, params: RouteParams["param
       concepts,
     });
   } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          error: error.message,
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         error:

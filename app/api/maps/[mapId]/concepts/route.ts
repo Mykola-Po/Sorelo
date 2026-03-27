@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createConceptCommand } from "@/features/concepts/commands";
+import { MapRevisionConflictError } from "@/features/maps/commands";
 import { getMapGraphMetrics } from "@/features/maps/queries";
 import { createConceptRouteSchema } from "@/features/map-runtime/schemas";
 import { parseRouteJson, requireMapRuntimeAccess } from "@/features/map-runtime/server";
@@ -27,6 +28,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
+      expectedRevision: parsed.data.expectedRevision,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
       summary: parsed.data.summary ?? null,
@@ -45,6 +47,17 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          error: error.message,
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         error:

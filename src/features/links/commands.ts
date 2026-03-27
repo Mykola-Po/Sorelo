@@ -11,7 +11,7 @@ import {
 import { bumpMapGraphRevision } from "@/features/maps/commands";
 import {
   requireActiveMap,
-  requireWorkspaceMembership,
+  requireWorkspaceGraphEditAccess,
 } from "@/features/maps/access";
 import { db } from "@/shared/db/client";
 import {
@@ -27,6 +27,7 @@ type CreateLinkCommandInput = {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   sourceConceptId: string;
   targetConceptId: string;
   relationType:
@@ -69,6 +70,12 @@ export async function createLinkWithTx(
   tx: LinkCommandTx,
   input: CreateLinkCommandInput
 ) {
+  const versionNo = await bumpMapGraphRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    expectedRevision: input.expectedRevision,
+  });
+
   const [conceptCountRows, linkCountRows] = await Promise.all([
     tx
       .select({ value: count() })
@@ -110,11 +117,6 @@ export async function createLinkWithTx(
   if (!link) {
     throw new Error("Link creation failed.");
   }
-
-  const versionNo = await bumpMapGraphRevision(tx, {
-    workspaceId: input.workspaceId,
-    mapId: input.mapId,
-  });
 
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
@@ -183,7 +185,7 @@ export async function createLinkWithTx(
 }
 
 export async function createLinkCommand(input: CreateLinkCommandInput) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
   await Promise.all([
     assertConceptMembership(input.workspaceId, input.mapId, input.sourceConceptId),
@@ -197,6 +199,7 @@ export async function updateLinkCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   linkId: string;
   sourceConceptId: string;
   targetConceptId: string;
@@ -209,7 +212,7 @@ export async function updateLinkCommand(input: {
   strength: number;
   description?: string | null;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
   await Promise.all([
     assertConceptMembership(input.workspaceId, input.mapId, input.sourceConceptId),
@@ -217,6 +220,12 @@ export async function updateLinkCommand(input: {
   ]);
 
   return db.transaction(async (tx) => {
+    const versionNo = await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      expectedRevision: input.expectedRevision,
+    });
+
     const [existingLink] = await tx
       .select({
         id: links.id,
@@ -262,11 +271,6 @@ export async function updateLinkCommand(input: {
     if (!link) {
       throw new Error("Link not found.");
     }
-
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-    });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
@@ -340,12 +344,19 @@ export async function deleteLinkCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   linkId: string;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   await db.transaction(async (tx) => {
+    const versionNo = await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      expectedRevision: input.expectedRevision,
+    });
+
     const [deletedLink] = await tx
       .delete(links)
       .where(
@@ -363,11 +374,6 @@ export async function deleteLinkCommand(input: {
         strength: links.strength,
         description: links.description,
       });
-
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-    });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,

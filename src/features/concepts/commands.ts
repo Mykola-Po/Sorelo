@@ -11,7 +11,7 @@ import {
 import { bumpMapGraphRevision } from "@/features/maps/commands";
 import {
   requireActiveMap,
-  requireWorkspaceMembership,
+  requireWorkspaceGraphEditAccess,
 } from "@/features/maps/access";
 import { db } from "@/shared/db/client";
 import {
@@ -27,6 +27,7 @@ type CreateConceptCommandInput = {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   title: string;
   conceptType:
     | "thought"
@@ -50,6 +51,7 @@ type UpdateConceptCommandInput = {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   conceptId: string;
   title: string;
   conceptType:
@@ -74,6 +76,12 @@ export async function createConceptWithTx(
   tx: ConceptCommandTx,
   input: CreateConceptCommandInput
 ) {
+  const versionNo = await bumpMapGraphRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    expectedRevision: input.expectedRevision,
+  });
+
   const [conceptCountRows, linkCountRows] = await Promise.all([
     tx
       .select({ value: count() })
@@ -116,11 +124,6 @@ export async function createConceptWithTx(
   if (!concept) {
     throw new Error("Concept creation failed.");
   }
-
-  const versionNo = await bumpMapGraphRevision(tx, {
-    workspaceId: input.workspaceId,
-    mapId: input.mapId,
-  });
 
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
@@ -193,6 +196,12 @@ export async function updateConceptWithTx(
   tx: ConceptCommandTx,
   input: UpdateConceptCommandInput
 ) {
+  const versionNo = await bumpMapGraphRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    expectedRevision: input.expectedRevision,
+  });
+
   const [existingConcept] = await tx
     .select({
       id: concepts.id,
@@ -249,11 +258,6 @@ export async function updateConceptWithTx(
   if (!concept) {
     throw new Error("Concept not found.");
   }
-
-  const versionNo = await bumpMapGraphRevision(tx, {
-    workspaceId: input.workspaceId,
-    mapId: input.mapId,
-  });
 
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
@@ -338,14 +342,14 @@ export async function updateConceptWithTx(
 }
 
 export async function createConceptCommand(input: CreateConceptCommandInput) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction((tx) => createConceptWithTx(tx, input));
 }
 
 export async function updateConceptCommand(input: UpdateConceptCommandInput) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction((tx) => updateConceptWithTx(tx, input));
@@ -355,14 +359,21 @@ export async function repositionConceptCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   conceptId: string;
   x: number;
   y: number;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction(async (tx) => {
+    const versionNo = await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      expectedRevision: input.expectedRevision,
+    });
+
     const [existingConcept] = await tx
       .select({
         id: concepts.id,
@@ -404,11 +415,6 @@ export async function repositionConceptCommand(input: {
     if (!concept) {
       throw new Error("Concept not found.");
     }
-
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-    });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
@@ -457,13 +463,14 @@ export async function repositionConceptsBatchCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   positions: Array<{
     conceptId: string;
     x: number;
     y: number;
   }>;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   const dedupedPositions = Array.from(
@@ -524,6 +531,7 @@ export async function repositionConceptsBatchCommand(input: {
     const versionNo = await bumpMapGraphRevision(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
+      expectedRevision: input.expectedRevision,
     });
 
     await recordMapManualVersion(tx, {
@@ -564,12 +572,19 @@ export async function archiveConceptCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
+  expectedRevision: number;
   conceptId: string;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   await db.transaction(async (tx) => {
+    const versionNo = await bumpMapGraphRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      expectedRevision: input.expectedRevision,
+    });
+
     const [concept] = await tx
       .update(concepts)
       .set({
@@ -589,11 +604,6 @@ export async function archiveConceptCommand(input: {
     if (!concept) {
       throw new Error("Concept not found.");
     }
-
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-    });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,

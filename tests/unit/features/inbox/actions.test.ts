@@ -241,6 +241,7 @@ describe("inbox workbench actions", () => {
     });
 
     expect(processInboxItemCommandMock).toHaveBeenCalledWith({
+      actorUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       itemId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     });
@@ -293,6 +294,7 @@ describe("inbox workbench actions", () => {
       message: "Clarification request is no longer pending.",
     });
     expect(answerInboxClarificationCommandMock).toHaveBeenCalledWith({
+      actorUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       answerText: "It starts when the criticism comes from a close partner.",
@@ -345,6 +347,7 @@ describe("inbox workbench actions", () => {
     });
 
     expect(answerInboxClarificationCommandMock).toHaveBeenCalledWith({
+      actorUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       workspaceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       answerText: "It starts when the criticism comes from a close partner.",

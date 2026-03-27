@@ -12,7 +12,7 @@ export const switchWorkspaceSchema = z.object({
 export const updateMemberRoleSchema = z.object({
   workspaceSlug: z.string().trim().min(2).max(64),
   userId: z.string().uuid(),
-  role: z.enum(["admin", "member"]),
+  role: z.enum(["viewer", "editor", "admin"]),
 });
 
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;

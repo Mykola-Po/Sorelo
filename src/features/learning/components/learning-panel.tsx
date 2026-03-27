@@ -18,7 +18,9 @@ import {
   humanizeLearningFieldPath,
 } from "@/features/learning/review-diff";
 import type { LearningSuggestionSummary } from "@/features/maps/types";
+import { canReviewLearning } from "@/shared/auth/policies";
 import { getIntlLocale, type SupportedLocale } from "@/shared/i18n/config";
+import type { WorkspaceRole } from "@/shared/db/schema";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 import { EmptyState } from "@/shared/ui/components/empty-state";
 import { InlineFormField } from "@/shared/ui/components/inline-form-field";
@@ -31,6 +33,7 @@ const initialResolutionState: ActionState<"resolutionType" | "reasonText"> = {
 type LearningPanelProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
+  workspaceRole: WorkspaceRole;
   mapId: string;
   suggestions: LearningSuggestionSummary[];
 };
@@ -38,10 +41,12 @@ type LearningPanelProps = {
 export function LearningPanel({
   locale,
   workspaceSlug,
+  workspaceRole,
   mapId,
   suggestions,
 }: LearningPanelProps) {
   const messages = getMapWorkspaceMessages(locale).learning;
+  const canReview = canReviewLearning(workspaceRole);
   const openSuggestions = suggestions.filter((item) => !item.resolution);
   const resolvedSuggestions = suggestions.filter((item) => item.resolution);
 
@@ -76,6 +81,7 @@ export function LearningPanel({
             key={item.id}
             locale={locale}
             workspaceSlug={workspaceSlug}
+            canReview={canReview}
             mapId={mapId}
             item={item}
           />
@@ -88,6 +94,7 @@ export function LearningPanel({
 type SuggestionCardProps = {
   locale: SupportedLocale;
   workspaceSlug: string;
+  canReview: boolean;
   mapId: string;
   item: LearningSuggestionSummary;
 };
@@ -104,6 +111,7 @@ function summarizeEvidenceSnippet(text: string, maxLength = 260) {
 function SuggestionCard({
   locale,
   workspaceSlug,
+  canReview,
   mapId,
   item,
 }: SuggestionCardProps) {
@@ -141,6 +149,55 @@ function SuggestionCard({
       value: string;
     } => Boolean(value)
   );
+
+  if (!canReview) {
+    return (
+      <Card className="panel-card">
+        <Flex direction="column" gap="3">
+          <Flex align="start" justify="between" gap="3">
+            <Flex direction="column" gap="1">
+              <Heading size="3">
+                {messages.suggestionType(item.suggestionType)}
+              </Heading>
+              <Text size="2" color="gray">
+                {messages.targetEntity(item.targetEntityType)}
+              </Text>
+            </Flex>
+            <Badge
+              color={item.resolution ? "green" : "orange"}
+              variant={item.resolution ? "soft" : "surface"}
+              radius="full"
+            >
+              {item.resolution
+                ? messages.resolutionType(item.resolution.resolutionType)
+                : messages.pending}
+            </Badge>
+          </Flex>
+          <Text size="2" color="gray">
+            Read-only access. Switch to an editor role to resolve Learning suggestions.
+          </Text>
+          <Flex direction="column" gap="2" className="sl-learning-review-section">
+            <Text size="2" weight="medium">
+              {messages.reviewChangesHeading}
+            </Text>
+            <Text size="2" color="gray">
+              {messages.reviewNoChanges}
+            </Text>
+          </Flex>
+          {item.resolution ? (
+            <Flex direction="column" gap="1">
+              {item.resolution.reasonText ? (
+                <Text size="2">{item.resolution.reasonText}</Text>
+              ) : null}
+              <Text size="1" color="gray">
+                {new Date(item.resolution.resolvedAt).toLocaleString(intlLocale)}
+              </Text>
+            </Flex>
+          ) : null}
+        </Flex>
+      </Card>
+    );
+  }
 
   return (
     <Card className="panel-card">

@@ -54,6 +54,7 @@ export default function TestOverlay() {
         locale="en"
         map={dummyMap}
         graphMetrics={dummyMetrics}
+        canEditGraph={true}
         selection={selection}
         interactionMode={mode}
         connectLinkSourceId={connectLinkSourceId}

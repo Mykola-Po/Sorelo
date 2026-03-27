@@ -14,12 +14,14 @@ describe("docs hub manifest", () => {
       "rules",
       "surfaces",
       "executable",
+      "executable",
     ]);
     expect(sections.map((section) => section.id)).toEqual([
       "canon",
       "rules",
       "surfaces",
       "executable",
+      "work-files",
     ]);
   });
 
