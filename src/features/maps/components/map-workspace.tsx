@@ -113,7 +113,6 @@ function MapWorkspaceContent({
     useState<InspectorMutationFeedback | null>(null);
   const selection = useMapStore((state) => state.selection);
   const snapshot = useMapStore((state) => state.snapshot);
-  const currentGraphRevision = snapshot?.revision ?? graphMetrics.revision;
   const ghostConcepts = useMapStore((state) => state.ghosts);
   const setSelection = useMapStore((state) => state.setSelection);
   const interactionMode = useMapStore((state) => state.interactionMode);
@@ -153,14 +152,39 @@ function MapWorkspaceContent({
     error: conceptCatalogError,
   } = useConceptCatalog(map.id);
 
-  const conceptTitleById = useMemo(() => {
-    const titles = new Map<string, string>();
+  const liveGraphMetrics = useMemo(
+    () => ({
+      revision: snapshot?.revision ?? graphMetrics.revision,
+      conceptCount: snapshot?.counts.conceptCount ?? graphMetrics.conceptCount,
+      linkCount: snapshot?.counts.linkCount ?? graphMetrics.linkCount,
+    }),
+    [graphMetrics, snapshot]
+  );
+  const currentGraphRevision = liveGraphMetrics.revision;
+
+  const liveConceptCatalog = useMemo(() => {
+    const titleById = new Map<string, string>();
 
     for (const concept of conceptCatalog) {
-      titles.set(concept.id, concept.title);
+      titleById.set(concept.id, concept.title);
     }
 
     for (const concept of snapshot?.concepts ?? []) {
+      titleById.set(concept.id, concept.title);
+    }
+
+    return Array.from(titleById, ([id, title]) => ({
+      id,
+      title,
+    })).sort((left, right) => left.title.localeCompare(right.title));
+  }, [conceptCatalog, snapshot]);
+  const liveConceptCatalogLoading = isConceptCatalogLoading && !snapshot;
+  const liveConceptCatalogError = snapshot ? null : conceptCatalogError;
+
+  const conceptTitleById = useMemo(() => {
+    const titles = new Map<string, string>();
+
+    for (const concept of liveConceptCatalog) {
       titles.set(concept.id, concept.title);
     }
 
@@ -169,7 +193,7 @@ function MapWorkspaceContent({
     }
 
     return titles;
-  }, [conceptCatalog, ghostConcepts, snapshot]);
+  }, [ghostConcepts, liveConceptCatalog]);
 
   useEffect(() => {
     if (!initialInspectorSelection) {
@@ -180,8 +204,8 @@ function MapWorkspaceContent({
   }, [initialInspectorSelection, setSelection]);
 
   const guidedStep = deriveGuidedOnboardingStep({
-    conceptCount: graphMetrics.conceptCount,
-    linkCount: graphMetrics.linkCount,
+    conceptCount: liveGraphMetrics.conceptCount,
+    linkCount: liveGraphMetrics.linkCount,
     scenarioRunCount: runs.length,
   });
   const guidedCopy = messages.guided[guidedStep];
@@ -189,8 +213,8 @@ function MapWorkspaceContent({
   useCoreLoopTelemetry({
     mapId: map.id,
     guidedStep,
-    conceptCount: graphMetrics.conceptCount,
-    linkCount: graphMetrics.linkCount,
+    conceptCount: liveGraphMetrics.conceptCount,
+    linkCount: liveGraphMetrics.linkCount,
   });
 
   const linkingSourceConceptTitle = connectLinkSourceId
@@ -284,7 +308,7 @@ function MapWorkspaceContent({
       return;
     }
 
-    if (graphMetrics.conceptCount < 2) {
+    if (liveGraphMetrics.conceptCount < 2) {
       setInteractionMode("inspect");
       setConnectLinkSourceId(null);
       setSelection({ kind: "create-link" });
@@ -366,10 +390,10 @@ function MapWorkspaceContent({
           canManageMapMetadata={canManageMapMetadataAccess}
           map={map}
           graphRevision={currentGraphRevision}
-          conceptCount={graphMetrics.conceptCount}
-          conceptCatalog={conceptCatalog}
-          conceptCatalogError={conceptCatalogError}
-          conceptCatalogLoading={isConceptCatalogLoading}
+          conceptCount={liveGraphMetrics.conceptCount}
+          conceptCatalog={liveConceptCatalog}
+          conceptCatalogError={liveConceptCatalogError}
+          conceptCatalogLoading={liveConceptCatalogLoading}
           selection={selection}
           guidedStep={guidedStep}
           interactionMode={interactionMode}
@@ -391,9 +415,9 @@ function MapWorkspaceContent({
           workspaceSlug={workspaceSlug}
           workspaceRole={workspaceRole}
           map={map}
-          conceptCatalog={conceptCatalog}
-          conceptCatalogError={conceptCatalogError}
-          conceptCatalogLoading={isConceptCatalogLoading}
+          conceptCatalog={liveConceptCatalog}
+          conceptCatalogError={liveConceptCatalogError}
+          conceptCatalogLoading={liveConceptCatalogLoading}
           scenarios={scenarios}
           runs={runs}
         />
@@ -453,7 +477,7 @@ function MapWorkspaceContent({
           <GraphCanvasRuntime
             locale={locale}
             map={map}
-            graphMetrics={graphMetrics}
+            graphMetrics={liveGraphMetrics}
             canEditGraph={canEditGraph}
             selection={selection}
             interactionMode={interactionMode}

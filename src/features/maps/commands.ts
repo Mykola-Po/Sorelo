@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
@@ -10,9 +12,45 @@ import {
 } from "@/features/maps/access";
 import { normalizeMapSlug } from "@/features/maps/utils";
 import { db } from "@/shared/db/client";
-import { maps } from "@/shared/db/schema";
+import { mapGraphOperations, maps } from "@/shared/db/schema";
 
-type MapRevisionWriter = Pick<typeof db, "select" | "update">;
+type MapRevisionWriter = Pick<typeof db, "select" | "update" | "insert">;
+type MapGraphOperationWriter = Pick<typeof db, "select" | "insert">;
+
+export const MAP_GRAPH_OPERATION_KIND = {
+  conceptPositionSet: "concept.position.set",
+  conceptCreate: "concept.create",
+  conceptArchive: "concept.archive",
+  linkCreate: "link.create",
+  linkArchive: "link.archive",
+} as const;
+
+export type MapGraphOperationKind =
+  (typeof MAP_GRAPH_OPERATION_KIND)[keyof typeof MAP_GRAPH_OPERATION_KIND];
+
+export type MapGraphOperationRow = typeof mapGraphOperations.$inferSelect;
+
+export type SerializedMapGraphOperation = {
+  id: string;
+  workspaceId: string;
+  mapId: string;
+  seq: number;
+  actorUserId: string;
+  clientId: string;
+  clientMutationId: string;
+  opKind: MapGraphOperationKind;
+  entityType: string;
+  entityId: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export function createServerGraphOperationClientMetadata() {
+  return {
+    clientId: randomUUID(),
+    clientMutationId: randomUUID(),
+  };
+}
 
 export class MapRevisionConflictError extends Error {
   readonly statusCode = 409;
@@ -73,6 +111,86 @@ export async function bumpMapGraphRevision(
   }
 
   return map.graphRevision;
+}
+
+export function serializeMapGraphOperation(
+  row: MapGraphOperationRow
+): SerializedMapGraphOperation {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    mapId: row.mapId,
+    seq: row.seq,
+    actorUserId: row.actorUserId,
+    clientId: row.clientId,
+    clientMutationId: row.clientMutationId,
+    opKind: row.opKind as MapGraphOperationKind,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    payload: row.payload as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export async function appendGraphOperationTx(
+  dbOrTx: MapGraphOperationWriter,
+  input: {
+    workspaceId: string;
+    mapId: string;
+    seq: number;
+    actorUserId: string;
+    clientId: string;
+    clientMutationId: string;
+    opKind: MapGraphOperationKind;
+    entityType: string;
+    entityId: string;
+    payload: Record<string, unknown>;
+  }
+) {
+  const [operation] = await dbOrTx
+    .insert(mapGraphOperations)
+    .values({
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      seq: input.seq,
+      actorUserId: input.actorUserId,
+      clientId: input.clientId,
+      clientMutationId: input.clientMutationId,
+      opKind: input.opKind,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      payload: input.payload,
+    })
+    .returning();
+
+  if (!operation) {
+    throw new Error("Unable to append graph operation.");
+  }
+
+  return operation;
+}
+
+export async function findGraphOperationByClientMutation(
+  dbOrTx: MapGraphOperationWriter,
+  input: {
+    mapId: string;
+    clientId: string;
+    clientMutationId: string;
+  }
+) {
+  const [operation] = await dbOrTx
+    .select()
+    .from(mapGraphOperations)
+    .where(
+      and(
+        eq(mapGraphOperations.mapId, input.mapId),
+        eq(mapGraphOperations.clientId, input.clientId),
+        eq(mapGraphOperations.clientMutationId, input.clientMutationId)
+      )
+    )
+    .limit(1);
+
+  return operation ?? null;
 }
 
 export async function createMapCommand(input: {

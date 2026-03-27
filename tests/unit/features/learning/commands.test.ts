@@ -164,7 +164,13 @@ describe("applyInboxReviewResolutionTx", () => {
     const answerId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const txState = createMockTx();
 
-    createConceptWithTxMock.mockResolvedValue({ id: conceptId });
+    createConceptWithTxMock.mockResolvedValue({
+      concept: { id: conceptId },
+      revision: 2,
+      op: {
+        id: "op-concept",
+      },
+    });
     txState.queueSelect(maps, [{ revision: 1 }]);
     txState.queueSelect(learningMapVersions, [{ id: mapVersionId }]);
     txState.queueSelect(inboxFragments, [
@@ -378,7 +384,13 @@ describe("applyInboxReviewResolutionTx", () => {
     const targetConceptId = "34343434-3434-4343-8343-343434343434";
     const txState = createMockTx();
 
-    createLinkWithTxMock.mockResolvedValue({ id: linkId });
+    createLinkWithTxMock.mockResolvedValue({
+      link: { id: linkId },
+      revision: 2,
+      op: {
+        id: "op-link",
+      },
+    });
     txState.queueSelect(concepts, [
       {
         id: sourceConceptId,

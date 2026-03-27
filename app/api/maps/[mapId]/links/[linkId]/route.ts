@@ -79,18 +79,31 @@ export async function DELETE(_: Request, { params }: RouteParams) {
   }
 
   try {
-    await deleteLinkCommand({
+    const result = await deleteLinkCommand({
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
       expectedRevision: parsed.data.expectedRevision,
       linkId,
+      ...(parsed.data.clientId
+        ? {
+            clientId: parsed.data.clientId,
+          }
+        : {}),
+      ...(parsed.data.clientMutationId
+        ? {
+            clientMutationId: parsed.data.clientMutationId,
+          }
+        : {}),
     });
-    const metrics = await getMapGraphMetrics(mapId, access.workspaceId);
 
     return NextResponse.json({
       ok: true,
-      revision: metrics?.revision ?? 0,
+      revision: result.revision,
+      seq: result.seq,
+      linkId: result.linkId,
+      op: result.op,
+      duplicate: result.duplicate,
     });
   } catch (error) {
     if (error instanceof MapRevisionConflictError) {

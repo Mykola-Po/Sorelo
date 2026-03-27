@@ -2,6 +2,7 @@
 
 import {
   useLayoutEffect,
+  type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   useCallback,
@@ -21,8 +22,18 @@ import type {
   GraphConceptNode,
   GraphSnapshot,
 } from "@/features/map-runtime/types";
+import type {
+  ConceptPositionMutationResponse,
+  MapGraphOperation,
+} from "@/features/map-runtime/realtime/contracts";
+import {
+  createGraphClientMutationId,
+  getPendingGraphOperationKey,
+  isConceptArchiveOperation,
+  isConceptPositionSetOperation,
+  isLinkArchiveOperation,
+} from "@/features/map-runtime/realtime/contracts";
 import type { SupportedLocale } from "@/shared/i18n/config";
-import { createBrowserSupabaseClient } from "@/shared/auth/supabase/browser";
 import { getMapWorkspaceMessages } from "@/shared/i18n/messages/map-workspace";
 
 import { useMapStore } from "../store/map-store-provider";
@@ -55,6 +66,10 @@ import {
 import type { Sigma } from "sigma";
 import { IDLE_DRAG_STATE } from "../store/map-store";
 import { useSemanticGravity } from "../hooks/use-semantic-gravity";
+import { useGraphSnapshotBootstrap } from "../hooks/use-graph-snapshot-bootstrap";
+import { useGraphMutationQueue } from "../hooks/use-graph-mutation-queue";
+import { useMapRealtimeInvalidation } from "../hooks/use-map-realtime-invalidation";
+import { applyGraphOperationToSnapshot } from "../realtime/apply-graph-operation";
 const MUTATION_FEEDBACK_DURATION_MS = 2400;
 const EDGE_AUTO_PAN_START_DELAY_MS = 220;
 
@@ -74,22 +89,10 @@ type ViewportNodePosition = {
   isOutside: boolean;
 };
 
-type ConceptPositionPatchResponse = {
-  ok?: boolean;
-  revision?: number;
-  currentRevision?: number;
-  code?: string;
-  concepts?: Array<{
-    id: string;
-    x: number;
-    y: number;
-  }>;
-  error?: string;
-};
-
 type GhostCreateConceptResponse = {
   ok?: boolean;
   revision?: number;
+  seq?: number;
   currentRevision?: number;
   code?: string;
   concept?: {
@@ -102,6 +105,8 @@ type GhostCreateConceptResponse = {
     y: number;
     updatedAt: string | Date;
   } | null;
+  op?: MapGraphOperation;
+  duplicate?: boolean;
   error?: string;
 };
 
@@ -117,6 +122,7 @@ class GraphRevisionConflictError extends Error {
 
 type ConceptDragSession = {
   conceptId: string;
+  positionRequestId: number;
   pointerType: DragPointerType;
   pressedAt: number;
   startPointerViewport: DragViewportPoint;
@@ -142,28 +148,6 @@ function deriveGesturePointerType(event: Event): DragPointerType {
   }
 
   return "mouse";
-}
-
-function toGraphConceptNode(
-  concept: GhostCreateConceptResponse["concept"]
-): GraphConceptNode | null {
-  if (!concept) {
-    return null;
-  }
-
-  return {
-    id: concept.id,
-    title: concept.title,
-    conceptType: concept.conceptType,
-    summary: concept.summary,
-    description: concept.description,
-    x: concept.x,
-    y: concept.y,
-    updatedAt:
-      concept.updatedAt instanceof Date
-        ? concept.updatedAt.toISOString()
-        : concept.updatedAt,
-  };
 }
 
 declare global {
@@ -232,10 +216,20 @@ export function GraphCanvasRuntime({
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
   const isGravityEnabled = useMapStore((s) => s.isGravityEnabled);
+  const clientId = useMapStore((s) => s.clientId);
   
-  useSemanticGravity(sigmaRef.current, isGravityEnabled);
+  useSemanticGravity(sigmaRef, isGravityEnabled);
   const positions = useMapStore((s) => s.positions);
+  const setPositions = useMapStore((s) => s.setPositions);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
+  const lastAppliedSeq = useMapStore((s) => s.lastAppliedSeq);
+  const setLastAppliedSeq = useMapStore((s) => s.setLastAppliedSeq);
+  const addPendingLocalOp = useMapStore((s) => s.addPendingLocalOp);
+  const clearPendingLocalOp = useMapStore((s) => s.clearPendingLocalOp);
+  const activeLocalEntityLocks = useMapStore((s) => s.activeLocalEntityLocks);
+  const lockLocalEntity = useMapStore((s) => s.lockLocalEntity);
+  const unlockLocalEntity = useMapStore((s) => s.unlockLocalEntity);
+  const setNeedsSnapshotFallback = useMapStore((s) => s.setNeedsSnapshotFallback);
   const dragState = useMapStore((s) => s.dragState);
   const setDragState = useMapStore((s) => s.setDragState);
   const resetDragState = useMapStore((s) => s.resetDragState);
@@ -243,26 +237,21 @@ export function GraphCanvasRuntime({
   const setGhosts = useMapStore((s) => s.setGhosts);
   const snapshotRef = useRef(snapshot);
   const positionsRef = useRef(positions);
+  const lastAppliedSeqRef = useRef(lastAppliedSeq);
+  const activeLocalEntityLocksRef = useRef(activeLocalEntityLocks);
   const dragStateRef = useRef(dragState);
   const ghostsRef = useRef(ghosts);
-  const snapshotRequestControllerRef = useRef<AbortController | null>(null);
-  const snapshotRequestIdRef = useRef(0);
-  const positionSaveRequestIdRef = useRef(0);
-  const pendingRemoteSnapshotRefreshRef = useRef(false);
-  const hasRealtimeSubscriptionRef = useRef(false);
   const ghostCreateControllersRef = useRef<Map<string, AbortController>>(new Map());
   const ghostCreateInFlightIdsRef = useRef<Set<string>>(new Set());
-  const feedbackMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ghostCreateErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const positionRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mutationStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanFrameRef = useRef<number | null>(null);
+  const scheduleAutoPanRef = useRef<() => void>(() => {});
   const restoreEdgeStyleRef = useRef<(() => void) | null>(null);
   const appliedFeedbackEventIdRef = useRef<string | null>(null);
-  const [activeMutationFeedback, setActiveMutationFeedback] =
-    useState<InspectorMutationFeedback | null>(null);
   const [feedbackConceptId, setFeedbackConceptId] = useState<string | null>(null);
   const [mutationStatusMessage, setMutationStatusMessage] = useState<string | null>(null);
   const [ghostCreateErrorMessage, setGhostCreateErrorMessage] = useState<string | null>(null);
@@ -343,6 +332,14 @@ export function GraphCanvasRuntime({
   }, [positions]);
 
   useEffect(() => {
+    lastAppliedSeqRef.current = lastAppliedSeq;
+  }, [lastAppliedSeq]);
+
+  useEffect(() => {
+    activeLocalEntityLocksRef.current = activeLocalEntityLocks;
+  }, [activeLocalEntityLocks]);
+
+  useEffect(() => {
     isZoomedOutRef.current = isZoomedOut;
   }, [isZoomedOut]);
 
@@ -351,21 +348,10 @@ export function GraphCanvasRuntime({
   }, [dragState]);
 
   useEffect(() => {
-    if (!isZoomedOut) {
-      hoveredConceptIdRef.current = null;
-      setHoveredConceptId(null);
-    }
-  }, [isZoomedOut]);
-
-  useEffect(() => {
     const ghostCreateControllers = ghostCreateControllersRef.current;
     const ghostCreateInFlightIds = ghostCreateInFlightIdsRef.current;
 
     return () => {
-      snapshotRequestControllerRef.current?.abort();
-      if (feedbackMessageTimerRef.current !== null) {
-        clearTimeout(feedbackMessageTimerRef.current);
-      }
       if (feedbackConceptTimerRef.current !== null) {
         clearTimeout(feedbackConceptTimerRef.current);
       }
@@ -375,8 +361,8 @@ export function GraphCanvasRuntime({
       if (ghostCreateErrorTimerRef.current !== null) {
         clearTimeout(ghostCreateErrorTimerRef.current);
       }
-      if (positionRetryTimerRef.current !== null) {
-        clearTimeout(positionRetryTimerRef.current);
+      if (mutationStatusTimerRef.current !== null) {
+        clearTimeout(mutationStatusTimerRef.current);
       }
       if (autoPanDelayTimerRef.current !== null) {
         clearTimeout(autoPanDelayTimerRef.current);
@@ -391,24 +377,18 @@ export function GraphCanvasRuntime({
       }
       ghostCreateControllers.clear();
       ghostCreateInFlightIds.clear();
-      feedbackMessageTimerRef.current = null;
       feedbackConceptTimerRef.current = null;
       feedbackEdgeTimerRef.current = null;
       ghostCreateErrorTimerRef.current = null;
-      positionRetryTimerRef.current = null;
       autoPanDelayTimerRef.current = null;
       autoPanFrameRef.current = null;
       restoreEdgeStyleRef.current = null;
-      snapshotRequestControllerRef.current = null;
       teardownTouchDragRef.current = null;
       dragSessionRef.current = null;
     };
   }, []);
 
   // Local fetch states
-  const [isSnapshotLoading, setIsSnapshotLoading] = useState(snapshot === null);
-  const [snapshotError, setSnapshotError] = useState<string | null>(null);
-
   const syncLocalConceptPosition = useCallback(
     (conceptId: string, position: DragViewportPoint) => {
       positionsRef.current = {
@@ -418,6 +398,28 @@ export function GraphCanvasRuntime({
       updateConceptPosition(conceptId, position);
     },
     [updateConceptPosition]
+  );
+
+  const syncSnapshotConceptPositionRef = useCallback(
+    (conceptId: string, position: DragViewportPoint, revision?: number) => {
+      const activeSnapshot = snapshotRef.current;
+      if (!activeSnapshot) {
+        return;
+      }
+
+      const concept = activeSnapshot.concepts.find(
+        (candidate) => candidate.id === conceptId
+      );
+      if (concept) {
+        concept.x = Math.round(position.x);
+        concept.y = Math.round(position.y);
+      }
+
+      if (typeof revision === "number") {
+        activeSnapshot.revision = revision;
+      }
+    },
+    []
   );
 
   const ensureStableSigmaBBox = useCallback(
@@ -449,169 +451,18 @@ export function GraphCanvasRuntime({
     []
   );
 
-  const fetchLatestSnapshot = useCallback(
-    async () => {
-      const requestId = snapshotRequestIdRef.current + 1;
-      snapshotRequestIdRef.current = requestId;
-
-      snapshotRequestControllerRef.current?.abort();
-      const controller = new AbortController();
-      snapshotRequestControllerRef.current = controller;
-
-      const shouldShowLoadingState = snapshotRef.current === null;
-      if (shouldShowLoadingState) {
-        setIsSnapshotLoading(true);
-      }
-      setSnapshotError(null);
-
-      try {
-        const response = await fetch(`/api/maps/${map.id}/graph`, {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(body?.error ?? "Unable to load graph snapshot.");
-        }
-
-        const nextSnapshot = (await response.json()) as GraphSnapshot;
-        if (controller.signal.aborted || requestId !== snapshotRequestIdRef.current) {
-          return;
-        }
-
-        snapshotRef.current = nextSnapshot;
-        setSnapshot(nextSnapshot);
-      } catch (fetchError) {
-        if (controller.signal.aborted || requestId !== snapshotRequestIdRef.current) {
-          return;
-        }
-
-        setSnapshotError(
-          fetchError instanceof Error ? fetchError.message : "Unable to load graph snapshot."
-        );
-      } finally {
-        if (requestId === snapshotRequestIdRef.current) {
-          setIsSnapshotLoading(false);
-        }
-      }
-    },
-    [map.id, setSnapshot]
-  );
-
-  const hasActiveDragMutation = useCallback(() => {
-    const phase = dragStateRef.current.phase;
-    return phase === "press" || phase === "dragging" || phase === "saving";
-  }, []);
-
-  const queueRemoteSnapshotRefresh = useCallback(
-    (remoteRevision?: number | null) => {
-      const currentRevision = snapshotRef.current?.revision ?? -1;
-      if (
-        typeof remoteRevision === "number" &&
-        Number.isFinite(remoteRevision) &&
-        remoteRevision <= currentRevision
-      ) {
-        return;
-      }
-
-      if (hasActiveDragMutation()) {
-        pendingRemoteSnapshotRefreshRef.current = true;
-        return;
-      }
-
-      pendingRemoteSnapshotRefreshRef.current = false;
-      void fetchLatestSnapshot();
-    },
-    [fetchLatestSnapshot, hasActiveDragMutation]
-  );
-
-  const flushPendingRemoteSnapshotRefresh = useCallback(() => {
-    if (!pendingRemoteSnapshotRefreshRef.current || hasActiveDragMutation()) {
-      return;
-    }
-
-    pendingRemoteSnapshotRefreshRef.current = false;
-    void fetchLatestSnapshot();
-  }, [fetchLatestSnapshot, hasActiveDragMutation]);
-
-  useEffect(() => {
-    if (snapshot !== null) {
-      setIsSnapshotLoading(false);
-      return;
-    }
-
-    void fetchLatestSnapshot();
-  }, [fetchLatestSnapshot, snapshot]);
-
-  useEffect(() => {
-    if (dragState.phase !== "idle") {
-      return;
-    }
-
-    flushPendingRemoteSnapshotRefresh();
-  }, [dragState.phase, flushPendingRemoteSnapshotRefresh]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const supabase = createBrowserSupabaseClient();
-    const channel = supabase
-      .channel(`map-runtime-${map.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "maps",
-          filter: `id=eq.${map.id}`,
-        },
-        (payload) => {
-          const nextRevision =
-            typeof payload.new === "object" &&
-            payload.new !== null &&
-            "graphRevision" in payload.new &&
-            typeof (payload.new as { graphRevision?: unknown }).graphRevision === "number"
-              ? (payload.new as { graphRevision: number }).graphRevision
-              : null;
-
-          queueRemoteSnapshotRefresh(nextRevision);
-        }
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          if (hasRealtimeSubscriptionRef.current) {
-            queueRemoteSnapshotRefresh();
-          } else {
-            hasRealtimeSubscriptionRef.current = true;
-          }
-        }
-      });
-
-    const handleWindowFocus = () => {
-      queueRemoteSnapshotRefresh();
-    };
-
-    window.addEventListener("focus", handleWindowFocus);
-
-    return () => {
-      window.removeEventListener("focus", handleWindowFocus);
-      void supabase.removeChannel(channel);
-    };
-  }, [map.id, queueRemoteSnapshotRefresh]);
-
-  // --- Map Coordinates Save Logic ---
-  const clearPositionRetryTimer = useCallback(() => {
-    if (positionRetryTimerRef.current !== null) {
-      clearTimeout(positionRetryTimerRef.current);
-      positionRetryTimerRef.current = null;
-    }
-  }, []);
+  const { fetchLatestSnapshot, isSnapshotLoading, snapshotError } =
+    useGraphSnapshotBootstrap({
+      mapId: map.id,
+      snapshot,
+      setSnapshot,
+      setLastAppliedSeq,
+      setNeedsSnapshotFallback,
+      clearPositions: () => {
+        positionsRef.current = {};
+        setPositions({});
+      },
+    });
 
   const stopAutoPan = useCallback(() => {
     if (autoPanFrameRef.current !== null) {
@@ -661,258 +512,45 @@ export function GraphCanvasRuntime({
     };
   }, []);
 
-  const sendPositionsBatch = useCallback(
-    async (updates: { conceptId: string; x: number; y: number }[]) => {
-      const normalizedUpdates = updates.map((update) => ({
-        conceptId: update.conceptId,
-        x: Math.round(update.x),
-        y: Math.round(update.y),
-      }));
-      const payload = JSON.stringify({
-        expectedRevision: snapshotRef.current?.revision ?? 0,
-        positions: normalizedUpdates,
-      });
-      const response = await fetch(`/api/maps/${map.id}/concepts/positions`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-      });
-
-      const body = (await response.json().catch(() => null)) as
-        | ConceptPositionPatchResponse
-        | null;
-
-      if (response.status === 409) {
-        throw new GraphRevisionConflictError(
-          body?.error ?? "Map changed since your last snapshot. Refresh and try again.",
-          typeof body?.currentRevision === "number" ? body.currentRevision : null
-        );
-      }
-
-      if (!response.ok || !body?.ok) {
-        throw new Error(body?.error ?? "Unable to update concept positions.");
-      }
-
-      return body;
-    },
-    [map.id]
-  );
-
-  const syncSnapshotWithSavedPositions = useCallback(
-    (result: ConceptPositionPatchResponse | null | undefined) => {
-      const activeSnapshot = snapshotRef.current;
-      const updatedConcepts = result?.concepts ?? [];
-      if (!activeSnapshot || updatedConcepts.length === 0) {
-        return;
-      }
-
-      const nextConceptPositions = new Map(
-        updatedConcepts.map((concept) => [
-          concept.id,
-          {
-            x: concept.x,
-            y: concept.y,
-          },
-        ])
-      );
-
-      const nextSnapshot: GraphSnapshot = {
-        ...activeSnapshot,
-        revision:
-          typeof result?.revision === "number"
-            ? result.revision
-            : activeSnapshot.revision,
-        concepts: activeSnapshot.concepts.map((concept) => {
-          const savedPosition = nextConceptPositions.get(concept.id);
-          if (!savedPosition) {
-            return concept;
-          }
-
-          return {
-            ...concept,
-            x: savedPosition.x,
-            y: savedPosition.y,
-          };
-        }),
-      };
-
-      snapshotRef.current = nextSnapshot;
-      setSnapshot(nextSnapshot);
-    },
-    [setSnapshot]
-  );
-
-  const mergeCreatedConceptIntoSnapshot = useCallback(
-    (
-      conceptPayload: GhostCreateConceptResponse["concept"],
-      revision?: number
-    ) => {
-      const nextConcept = toGraphConceptNode(conceptPayload);
-      if (!nextConcept) {
-        return;
-      }
-
-      const activeSnapshot = snapshotRef.current ?? EMPTY_GRAPH_SNAPSHOT;
-      const existingConceptIndex = activeSnapshot.concepts.findIndex(
-        (concept) => concept.id === nextConcept.id
-      );
-      const nextConcepts =
-        existingConceptIndex === -1
-          ? [...activeSnapshot.concepts, nextConcept]
-          : activeSnapshot.concepts.map((concept) =>
-              concept.id === nextConcept.id ? nextConcept : concept
-            );
-      const nextSnapshot: GraphSnapshot = {
-        ...activeSnapshot,
-        revision:
-          typeof revision === "number" ? revision : activeSnapshot.revision,
-        counts: {
-          ...activeSnapshot.counts,
-          conceptCount:
-            existingConceptIndex === -1
-              ? activeSnapshot.counts.conceptCount + 1
-              : activeSnapshot.counts.conceptCount,
+  const handleCommittedPositionMutation = useCallback(
+    (result: ConceptPositionMutationResponse) => {
+      syncSnapshotConceptPositionRef(
+        result.concept.id,
+        {
+          x: result.concept.x,
+          y: result.concept.y,
         },
-        concepts: nextConcepts,
-      };
-
-      snapshotRef.current = nextSnapshot;
-      setSnapshot(nextSnapshot);
-    },
-    [setSnapshot]
-  );
-
-  const persistConceptPosition = useCallback(
-    async (
-      conceptId: string,
-      x: number,
-      y: number,
-      options?: {
-        requestId?: number;
-        retryCount?: number;
-      }
-    ) => {
-      const requestId = options?.requestId ?? positionSaveRequestIdRef.current;
-      const retryCount = options?.retryCount ?? 0;
-      const nextPersistenceState = reducePositionPersistenceState(
-        retryCount > 0
-          ? {
-              phase: "saving",
-              retryCount: retryCount - 1,
-              errorMessage: null,
-            }
-          : INITIAL_POSITION_PERSISTENCE_STATE,
-        retryCount > 0 ? { type: "retry" } : { type: "saving" }
+        result.revision
       );
-
-      setDragState({
-        ...dragStateRef.current,
-        phase: nextPersistenceState.phase,
-        conceptId,
-        currentGraphPosition: { x, y },
-        pendingLongPress: false,
-        retryCount: nextPersistenceState.retryCount,
-        errorMessage: null,
-      });
-
-      try {
-        const result = await sendPositionsBatch([{ conceptId, x, y }]);
-        if (requestId !== positionSaveRequestIdRef.current) {
-          return;
-        }
-
-        syncSnapshotWithSavedPositions(result);
-
-        if (dragSessionRef.current === null) {
-          resetDragState();
-        }
-      } catch (error) {
-        if (requestId !== positionSaveRequestIdRef.current) {
-          return;
-        }
-
-        if (error instanceof GraphRevisionConflictError) {
-          clearPositionRetryTimer();
-          pendingRemoteSnapshotRefreshRef.current = false;
-          void fetchLatestSnapshot();
-
-          const errorState = reducePositionPersistenceState(
-            {
-              phase: "saving",
-              retryCount,
-              errorMessage: null,
-            },
-            {
-              type: "error",
-              message: error.message,
-            }
-          );
-
-          if (dragSessionRef.current === null) {
-            setDragState({
-              ...dragStateRef.current,
-              phase: errorState.phase,
-              conceptId,
-              currentGraphPosition: { x, y },
-              pendingLongPress: false,
-              retryCount: errorState.retryCount,
-              errorMessage: errorState.errorMessage,
-            });
-          }
-          return;
-        }
-
-        if (retryCount < 1) {
-          clearPositionRetryTimer();
-          positionRetryTimerRef.current = setTimeout(() => {
-            positionRetryTimerRef.current = null;
-            void persistConceptPosition(conceptId, x, y, {
-              requestId,
-              retryCount: retryCount + 1,
-            });
-          }, POSITION_SAVE_RETRY_DELAY_MS);
-          return;
-        }
-
-        const failureMessage =
-          error instanceof Error
-            ? error.message
-            : messages.canvas.positionSaveFailed;
-        const errorState = reducePositionPersistenceState(
-          {
-            phase: "saving",
-            retryCount,
-            errorMessage: null,
-          },
-          {
-            type: "error",
-            message: failureMessage,
-          }
-        );
-
-        if (dragSessionRef.current === null) {
-          setDragState({
-            ...dragStateRef.current,
-            phase: errorState.phase,
-            conceptId,
-            currentGraphPosition: { x, y },
-            pendingLongPress: false,
-            retryCount: errorState.retryCount,
-            errorMessage: errorState.errorMessage,
-          });
-        }
-      }
+      setLastAppliedSeq(result.seq);
+      lastAppliedSeqRef.current = result.seq;
     },
-    [
-      clearPositionRetryTimer,
-      fetchLatestSnapshot,
-      messages.canvas.positionSaveFailed,
-      resetDragState,
-      sendPositionsBatch,
-      setDragState,
-      syncSnapshotWithSavedPositions,
-    ]
+    [setLastAppliedSeq, syncSnapshotConceptPositionRef]
   );
+
+  const {
+    clearPositionRetryTimer,
+    createPositionMutationRequestId,
+    persistConceptPosition,
+  } = useGraphMutationQueue({
+    mapId: map.id,
+    clientId,
+    getExpectedRevision: () => lastAppliedSeqRef.current,
+    dragStateRef,
+    dragSessionRef: dragSessionRef as MutableRefObject<object | null>,
+    positionSaveFailedMessage: messages.canvas.positionSaveFailed,
+    setDragState,
+    resetDragState,
+    addPendingLocalOp,
+    clearPendingLocalOp,
+    onConflict: () => {
+      void fetchLatestSnapshot();
+    },
+    onMutationCommitted: handleCommittedPositionMutation,
+    reducePositionPersistenceState,
+    initialPersistenceState: INITIAL_POSITION_PERSISTENCE_STATE,
+    retryDelayMs: POSITION_SAVE_RETRY_DELAY_MS,
+  });
 
   const updateZoomMode = useCallback(
     (ratio: number) => {
@@ -942,6 +580,10 @@ export function GraphCanvasRuntime({
 
       if (nextZoomedOut !== currentlyZoomedOut) {
         isZoomedOutRef.current = nextZoomedOut;
+        if (!nextZoomedOut) {
+          hoveredConceptIdRef.current = null;
+          setHoveredConceptId(null);
+        }
         setIsZoomedOut(nextZoomedOut);
       }
     },
@@ -1078,6 +720,116 @@ export function GraphCanvasRuntime({
       skipIndexation: true,
     });
   }, []);
+
+  const applyIncomingOperation = useCallback(
+    (operation: MapGraphOperation) => {
+      if (isConceptPositionSetOperation(operation)) {
+        const nextPosition = {
+          x: operation.payload.x,
+          y: operation.payload.y,
+        };
+
+        syncSnapshotConceptPositionRef(
+          operation.entityId,
+          nextPosition,
+          operation.seq
+        );
+        syncLocalConceptPosition(operation.entityId, nextPosition);
+
+        const sigma = sigmaRef.current;
+        if (!sigma) {
+          return true;
+        }
+
+        const graph = sigma.getGraph();
+        if (!graph.hasNode(operation.entityId)) {
+          return false;
+        }
+
+        graph.setNodeAttribute(operation.entityId, "x", nextPosition.x);
+        graph.setNodeAttribute(operation.entityId, "y", nextPosition.y);
+        refreshDraggedConceptScene(operation.entityId);
+        syncConceptPresentation();
+        return true;
+      }
+
+      const activeSnapshot = snapshotRef.current ?? EMPTY_GRAPH_SNAPSHOT;
+      const nextSnapshot = applyGraphOperationToSnapshot(activeSnapshot, operation);
+      if (!nextSnapshot) {
+        return false;
+      }
+
+      snapshotRef.current = nextSnapshot;
+      setSnapshot(nextSnapshot);
+
+      if (isConceptArchiveOperation(operation)) {
+        if (hoveredConceptIdRef.current === operation.entityId) {
+          hoveredConceptIdRef.current = null;
+          setHoveredConceptId(null);
+        }
+
+        if (operation.entityId in positionsRef.current) {
+          const nextPositions = { ...positionsRef.current };
+          delete nextPositions[operation.entityId];
+          positionsRef.current = nextPositions;
+          setPositions(nextPositions);
+        }
+
+        const isArchivedConceptSelection =
+          selection.kind === "concept" && selection.id === operation.entityId;
+        const isArchivedDraftSelection =
+          selection.kind === "create-link" &&
+          (selection.sourceConceptId === operation.entityId ||
+            selection.targetConceptId === operation.entityId);
+        const isArchivedConnectSource =
+          connectLinkSourceIdRef.current === operation.entityId;
+
+        if (
+          isArchivedConceptSelection ||
+          isArchivedDraftSelection ||
+          isArchivedConnectSource
+        ) {
+          onClearSelectionRef.current();
+        }
+      }
+
+      if (isLinkArchiveOperation(operation)) {
+        const isArchivedLinkSelection =
+          selection.kind === "link" && selection.id === operation.entityId;
+
+        if (isArchivedLinkSelection) {
+          onClearSelectionRef.current();
+        }
+      }
+
+      return true;
+    },
+    [
+      connectLinkSourceIdRef,
+      onClearSelectionRef,
+      refreshDraggedConceptScene,
+      selection,
+      setPositions,
+      setSnapshot,
+      setHoveredConceptId,
+      syncConceptPresentation,
+      syncLocalConceptPosition,
+      syncSnapshotConceptPositionRef,
+    ]
+  );
+
+  useMapRealtimeInvalidation({
+    mapId: map.id,
+    clientId,
+    dragPhase: dragState.phase,
+    lastAppliedSeqRef,
+    setLastAppliedSeq,
+    setNeedsSnapshotFallback,
+    hasActiveLocalEntityLock: (entityId) => entityId in activeLocalEntityLocksRef.current,
+    clearPendingLocalOp,
+    applyIncomingOperation,
+    fetchLatestSnapshot,
+  });
 
   const handleConceptActivation = useCallback(
     (conceptId: string) => {
@@ -1238,38 +990,34 @@ export function GraphCanvasRuntime({
       return;
     }
 
-    setActiveMutationFeedback(mutationFeedback);
-    setMutationStatusMessage(mutationFeedback.message);
-
-    if (feedbackMessageTimerRef.current !== null) {
-      clearTimeout(feedbackMessageTimerRef.current);
+    if (mutationStatusTimerRef.current !== null) {
+      clearTimeout(mutationStatusTimerRef.current);
     }
 
-    feedbackMessageTimerRef.current = setTimeout(() => {
-      setMutationStatusMessage(null);
-      feedbackMessageTimerRef.current = null;
-    }, MUTATION_FEEDBACK_DURATION_MS);
+    queueMicrotask(() => {
+      setMutationStatusMessage(mutationFeedback.message);
+    });
 
-    void fetchLatestSnapshot();
-  }, [fetchLatestSnapshot, mutationFeedback]);
+    mutationStatusTimerRef.current = setTimeout(() => {
+      setMutationStatusMessage(null);
+      mutationStatusTimerRef.current = null;
+    }, MUTATION_FEEDBACK_DURATION_MS);
+  }, [mutationFeedback]);
 
   useEffect(() => {
-    if (!activeMutationFeedback) {
+    if (!mutationFeedback) {
       return;
     }
 
-    if (appliedFeedbackEventIdRef.current === activeMutationFeedback.eventId) {
-      return;
+    if (appliedFeedbackEventIdRef.current !== mutationFeedback.eventId) {
+      queueMicrotask(() => {
+        const applied = applyMutationFeedback(mutationFeedback);
+        if (applied) {
+          appliedFeedbackEventIdRef.current = mutationFeedback.eventId;
+        }
+      });
     }
-
-    const applied = applyMutationFeedback(activeMutationFeedback);
-    if (!applied) {
-      return;
-    }
-
-    appliedFeedbackEventIdRef.current = activeMutationFeedback.eventId;
-    setActiveMutationFeedback(null);
-  }, [activeMutationFeedback, applyMutationFeedback]);
+  }, [applyMutationFeedback, mutationFeedback, snapshot]);
 
   const handleConceptCardClick = useCallback(
     (conceptId: string) => {
@@ -1401,9 +1149,13 @@ export function GraphCanvasRuntime({
       });
 
       updateDraggedConceptPosition(session, session.currentPointerViewport);
-      scheduleAutoPan();
+      scheduleAutoPanRef.current();
     });
   }, [clearAutoPanDelayTimer, updateDraggedConceptPosition]);
+
+  useEffect(() => {
+    scheduleAutoPanRef.current = scheduleAutoPan;
+  }, [scheduleAutoPan]);
 
   const startConceptDrag = useCallback(
     (session: ConceptDragSession) => {
@@ -1464,6 +1216,7 @@ export function GraphCanvasRuntime({
       stopAutoPan();
       session.autoPanIntentStartedAt = null;
       dragSessionRef.current = null;
+      unlockLocalEntity(session.conceptId);
 
       if (sigma) {
         sigma.getMouseCaptor().enabled = true;
@@ -1503,7 +1256,7 @@ export function GraphCanvasRuntime({
             persistedGraphPosition.x,
             persistedGraphPosition.y,
             {
-              requestId: positionSaveRequestIdRef.current,
+              requestId: session.positionRequestId,
             }
           );
           return;
@@ -1520,6 +1273,7 @@ export function GraphCanvasRuntime({
       syncLocalConceptPosition,
       syncConceptPresentation,
       stopAutoPan,
+      unlockLocalEntity,
     ]
   );
 
@@ -1552,8 +1306,7 @@ export function GraphCanvasRuntime({
       clearPositionRetryTimer();
       clearAutoPanDelayTimer();
       stopAutoPan();
-      snapshotRequestControllerRef.current?.abort();
-      positionSaveRequestIdRef.current += 1;
+      const positionRequestId = createPositionMutationRequestId();
 
       const startPointerViewport = toViewportPoint(event.clientX, event.clientY);
       if (!startPointerViewport) {
@@ -1567,6 +1320,7 @@ export function GraphCanvasRuntime({
       const startConceptViewport = sigma.graphToViewport(startGraphPosition);
       const session: ConceptDragSession = {
         conceptId,
+        positionRequestId,
         pointerType,
         pressedAt: Date.now(),
         startPointerViewport,
@@ -1583,6 +1337,10 @@ export function GraphCanvasRuntime({
       };
 
       dragSessionRef.current = session;
+      lockLocalEntity(conceptId, {
+        entityType: "concept",
+        reason: "dragging",
+      });
       sigma.getMouseCaptor().enabled = false;
       sigma.getTouchCaptor().enabled = false;
       setDragState({
@@ -1634,6 +1392,7 @@ export function GraphCanvasRuntime({
             if (shouldCancelTouchLongPress(distance)) {
               teardownTouchDragRef.current?.();
               dragSessionRef.current = null;
+              unlockLocalEntity(session.conceptId);
               sigma.getMouseCaptor().enabled = true;
               sigma.getTouchCaptor().enabled = true;
               resetDragState();
@@ -1685,11 +1444,14 @@ export function GraphCanvasRuntime({
       clearAutoPanDelayTimer,
       canEditGraph,
       completeConceptDrag,
+      createPositionMutationRequestId,
+      lockLocalEntity,
       resetDragState,
       setDragState,
       startConceptDrag,
       stopAutoPan,
       toViewportPoint,
+      unlockLocalEntity,
       updateDraggedConceptPosition,
     ]
   );
@@ -1901,20 +1663,34 @@ export function GraphCanvasRuntime({
         setGhostCreateErrorMessage(null);
 
         const controller = new AbortController();
+        const clientMutationId = createGraphClientMutationId();
+        const pendingLocalOpKey = getPendingGraphOperationKey(
+          clientId,
+          clientMutationId
+        );
         ghostCreateInFlightIdsRef.current.add(ghost.id);
         ghostCreateControllersRef.current.set(ghost.id, controller);
+        addPendingLocalOp({
+          clientId,
+          clientMutationId,
+          opKind: "concept.create",
+          entityType: "concept",
+          entityId: ghost.id,
+        });
 
         void fetch(`/api/maps/${map.id}/concepts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            expectedRevision: snapshotRef.current?.revision ?? 0,
+            expectedRevision: lastAppliedSeqRef.current,
             title: ghost.title || "Unknown",
             conceptType: ghost.conceptType || "custom",
             summary: ghost.summary,
             description: ghost.description,
             x: Math.round(ghost.x),
             y: Math.round(ghost.y),
+            clientId,
+            clientMutationId,
           }),
           signal: controller.signal,
         })
@@ -1945,15 +1721,26 @@ export function GraphCanvasRuntime({
 
             clearGhostCreateErrorTimer();
             setGhostCreateErrorMessage(null);
-            mergeCreatedConceptIntoSnapshot(data.concept, data.revision);
-
             const nextGhosts = ghostsRef.current.filter(
               (candidate) => candidate.id !== ghost.id
             );
             ghostsRef.current = nextGhosts;
             setGhosts(nextGhosts);
 
-            void fetchLatestSnapshot();
+            clearPendingLocalOp(pendingLocalOpKey);
+
+            const applied =
+              data.op !== undefined ? applyIncomingOperation(data.op) : false;
+            if (!applied) {
+              void fetchLatestSnapshot();
+            } else if (typeof data.seq === "number") {
+              lastAppliedSeqRef.current = data.seq;
+              setLastAppliedSeq(data.seq);
+            } else if (typeof data.revision === "number") {
+              lastAppliedSeqRef.current = data.revision;
+              setLastAppliedSeq(data.revision);
+            }
+
             onOpenConceptInspectorRef.current(data.concept.id);
           })
           .catch((error) => {
@@ -1961,11 +1748,13 @@ export function GraphCanvasRuntime({
               return;
             }
 
+            clearPendingLocalOp(pendingLocalOpKey);
             showGhostCreateError(
               error instanceof Error ? error.message : undefined
             );
           })
           .finally(() => {
+            clearPendingLocalOp(pendingLocalOpKey);
             ghostCreateInFlightIdsRef.current.delete(ghost.id);
             ghostCreateControllersRef.current.delete(ghost.id);
           });
@@ -2023,13 +1812,17 @@ export function GraphCanvasRuntime({
       sigmaRef.current = null;
     };
   }, [
+    addPendingLocalOp,
+    applyIncomingOperation,
+    clearPendingLocalOp,
     clearGhostCreateErrorTimer,
+    clientId,
     ensureStableSigmaBBox,
     fetchLatestSnapshot,
     handleConceptActivation,
     canEditGraph,
     map.id,
-    mergeCreatedConceptIntoSnapshot,
+    setLastAppliedSeq,
     setGhosts,
     showGhostCreateError,
     syncConceptPresentation,

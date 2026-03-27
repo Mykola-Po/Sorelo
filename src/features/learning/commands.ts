@@ -1065,7 +1065,7 @@ export async function applyInboxReviewResolutionTx(
       operation,
       artifact.artifactOrder
     );
-    const concept = await createConceptWithTx(tx, {
+    const { concept } = await createConceptWithTx(tx, {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
       mapId: input.mapId,
@@ -1180,7 +1180,7 @@ export async function applyInboxReviewResolutionTx(
         endpoint: afterSnapshot.target,
       }),
     ]);
-    const link = await createLinkWithTx(tx, {
+    const { link } = await createLinkWithTx(tx, {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
       mapId: input.mapId,

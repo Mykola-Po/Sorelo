@@ -146,4 +146,10 @@ describe("MapStore (Zustand)", () => {
     store.getState().resetDragState();
     expect(store.getState().dragState).toEqual(IDLE_DRAG_STATE);
   });
+
+  it.todo(
+    "initializes collaboration runtime fields for clientId, lastAppliedSeq, pendingLocalOps, activeLocalEntityLocks, and needsSnapshotFallback"
+  );
+
+  it.todo("tracks a pending local operation without mutating the graph snapshot");
 });

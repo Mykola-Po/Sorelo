@@ -8,7 +8,15 @@ import {
   recordEntityLineageTransition,
   recordMapManualVersion,
 } from "@/features/learning/evolution";
-import { bumpMapGraphRevision } from "@/features/maps/commands";
+import {
+  appendGraphOperationTx,
+  bumpMapGraphRevision,
+  createServerGraphOperationClientMetadata,
+  findGraphOperationByClientMutation,
+  MAP_GRAPH_OPERATION_KIND,
+  MapRevisionConflictError,
+  serializeMapGraphOperation,
+} from "@/features/maps/commands";
 import {
   requireActiveMap,
   requireWorkspaceGraphEditAccess,
@@ -44,6 +52,30 @@ type CreateLinkCommandInput = {
   mapVersionTriggerType?: MapVersionTriggerType;
 };
 
+type StructuralGraphOperationClientInput = {
+  clientId?: string | null;
+  clientMutationId?: string | null;
+};
+
+type CreateLinkWithTxInput = CreateLinkCommandInput &
+  StructuralGraphOperationClientInput;
+
+export type CreateLinkWithOperationResult = {
+  revision: number;
+  seq: number;
+  link: typeof links.$inferSelect;
+  op: ReturnType<typeof serializeMapGraphOperation>;
+  duplicate: boolean;
+};
+
+export type ArchiveLinkWithOperationResult = {
+  revision: number;
+  seq: number;
+  linkId: string;
+  op: ReturnType<typeof serializeMapGraphOperation>;
+  duplicate: boolean;
+};
+
 async function assertConceptMembership(
   workspaceId: string,
   mapId: string,
@@ -56,7 +88,8 @@ async function assertConceptMembership(
       and(
         eq(concepts.id, conceptId),
         eq(concepts.workspaceId, workspaceId),
-        eq(concepts.mapId, mapId)
+        eq(concepts.mapId, mapId),
+        isNull(concepts.archivedAt)
       )
     )
     .limit(1);
@@ -66,10 +99,40 @@ async function assertConceptMembership(
   }
 }
 
+async function findLinkRecord(
+  tx: Pick<LinkCommandTx, "select">,
+  input: {
+    workspaceId: string;
+    mapId: string;
+    linkId: string;
+  }
+) {
+  const [link] = await tx
+    .select()
+    .from(links)
+    .where(
+      and(
+        eq(links.id, input.linkId),
+        eq(links.workspaceId, input.workspaceId),
+        eq(links.mapId, input.mapId)
+      )
+    )
+    .limit(1);
+
+  return link ?? null;
+}
+
 export async function createLinkWithTx(
   tx: LinkCommandTx,
-  input: CreateLinkCommandInput
+  input: CreateLinkWithTxInput
 ) {
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
   const versionNo = await bumpMapGraphRevision(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
@@ -91,7 +154,11 @@ export async function createLinkWithTx(
       .select({ value: count() })
       .from(links)
       .where(
-        and(eq(links.mapId, input.mapId), eq(links.workspaceId, input.workspaceId))
+        and(
+          eq(links.mapId, input.mapId),
+          eq(links.workspaceId, input.workspaceId),
+          isNull(links.archivedAt)
+        )
       ),
   ]);
   const conceptCountAtMoment = Number(conceptCountRows[0]?.value ?? 0);
@@ -181,10 +248,41 @@ export async function createLinkWithTx(
     });
   }
 
-  return link;
+  const operation = await appendGraphOperationTx(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    seq: versionNo,
+    actorUserId: input.actorUserId,
+    clientId: operationClientMetadata.clientId,
+    clientMutationId: operationClientMetadata.clientMutationId,
+    opKind: MAP_GRAPH_OPERATION_KIND.linkCreate,
+    entityType: "link",
+    entityId: link.id,
+    payload: {
+      sourceConceptId: link.sourceConceptId,
+      targetConceptId: link.targetConceptId,
+      relationType: link.relationType,
+      strength: link.strength,
+      description: link.description,
+      updatedAt: link.updatedAt.toISOString(),
+    },
+  });
+
+  return {
+    link,
+    revision: versionNo,
+    op: serializeMapGraphOperation(operation),
+  };
 }
 
 export async function createLinkCommand(input: CreateLinkCommandInput) {
+  const result = await createLinkWithOperationCommand(input);
+  return result.link;
+}
+
+export async function createLinkWithOperationCommand(
+  input: CreateLinkCommandInput & StructuralGraphOperationClientInput
+): Promise<CreateLinkWithOperationResult> {
   await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
   await Promise.all([
@@ -192,7 +290,80 @@ export async function createLinkCommand(input: CreateLinkCommandInput) {
     assertConceptMembership(input.workspaceId, input.mapId, input.targetConceptId),
   ]);
 
-  return db.transaction((tx) => createLinkWithTx(tx, input));
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
+
+  const replayDuplicateResult = async () => {
+    const existingOperation = await findGraphOperationByClientMutation(db, {
+      mapId: input.mapId,
+      clientId: operationClientMetadata.clientId,
+      clientMutationId: operationClientMetadata.clientMutationId,
+    });
+
+    if (!existingOperation) {
+      return null;
+    }
+
+    if (existingOperation.opKind !== MAP_GRAPH_OPERATION_KIND.linkCreate) {
+      throw new Error(
+        "Client mutation conflicts with an existing graph operation."
+      );
+    }
+
+    const link = await findLinkRecord(db, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      linkId: existingOperation.entityId,
+    });
+
+    if (!link) {
+      throw new Error("Link not found.");
+    }
+
+    return {
+      revision: existingOperation.seq,
+      seq: existingOperation.seq,
+      link,
+      op: serializeMapGraphOperation(existingOperation),
+      duplicate: true,
+    } satisfies CreateLinkWithOperationResult;
+  };
+
+  const duplicateResult = await replayDuplicateResult();
+  if (duplicateResult) {
+    return duplicateResult;
+  }
+
+  try {
+    const result = await db.transaction((tx) =>
+      createLinkWithTx(tx, {
+        ...input,
+        ...operationClientMetadata,
+      })
+    );
+
+    return {
+      revision: result.revision,
+      seq: result.revision,
+      link: result.link,
+      op: result.op,
+      duplicate: false,
+    };
+  } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      const conflictDuplicateResult = await replayDuplicateResult();
+      if (conflictDuplicateResult) {
+        return conflictDuplicateResult;
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function updateLinkCommand(input: {
@@ -240,7 +411,8 @@ export async function updateLinkCommand(input: {
         and(
           eq(links.id, input.linkId),
           eq(links.workspaceId, input.workspaceId),
-          eq(links.mapId, input.mapId)
+          eq(links.mapId, input.mapId),
+          isNull(links.archivedAt)
         )
       )
       .limit(1);
@@ -263,7 +435,8 @@ export async function updateLinkCommand(input: {
         and(
           eq(links.id, input.linkId),
           eq(links.workspaceId, input.workspaceId),
-          eq(links.mapId, input.mapId)
+          eq(links.mapId, input.mapId),
+          isNull(links.archivedAt)
         )
       )
       .returning();
@@ -340,30 +513,83 @@ export async function updateLinkCommand(input: {
   });
 }
 
-export async function deleteLinkCommand(input: {
-  workspaceId: string;
-  actorUserId: string;
-  mapId: string;
-  expectedRevision: number;
-  linkId: string;
-}) {
+export async function deleteLinkCommand(
+  input: {
+    workspaceId: string;
+    actorUserId: string;
+    mapId: string;
+    expectedRevision: number;
+    linkId: string;
+  } & StructuralGraphOperationClientInput
+) {
   await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  await db.transaction(async (tx) => {
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
+
+  const replayDuplicateResult = async () => {
+    if (!input.clientId || !input.clientMutationId) {
+      return null;
+    }
+
+    const existingOperation = await findGraphOperationByClientMutation(db, {
+      mapId: input.mapId,
+      clientId: input.clientId,
+      clientMutationId: input.clientMutationId,
+    });
+
+    if (!existingOperation) {
+      return null;
+    }
+
+    if (existingOperation.opKind !== MAP_GRAPH_OPERATION_KIND.linkArchive) {
+      throw new Error(
+        "Client mutation conflicts with an existing graph operation."
+      );
+    }
+
+    return {
+      revision: existingOperation.seq,
+      seq: existingOperation.seq,
+      linkId: existingOperation.entityId,
+      op: serializeMapGraphOperation(existingOperation),
+      duplicate: true,
+    } satisfies ArchiveLinkWithOperationResult;
+  };
+
+  const duplicateResult = await replayDuplicateResult();
+  if (duplicateResult) {
+    return duplicateResult;
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+    const archivedAt = new Date();
     const versionNo = await bumpMapGraphRevision(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       expectedRevision: input.expectedRevision,
     });
 
-    const [deletedLink] = await tx
-      .delete(links)
+    const [archivedLink] = await tx
+      .update(links)
+      .set({
+        archivedAt,
+        archivedByUserId: input.actorUserId,
+        updatedAt: archivedAt,
+      })
       .where(
         and(
           eq(links.id, input.linkId),
           eq(links.workspaceId, input.workspaceId),
-          eq(links.mapId, input.mapId)
+          eq(links.mapId, input.mapId),
+          isNull(links.archivedAt)
         )
       )
       .returning({
@@ -373,7 +599,12 @@ export async function deleteLinkCommand(input: {
         relationType: links.relationType,
         strength: links.strength,
         description: links.description,
+        archivedAt: links.archivedAt,
       });
+
+    if (!archivedLink) {
+      throw new Error("Link not found.");
+    }
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
@@ -382,41 +613,81 @@ export async function deleteLinkCommand(input: {
       versionNo,
       snapshotJson: {
         entityType: "link",
-        linkId: deletedLink?.id ?? input.linkId,
+        link: {
+          id: archivedLink.id,
+          sourceConceptId: archivedLink.sourceConceptId,
+          targetConceptId: archivedLink.targetConceptId,
+          relationType: archivedLink.relationType,
+          strength: archivedLink.strength,
+          description: archivedLink.description,
+          archivedAt: archivedLink.archivedAt,
+        },
       },
       diffJson: {
-        action: "link.deleted",
-        linkId: deletedLink?.id ?? input.linkId,
-        before: deletedLink
-          ? {
-              sourceConceptId: deletedLink.sourceConceptId,
-              targetConceptId: deletedLink.targetConceptId,
-              relationType: deletedLink.relationType,
-              strength: deletedLink.strength,
-              description: deletedLink.description,
-            }
-          : null,
-        after: null,
+        action: "link.archived",
+        linkId: archivedLink.id,
+        before: {
+          sourceConceptId: archivedLink.sourceConceptId,
+          targetConceptId: archivedLink.targetConceptId,
+          relationType: archivedLink.relationType,
+          strength: archivedLink.strength,
+          description: archivedLink.description,
+        },
+        after: {
+          archivedAt: archivedLink.archivedAt,
+        },
       },
     });
 
-    if (deletedLink) {
-      await recordEntityLineageTransition(tx, {
-        workspaceId: input.workspaceId,
-        mapId: input.mapId,
-        entityType: "link",
-        fromEntityId: deletedLink.id,
-        toEntityId: null,
-        transitionType: "archive",
-      });
-    }
+    await recordEntityLineageTransition(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      entityType: "link",
+      fromEntityId: archivedLink.id,
+      toEntityId: null,
+      transitionType: "archive",
+    });
 
     await recordActivity(tx, {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
       entityType: "link",
       entityId: input.linkId,
-      action: "link.deleted",
+      action: "link.archived",
     });
-  });
+      const operation = await appendGraphOperationTx(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        seq: versionNo,
+        actorUserId: input.actorUserId,
+        clientId: operationClientMetadata.clientId,
+        clientMutationId: operationClientMetadata.clientMutationId,
+        opKind: MAP_GRAPH_OPERATION_KIND.linkArchive,
+        entityType: "link",
+        entityId: archivedLink.id,
+        payload: {
+          sourceConceptId: archivedLink.sourceConceptId,
+          targetConceptId: archivedLink.targetConceptId,
+          archivedAt: archivedLink.archivedAt?.toISOString() ?? archivedAt.toISOString(),
+        },
+      });
+
+      return {
+        revision: versionNo,
+        seq: versionNo,
+        linkId: archivedLink.id,
+        op: serializeMapGraphOperation(operation),
+        duplicate: false,
+      } satisfies ArchiveLinkWithOperationResult;
+    });
+  } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      const conflictDuplicateResult = await replayDuplicateResult();
+      if (conflictDuplicateResult) {
+        return conflictDuplicateResult;
+      }
+    }
+
+    throw error;
+  }
 }

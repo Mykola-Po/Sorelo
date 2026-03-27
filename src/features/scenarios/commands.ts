@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -76,7 +76,11 @@ async function loadScenarioGraph(workspaceId: string, mapId: string) {
       })
       .from(concepts)
       .where(
-        and(eq(concepts.workspaceId, workspaceId), eq(concepts.mapId, mapId))
+        and(
+          eq(concepts.workspaceId, workspaceId),
+          eq(concepts.mapId, mapId),
+          isNull(concepts.archivedAt)
+        )
       ),
     db
       .select({
@@ -87,7 +91,13 @@ async function loadScenarioGraph(workspaceId: string, mapId: string) {
         strength: links.strength,
       })
       .from(links)
-      .where(and(eq(links.workspaceId, workspaceId), eq(links.mapId, mapId))),
+      .where(
+        and(
+          eq(links.workspaceId, workspaceId),
+          eq(links.mapId, mapId),
+          isNull(links.archivedAt)
+        )
+      ),
   ]);
 
   return {

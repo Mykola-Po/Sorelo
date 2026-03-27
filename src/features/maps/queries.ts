@@ -1,10 +1,12 @@
 import "server-only";
 
 import {
+  asc,
   and,
   count,
   desc,
   eq,
+  gt,
   ilike,
   inArray,
   isNull,
@@ -22,6 +24,7 @@ import { db } from "@/shared/db/client";
 import {
   concepts,
   links,
+  mapGraphOperations,
   maps,
   scenarioRuns,
   scenarios,
@@ -151,7 +154,7 @@ export async function getMapsHomeData(workspaceId: string) {
     db
       .select({ value: count() })
       .from(links)
-      .where(eq(links.workspaceId, workspaceId)),
+      .where(and(eq(links.workspaceId, workspaceId), isNull(links.archivedAt))),
     db
       .select({ value: count() })
       .from(scenarioRuns)
@@ -173,7 +176,11 @@ export async function getMapsHomeData(workspaceId: string) {
           .select({ value: count() })
           .from(links)
           .where(
-            and(eq(links.workspaceId, workspaceId), eq(links.mapId, latestMapId))
+            and(
+              eq(links.workspaceId, workspaceId),
+              eq(links.mapId, latestMapId),
+              isNull(links.archivedAt)
+            )
           )
       : Promise.resolve([]),
     latestMapId
@@ -256,7 +263,13 @@ export async function getMapGraphMetrics(mapId: string, workspaceId: string) {
     db
       .select({ value: count() })
       .from(links)
-      .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId))),
+      .where(
+        and(
+          eq(links.mapId, mapId),
+          eq(links.workspaceId, workspaceId),
+          isNull(links.archivedAt)
+        )
+      ),
   ]);
 
   const map = await getMapWorkspace(mapId, workspaceId);
@@ -305,7 +318,13 @@ async function listFullGraphRecords(mapId: string, workspaceId: string) {
         updatedAt: links.updatedAt,
       })
       .from(links)
-      .where(and(eq(links.mapId, mapId), eq(links.workspaceId, workspaceId)))
+      .where(
+        and(
+          eq(links.mapId, mapId),
+          eq(links.workspaceId, workspaceId),
+          isNull(links.archivedAt)
+        )
+      )
       .orderBy(desc(links.updatedAt)),
   ]);
 
@@ -352,6 +371,35 @@ export async function getMapRevision(mapId: string, workspaceId: string) {
     .limit(1);
 
   return rows[0]?.revision ?? null;
+}
+
+export async function listMapGraphOperationsAfterSeq(input: {
+  mapId: string;
+  workspaceId: string;
+  afterSeq: number;
+  limit: number;
+}) {
+  const [revision, ops] = await Promise.all([
+    getMapRevision(input.mapId, input.workspaceId),
+    db
+      .select()
+      .from(mapGraphOperations)
+      .where(
+        and(
+          eq(mapGraphOperations.mapId, input.mapId),
+          eq(mapGraphOperations.workspaceId, input.workspaceId),
+          gt(mapGraphOperations.seq, input.afterSeq)
+        )
+      )
+      .orderBy(asc(mapGraphOperations.seq))
+      .limit(input.limit + 1),
+  ]);
+
+  return {
+    revision: revision ?? input.afterSeq,
+    hasMore: ops.length > input.limit,
+    ops: ops.slice(0, input.limit),
+  };
 }
 
 async function listScenarioSummariesForMap(mapId: string, workspaceId: string) {
@@ -582,7 +630,8 @@ export async function getInspectorPayload(
           and(
             eq(links.targetConceptId, concept.id),
             eq(links.mapId, mapId),
-            eq(links.workspaceId, workspaceId)
+            eq(links.workspaceId, workspaceId),
+            isNull(links.archivedAt)
           )
         ),
       db
@@ -597,7 +646,8 @@ export async function getInspectorPayload(
           and(
             eq(links.sourceConceptId, concept.id),
             eq(links.mapId, mapId),
-            eq(links.workspaceId, workspaceId)
+            eq(links.workspaceId, workspaceId),
+            isNull(links.archivedAt)
           )
         ),
     ]);
@@ -667,7 +717,8 @@ export async function getInspectorPayload(
           and(
             eq(links.id, selection.id),
             eq(links.mapId, mapId),
-            eq(links.workspaceId, workspaceId)
+            eq(links.workspaceId, workspaceId),
+            isNull(links.archivedAt)
           )
         )
         .limit(1)

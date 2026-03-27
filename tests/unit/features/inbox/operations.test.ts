@@ -319,7 +319,7 @@ describe("inbox operations", () => {
     const repoMigrations = listAppMigrationFilenames(readdirSync(migrationDirectory));
 
     expect(repoMigrations.at(-1)).toBe(
-      "0016_product_scale_collaboration_hardening.sql"
+      "0018_links_tombstones.sql"
     );
   });
 

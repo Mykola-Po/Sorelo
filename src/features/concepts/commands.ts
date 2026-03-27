@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, or } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -8,7 +8,16 @@ import {
   recordEntityLineageTransition,
   recordMapManualVersion,
 } from "@/features/learning/evolution";
-import { bumpMapGraphRevision } from "@/features/maps/commands";
+import {
+  appendGraphOperationTx,
+  bumpMapGraphRevision,
+  createServerGraphOperationClientMetadata,
+  findGraphOperationByClientMutation,
+  MAP_GRAPH_OPERATION_KIND,
+  MapRevisionConflictError,
+  serializeMapGraphOperation,
+  type SerializedMapGraphOperation,
+} from "@/features/maps/commands";
 import {
   requireActiveMap,
   requireWorkspaceGraphEditAccess,
@@ -72,10 +81,104 @@ type UpdateConceptCommandInput = {
   mapVersionTriggerType?: MapVersionTriggerType;
 };
 
+type StructuralGraphOperationClientInput = {
+  clientId?: string | null;
+  clientMutationId?: string | null;
+};
+
+type CreateConceptWithTxInput = CreateConceptCommandInput &
+  StructuralGraphOperationClientInput;
+
+export type CreateConceptWithOperationResult = {
+  revision: number;
+  seq: number;
+  concept: typeof concepts.$inferSelect;
+  op: SerializedMapGraphOperation;
+  duplicate: boolean;
+};
+
+export type ArchiveConceptWithOperationResult = {
+  revision: number;
+  seq: number;
+  conceptId: string;
+  archivedLinkIds: string[];
+  op: SerializedMapGraphOperation;
+  duplicate: boolean;
+};
+
+export type RepositionConceptWithOperationResult = {
+  revision: number;
+  seq: number;
+  concept: {
+    id: string;
+    x: number;
+    y: number;
+  };
+  op: SerializedMapGraphOperation;
+};
+
+async function findActiveConceptPosition(
+  tx: Pick<ConceptCommandTx, "select">,
+  input: {
+    workspaceId: string;
+    mapId: string;
+    conceptId: string;
+  }
+) {
+  const [concept] = await tx
+    .select({
+      id: concepts.id,
+      x: concepts.x,
+      y: concepts.y,
+    })
+    .from(concepts)
+    .where(
+      and(
+        eq(concepts.id, input.conceptId),
+        eq(concepts.mapId, input.mapId),
+        eq(concepts.workspaceId, input.workspaceId),
+        isNull(concepts.archivedAt)
+      )
+    )
+    .limit(1);
+
+  return concept ?? null;
+}
+
+async function findConceptRecord(
+  tx: Pick<ConceptCommandTx, "select">,
+  input: {
+    workspaceId: string;
+    mapId: string;
+    conceptId: string;
+  }
+) {
+  const [concept] = await tx
+    .select()
+    .from(concepts)
+    .where(
+      and(
+        eq(concepts.id, input.conceptId),
+        eq(concepts.mapId, input.mapId),
+        eq(concepts.workspaceId, input.workspaceId)
+      )
+    )
+    .limit(1);
+
+  return concept ?? null;
+}
+
 export async function createConceptWithTx(
   tx: ConceptCommandTx,
-  input: CreateConceptCommandInput
+  input: CreateConceptWithTxInput
 ) {
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
   const versionNo = await bumpMapGraphRevision(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
@@ -97,7 +200,11 @@ export async function createConceptWithTx(
       .select({ value: count() })
       .from(links)
       .where(
-        and(eq(links.mapId, input.mapId), eq(links.workspaceId, input.workspaceId))
+        and(
+          eq(links.mapId, input.mapId),
+          eq(links.workspaceId, input.workspaceId),
+          isNull(links.archivedAt)
+        )
       ),
   ]);
   const conceptCountBefore = Number(conceptCountRows[0]?.value ?? 0);
@@ -189,7 +296,32 @@ export async function createConceptWithTx(
     });
   }
 
-  return concept;
+  const operation = await appendGraphOperationTx(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+    seq: versionNo,
+    actorUserId: input.actorUserId,
+    clientId: operationClientMetadata.clientId,
+    clientMutationId: operationClientMetadata.clientMutationId,
+    opKind: MAP_GRAPH_OPERATION_KIND.conceptCreate,
+    entityType: "concept",
+    entityId: concept.id,
+    payload: {
+      title: concept.title,
+      conceptType: concept.conceptType,
+      summary: concept.summary,
+      description: concept.description,
+      x: concept.x,
+      y: concept.y,
+      updatedAt: concept.updatedAt.toISOString(),
+    },
+  });
+
+  return {
+    concept,
+    revision: versionNo,
+    op: serializeMapGraphOperation(operation),
+  };
 }
 
 export async function updateConceptWithTx(
@@ -342,10 +474,90 @@ export async function updateConceptWithTx(
 }
 
 export async function createConceptCommand(input: CreateConceptCommandInput) {
+  const result = await createConceptWithOperationCommand(input);
+  return result.concept;
+}
+
+export async function createConceptWithOperationCommand(
+  input: CreateConceptCommandInput & StructuralGraphOperationClientInput
+): Promise<CreateConceptWithOperationResult> {
   await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  return db.transaction((tx) => createConceptWithTx(tx, input));
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
+
+  const replayDuplicateResult = async () => {
+    const existingOperation = await findGraphOperationByClientMutation(db, {
+      mapId: input.mapId,
+      clientId: operationClientMetadata.clientId,
+      clientMutationId: operationClientMetadata.clientMutationId,
+    });
+
+    if (!existingOperation) {
+      return null;
+    }
+
+    if (existingOperation.opKind !== MAP_GRAPH_OPERATION_KIND.conceptCreate) {
+      throw new Error(
+        "Client mutation conflicts with an existing graph operation."
+      );
+    }
+
+    const concept = await findConceptRecord(db, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      conceptId: existingOperation.entityId,
+    });
+
+    if (!concept) {
+      throw new Error("Concept not found.");
+    }
+
+    return {
+      revision: existingOperation.seq,
+      seq: existingOperation.seq,
+      concept,
+      op: serializeMapGraphOperation(existingOperation),
+      duplicate: true,
+    } satisfies CreateConceptWithOperationResult;
+  };
+
+  const duplicateResult = await replayDuplicateResult();
+  if (duplicateResult) {
+    return duplicateResult;
+  }
+
+  try {
+    const result = await db.transaction((tx) =>
+      createConceptWithTx(tx, {
+        ...input,
+        ...operationClientMetadata,
+      })
+    );
+
+    return {
+      revision: result.revision,
+      seq: result.revision,
+      concept: result.concept,
+      op: result.op,
+      duplicate: false,
+    };
+  } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      const conflictDuplicateResult = await replayDuplicateResult();
+      if (conflictDuplicateResult) {
+        return conflictDuplicateResult;
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function updateConceptCommand(input: UpdateConceptCommandInput) {
@@ -374,22 +586,11 @@ export async function repositionConceptCommand(input: {
       expectedRevision: input.expectedRevision,
     });
 
-    const [existingConcept] = await tx
-      .select({
-        id: concepts.id,
-        x: concepts.x,
-        y: concepts.y,
-      })
-      .from(concepts)
-      .where(
-        and(
-          eq(concepts.id, input.conceptId),
-          eq(concepts.mapId, input.mapId),
-          eq(concepts.workspaceId, input.workspaceId),
-          isNull(concepts.archivedAt)
-        )
-      )
-      .limit(1);
+    const existingConcept = await findActiveConceptPosition(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      conceptId: input.conceptId,
+    });
 
     if (!existingConcept) {
       throw new Error("Concept not found.");
@@ -457,6 +658,171 @@ export async function repositionConceptCommand(input: {
 
     return concept;
   });
+}
+
+export async function repositionConceptWithOperationCommand(input: {
+  workspaceId: string;
+  actorUserId: string;
+  mapId: string;
+  expectedRevision: number;
+  conceptId: string;
+  x: number;
+  y: number;
+  clientId: string;
+  clientMutationId: string;
+}): Promise<RepositionConceptWithOperationResult> {
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
+  await requireActiveMap(input.workspaceId, input.mapId);
+
+  const replayDuplicateResult = async () => {
+    const existingOperation = await findGraphOperationByClientMutation(db, {
+      mapId: input.mapId,
+      clientId: input.clientId,
+      clientMutationId: input.clientMutationId,
+    });
+
+    if (!existingOperation) {
+      return null;
+    }
+
+    const concept = await findActiveConceptPosition(db, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      conceptId: input.conceptId,
+    });
+
+    if (!concept) {
+      throw new Error("Concept not found.");
+    }
+
+    return {
+      revision: existingOperation.seq,
+      seq: existingOperation.seq,
+      concept,
+      op: serializeMapGraphOperation(existingOperation),
+    } satisfies RepositionConceptWithOperationResult;
+  };
+
+  const duplicateResult = await replayDuplicateResult();
+  if (duplicateResult) {
+    return duplicateResult;
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const versionNo = await bumpMapGraphRevision(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        expectedRevision: input.expectedRevision,
+      });
+
+      const existingConcept = await findActiveConceptPosition(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        conceptId: input.conceptId,
+      });
+
+      if (!existingConcept) {
+        throw new Error("Concept not found.");
+      }
+
+      const [concept] = await tx
+        .update(concepts)
+        .set({
+          x: input.x,
+          y: input.y,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(concepts.id, input.conceptId),
+            eq(concepts.mapId, input.mapId),
+            eq(concepts.workspaceId, input.workspaceId),
+            isNull(concepts.archivedAt)
+          )
+        )
+        .returning({
+          id: concepts.id,
+          x: concepts.x,
+          y: concepts.y,
+        });
+
+      if (!concept) {
+        throw new Error("Concept not found.");
+      }
+
+      const operation = await appendGraphOperationTx(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        seq: versionNo,
+        actorUserId: input.actorUserId,
+        clientId: input.clientId,
+        clientMutationId: input.clientMutationId,
+        opKind: MAP_GRAPH_OPERATION_KIND.conceptPositionSet,
+        entityType: "concept",
+        entityId: concept.id,
+        payload: {
+          x: concept.x,
+          y: concept.y,
+        },
+      });
+
+      await recordMapManualVersion(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        actorUserId: input.actorUserId,
+        versionNo,
+        snapshotJson: {
+          entityType: "concept",
+          concept: {
+            id: concept.id,
+            x: concept.x,
+            y: concept.y,
+          },
+        },
+        diffJson: {
+          action: "concept.repositioned",
+          conceptId: concept.id,
+          before: {
+            x: existingConcept.x,
+            y: existingConcept.y,
+          },
+          after: {
+            x: concept.x,
+            y: concept.y,
+          },
+        },
+      });
+
+      await recordActivity(tx, {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId,
+        entityType: "concept",
+        entityId: concept.id,
+        action: "concept.repositioned",
+        payload: {
+          x: concept.x,
+          y: concept.y,
+        },
+      });
+
+      return {
+        revision: versionNo,
+        seq: versionNo,
+        concept,
+        op: serializeMapGraphOperation(operation),
+      };
+    });
+  } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      const conflictDuplicateResult = await replayDuplicateResult();
+      if (conflictDuplicateResult) {
+        return conflictDuplicateResult;
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function repositionConceptsBatchCommand(input: {
@@ -568,81 +934,224 @@ export async function repositionConceptsBatchCommand(input: {
   });
 }
 
-export async function archiveConceptCommand(input: {
-  workspaceId: string;
-  actorUserId: string;
-  mapId: string;
-  expectedRevision: number;
-  conceptId: string;
-}) {
+export async function archiveConceptCommand(
+  input: {
+    workspaceId: string;
+    actorUserId: string;
+    mapId: string;
+    expectedRevision: number;
+    conceptId: string;
+  } & StructuralGraphOperationClientInput
+) {
   await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
-  await db.transaction(async (tx) => {
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-      expectedRevision: input.expectedRevision,
-    });
+  const operationClientMetadata =
+    input.clientId && input.clientMutationId
+      ? {
+          clientId: input.clientId,
+          clientMutationId: input.clientMutationId,
+        }
+      : createServerGraphOperationClientMetadata();
 
-    const [concept] = await tx
-      .update(concepts)
-      .set({
-        archivedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(concepts.id, input.conceptId),
-          eq(concepts.mapId, input.mapId),
-          eq(concepts.workspaceId, input.workspaceId),
-          isNull(concepts.archivedAt)
-        )
-      )
-      .returning();
-
-    if (!concept) {
-      throw new Error("Concept not found.");
+  const replayDuplicateResult = async () => {
+    if (!input.clientId || !input.clientMutationId) {
+      return null;
     }
 
-    await recordMapManualVersion(tx, {
-      workspaceId: input.workspaceId,
+    const existingOperation = await findGraphOperationByClientMutation(db, {
       mapId: input.mapId,
-      actorUserId: input.actorUserId,
-      versionNo,
-      snapshotJson: {
+      clientId: input.clientId,
+      clientMutationId: input.clientMutationId,
+    });
+
+    if (!existingOperation) {
+      return null;
+    }
+
+    if (existingOperation.opKind !== MAP_GRAPH_OPERATION_KIND.conceptArchive) {
+      throw new Error(
+        "Client mutation conflicts with an existing graph operation."
+      );
+    }
+
+    const archivedLinkIds = Array.isArray(existingOperation.payload.archivedLinkIds)
+      ? existingOperation.payload.archivedLinkIds.filter(
+          (value): value is string => typeof value === "string"
+        )
+      : [];
+
+    return {
+      revision: existingOperation.seq,
+      seq: existingOperation.seq,
+      conceptId: existingOperation.entityId,
+      archivedLinkIds,
+      op: serializeMapGraphOperation(existingOperation),
+      duplicate: true,
+    } satisfies ArchiveConceptWithOperationResult;
+  };
+
+  const duplicateResult = await replayDuplicateResult();
+  if (duplicateResult) {
+    return duplicateResult;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const archivedAt = new Date();
+      const versionNo = await bumpMapGraphRevision(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        expectedRevision: input.expectedRevision,
+      });
+
+      const [concept] = await tx
+        .update(concepts)
+        .set({
+          archivedAt,
+          updatedAt: archivedAt,
+        })
+        .where(
+          and(
+            eq(concepts.id, input.conceptId),
+            eq(concepts.mapId, input.mapId),
+            eq(concepts.workspaceId, input.workspaceId),
+            isNull(concepts.archivedAt)
+          )
+        )
+        .returning();
+
+      if (!concept) {
+        throw new Error("Concept not found.");
+      }
+
+      const archivedLinks = await tx
+        .update(links)
+        .set({
+          archivedAt,
+          archivedByUserId: input.actorUserId,
+          updatedAt: archivedAt,
+        })
+        .where(
+          and(
+            eq(links.mapId, input.mapId),
+            eq(links.workspaceId, input.workspaceId),
+            isNull(links.archivedAt),
+            or(
+              eq(links.sourceConceptId, concept.id),
+              eq(links.targetConceptId, concept.id)
+            )
+          )
+        )
+        .returning({
+          id: links.id,
+        });
+
+      await recordMapManualVersion(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        actorUserId: input.actorUserId,
+        versionNo,
+        snapshotJson: {
+          entityType: "concept",
+          concept: {
+            id: concept.id,
+            title: concept.title,
+            conceptType: concept.conceptType,
+            archivedAt: concept.archivedAt,
+          },
+        },
+        diffJson: {
+          action: "concept.archived",
+          conceptId: concept.id,
+          after: {
+            archivedAt: concept.archivedAt,
+            archivedLinkIds: archivedLinks.map((link) => link.id),
+          },
+        },
+      });
+
+      await recordEntityLineageTransition(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
         entityType: "concept",
-        concept: {
-          id: concept.id,
-          title: concept.title,
-          conceptType: concept.conceptType,
-          archivedAt: concept.archivedAt,
-        },
-      },
-      diffJson: {
+        fromEntityId: concept.id,
+        toEntityId: null,
+        transitionType: "archive",
+      });
+
+      for (const link of archivedLinks) {
+        await recordEntityLineageTransition(tx, {
+          workspaceId: input.workspaceId,
+          mapId: input.mapId,
+          entityType: "link",
+          fromEntityId: link.id,
+          toEntityId: null,
+          transitionType: "archive",
+        });
+      }
+
+      await recordActivity(tx, {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId,
+        entityType: "concept",
+        entityId: concept.id,
         action: "concept.archived",
-        conceptId: concept.id,
-        after: {
-          archivedAt: concept.archivedAt,
+        payload: {
+          archivedLinkCount: archivedLinks.length,
         },
-      },
+      });
+
+      for (const link of archivedLinks) {
+        await recordActivity(tx, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          entityType: "link",
+          entityId: link.id,
+          action: "link.archived",
+          payload: {
+            archivedReason: "incident_concept_archived",
+            conceptId: concept.id,
+          },
+        });
+      }
+
+      const operation = await appendGraphOperationTx(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        seq: versionNo,
+        actorUserId: input.actorUserId,
+        clientId: operationClientMetadata.clientId,
+        clientMutationId: operationClientMetadata.clientMutationId,
+        opKind: MAP_GRAPH_OPERATION_KIND.conceptArchive,
+        entityType: "concept",
+        entityId: concept.id,
+        payload: {
+          archivedAt:
+            concept.archivedAt?.toISOString() ?? archivedAt.toISOString(),
+          archivedLinkIds: archivedLinks.map((link) => link.id),
+        },
+      });
+
+      return {
+        revision: versionNo,
+        seq: versionNo,
+        conceptId: concept.id,
+        archivedLinkIds: archivedLinks.map((link) => link.id),
+        op: serializeMapGraphOperation(operation),
+        duplicate: false,
+      } satisfies ArchiveConceptWithOperationResult;
     });
 
-    await recordEntityLineageTransition(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-      entityType: "concept",
-      fromEntityId: concept.id,
-      toEntityId: null,
-      transitionType: "archive",
-    });
+    return result;
+  } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      const conflictDuplicateResult = await replayDuplicateResult();
+      if (conflictDuplicateResult) {
+        return conflictDuplicateResult;
+      }
+    }
 
-    await recordActivity(tx, {
-      workspaceId: input.workspaceId,
-      actorUserId: input.actorUserId,
-      entityType: "concept",
-      entityId: concept.id,
-      action: "concept.archived",
-    });
-  });
+    throw error;
+  }
 }

@@ -1,27 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  createConceptCommandMock,
+  createConceptWithOperationCommandMock,
+  createLinkWithOperationCommandMock,
   deleteLinkCommandMock,
-  getMapGraphMetricsMock,
+  repositionConceptWithOperationCommandMock,
+  repositionConceptsBatchCommandMock,
   requireMapRuntimeAccessMock,
 } = vi.hoisted(() => ({
-  createConceptCommandMock: vi.fn(),
+  createConceptWithOperationCommandMock: vi.fn(),
+  createLinkWithOperationCommandMock: vi.fn(),
   deleteLinkCommandMock: vi.fn(),
-  getMapGraphMetricsMock: vi.fn(),
+  repositionConceptWithOperationCommandMock: vi.fn(),
+  repositionConceptsBatchCommandMock: vi.fn(),
   requireMapRuntimeAccessMock: vi.fn(),
 }));
 
 vi.mock("@/features/concepts/commands", () => ({
-  createConceptCommand: createConceptCommandMock,
+  createConceptWithOperationCommand: createConceptWithOperationCommandMock,
+  repositionConceptWithOperationCommand: repositionConceptWithOperationCommandMock,
+  repositionConceptsBatchCommand: repositionConceptsBatchCommandMock,
 }));
 
 vi.mock("@/features/links/commands", () => ({
+  createLinkWithOperationCommand: createLinkWithOperationCommandMock,
   deleteLinkCommand: deleteLinkCommandMock,
-}));
-
-vi.mock("@/features/maps/queries", () => ({
-  getMapGraphMetrics: getMapGraphMetricsMock,
 }));
 
 vi.mock("@/features/map-runtime/server", async () => {
@@ -37,6 +40,9 @@ vi.mock("@/features/map-runtime/server", async () => {
 });
 
 import { POST as createConceptRoute } from "../../../../app/api/maps/[mapId]/concepts/route";
+import { PATCH as repositionConceptPositionRoute } from "../../../../app/api/maps/[mapId]/concepts/[conceptId]/position/route";
+import { PATCH as repositionConceptPositionsRoute } from "../../../../app/api/maps/[mapId]/concepts/positions/route";
+import { POST as createLinkRoute } from "../../../../app/api/maps/[mapId]/links/route";
 import { DELETE as deleteLinkRoute } from "../../../../app/api/maps/[mapId]/links/[linkId]/route";
 import { MapRevisionConflictError } from "@/features/maps/commands";
 
@@ -49,21 +55,43 @@ describe("map runtime write routes", () => {
     });
   });
 
-  it("forwards expectedRevision on concept creation and returns the new revision", async () => {
-    createConceptCommandMock.mockResolvedValue({
-      id: "concept-1",
-      title: "New concept",
-      conceptType: "custom",
-      summary: null,
-      description: null,
-      x: 100,
-      y: 120,
-      updatedAt: new Date("2026-03-24T00:00:00.000Z"),
-    });
-    getMapGraphMetricsMock.mockResolvedValue({
+  it("forwards expectedRevision and client metadata on concept creation", async () => {
+    createConceptWithOperationCommandMock.mockResolvedValue({
       revision: 12,
-      conceptCount: 3,
-      linkCount: 1,
+      seq: 12,
+      concept: {
+        id: "concept-1",
+        title: "New concept",
+        conceptType: "custom",
+        summary: null,
+        description: null,
+        x: 100,
+        y: 120,
+        updatedAt: new Date("2026-03-24T00:00:00.000Z"),
+      },
+      op: {
+        id: "op-concept-1",
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        seq: 12,
+        actorUserId: "user-1",
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        opKind: "concept.create",
+        entityType: "concept",
+        entityId: "concept-1",
+        payload: {
+          title: "New concept",
+          conceptType: "custom",
+          summary: null,
+          description: null,
+          x: 100,
+          y: 120,
+          updatedAt: "2026-03-24T00:00:00.000Z",
+        },
+        createdAt: "2026-03-27T10:00:00.000Z",
+      },
+      duplicate: false,
     });
 
     const response = await createConceptRoute(
@@ -78,24 +106,112 @@ describe("map runtime write routes", () => {
           description: null,
           x: 100,
           y: 120,
+          clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         }),
       }),
       { params: Promise.resolve({ mapId: "map-1" }) }
     );
 
     expect(response.status).toBe(201);
-    expect(createConceptCommandMock).toHaveBeenCalledWith(
+    expect(createConceptWithOperationCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({
         expectedRevision: 7,
         mapId: "map-1",
         workspaceId: "workspace-1",
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       })
     );
     expect(await response.json()).toMatchObject({
       ok: true,
       revision: 12,
+      seq: 12,
       concept: {
         id: "concept-1",
+      },
+      op: {
+        opKind: "concept.create",
+        entityId: "concept-1",
+      },
+      duplicate: false,
+    });
+  });
+
+  it("returns the durable op payload for link creation", async () => {
+    createLinkWithOperationCommandMock.mockResolvedValue({
+      revision: 13,
+      seq: 13,
+      link: {
+        id: "link-1",
+        sourceConceptId: "11111111-1111-4111-8111-111111111111",
+        targetConceptId: "22222222-2222-4222-8222-222222222222",
+        relationType: "causes",
+        strength: 4,
+        description: "Because of this",
+        updatedAt: new Date("2026-03-24T00:10:00.000Z"),
+      },
+      op: {
+        id: "op-link-1",
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        seq: 13,
+        actorUserId: "user-1",
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        opKind: "link.create",
+        entityType: "link",
+        entityId: "link-1",
+        payload: {
+          sourceConceptId: "11111111-1111-4111-8111-111111111111",
+          targetConceptId: "22222222-2222-4222-8222-222222222222",
+          relationType: "causes",
+          strength: 4,
+          description: "Because of this",
+          updatedAt: "2026-03-24T00:10:00.000Z",
+        },
+        createdAt: "2026-03-27T10:05:00.000Z",
+      },
+      duplicate: false,
+    });
+
+    const response = await createLinkRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: 12,
+          sourceConceptId: "11111111-1111-4111-8111-111111111111",
+          targetConceptId: "22222222-2222-4222-8222-222222222222",
+          relationType: "causes",
+          strength: 4,
+          description: "Because of this",
+          clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          clientMutationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1" }) }
+    );
+
+    expect(response.status).toBe(201);
+    expect(createLinkWithOperationCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapId: "map-1",
+        expectedRevision: 12,
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      })
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 13,
+      seq: 13,
+      link: {
+        id: "link-1",
+      },
+      op: {
+        opKind: "link.create",
+        entityId: "link-1",
       },
     });
   });
@@ -127,6 +243,213 @@ describe("map runtime write routes", () => {
       code: "map_revision_conflict",
       error: "Map changed since your last snapshot. Refresh and try again.",
       currentRevision: 23,
+    });
+  });
+
+  it("returns the durable op payload for single concept position writes", async () => {
+    repositionConceptWithOperationCommandMock.mockResolvedValue({
+      revision: 9,
+      seq: 9,
+      concept: {
+        id: "11111111-1111-4111-8111-111111111111",
+        x: 220,
+        y: 340,
+      },
+      op: {
+        id: "op-1",
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        seq: 9,
+        actorUserId: "user-1",
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        opKind: "concept.position.set",
+        entityType: "concept",
+        entityId: "11111111-1111-4111-8111-111111111111",
+        payload: {
+          x: 220,
+          y: 340,
+        },
+        createdAt: "2026-03-27T10:00:00.000Z",
+      },
+    });
+
+    const response = await repositionConceptPositionRoute(
+      new Request(
+        "http://127.0.0.1:3000/api/maps/map-1/concepts/concept-1/position",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedRevision: 8,
+            x: 220,
+            y: 340,
+            clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          }),
+        }
+      ),
+      {
+        params: Promise.resolve({
+          mapId: "map-1",
+          conceptId: "11111111-1111-4111-8111-111111111111",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(repositionConceptWithOperationCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapId: "map-1",
+        conceptId: "11111111-1111-4111-8111-111111111111",
+        expectedRevision: 8,
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      })
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 9,
+      seq: 9,
+      concept: {
+        id: "11111111-1111-4111-8111-111111111111",
+        x: 220,
+        y: 340,
+      },
+      op: {
+        opKind: "concept.position.set",
+        entityId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+  });
+
+  it("routes single-item batch position writes through the durable op path", async () => {
+    repositionConceptWithOperationCommandMock.mockResolvedValue({
+      revision: 4,
+      seq: 4,
+      concept: {
+        id: "11111111-1111-4111-8111-111111111111",
+        x: 200,
+        y: 260,
+      },
+      op: {
+        id: "op-2",
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        seq: 4,
+        actorUserId: "user-1",
+        clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        clientMutationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        opKind: "concept.position.set",
+        entityType: "concept",
+        entityId: "11111111-1111-4111-8111-111111111111",
+        payload: {
+          x: 200,
+          y: 260,
+        },
+        createdAt: "2026-03-27T10:05:00.000Z",
+      },
+    });
+
+    const response = await repositionConceptPositionsRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/concepts/positions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: 3,
+          clientId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          clientMutationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          positions: [
+            {
+              conceptId: "11111111-1111-4111-8111-111111111111",
+              x: 200,
+              y: 260,
+            },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(repositionConceptWithOperationCommandMock).toHaveBeenCalledTimes(1);
+    expect(repositionConceptsBatchCommandMock).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 4,
+      seq: 4,
+      concepts: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          x: 200,
+          y: 260,
+        },
+      ],
+      op: {
+        opKind: "concept.position.set",
+      },
+    });
+  });
+
+  it("keeps multi-item batch writes on the legacy batch command path", async () => {
+    repositionConceptsBatchCommandMock.mockResolvedValue([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        x: 100,
+        y: 120,
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        x: 240,
+        y: 320,
+      },
+    ]);
+
+    const response = await repositionConceptPositionsRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/concepts/positions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: 7,
+          positions: [
+            {
+              conceptId: "11111111-1111-4111-8111-111111111111",
+              x: 100,
+              y: 120,
+            },
+            {
+              conceptId: "22222222-2222-4222-8222-222222222222",
+              x: 240,
+              y: 320,
+            },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(repositionConceptsBatchCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapId: "map-1",
+        expectedRevision: 7,
+      })
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 8,
+      concepts: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          x: 100,
+          y: 120,
+        },
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          x: 240,
+          y: 320,
+        },
+      ],
     });
   });
 });

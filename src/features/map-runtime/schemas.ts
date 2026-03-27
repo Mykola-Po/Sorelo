@@ -9,7 +9,12 @@ const roundedCoordinateSchema = z
   .max(100000)
   .transform((value) => Math.round(value));
 
-export const createConceptRouteSchema = z.object({
+const graphOperationClientSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  clientMutationId: z.string().uuid().optional(),
+});
+
+const createConceptRouteFieldsSchema = z.object({
   expectedRevision: z.coerce.number().int().min(0),
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum(conceptTypeEnum.enumValues),
@@ -19,29 +24,42 @@ export const createConceptRouteSchema = z.object({
   y: z.number().int().min(0).max(100000),
 });
 
-export const updateConceptRouteSchema = createConceptRouteSchema;
+export const createConceptRouteSchema = createConceptRouteFieldsSchema.merge(
+  graphOperationClientSchema
+);
 
-export const patchConceptPositionRouteSchema = z.object({
-  expectedRevision: z.coerce.number().int().min(0),
-  x: roundedCoordinateSchema,
-  y: roundedCoordinateSchema,
+export const updateConceptRouteSchema = createConceptRouteFieldsSchema;
+
+export const patchConceptPositionRouteSchema = z
+  .object({
+    expectedRevision: z.coerce.number().int().min(0),
+    x: roundedCoordinateSchema,
+    y: roundedCoordinateSchema,
+  })
+  .merge(graphOperationClientSchema);
+
+export const patchConceptPositionsRouteSchema = z
+  .object({
+    expectedRevision: z.coerce.number().int().min(0),
+    positions: z
+      .array(
+        z.object({
+          conceptId: z.string().uuid(),
+          x: roundedCoordinateSchema,
+          y: roundedCoordinateSchema,
+        })
+      )
+      .min(1)
+      .max(250),
+  })
+  .merge(graphOperationClientSchema);
+
+export const mapGraphOpsQuerySchema = z.object({
+  afterSeq: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-export const patchConceptPositionsRouteSchema = z.object({
-  expectedRevision: z.coerce.number().int().min(0),
-  positions: z
-    .array(
-      z.object({
-        conceptId: z.string().uuid(),
-        x: roundedCoordinateSchema,
-        y: roundedCoordinateSchema,
-      })
-    )
-    .min(1)
-    .max(250),
-});
-
-export const createLinkRouteSchema = z.object({
+const createLinkRouteFieldsSchema = z.object({
   expectedRevision: z.coerce.number().int().min(0),
   sourceConceptId: z.string().uuid(),
   targetConceptId: z.string().uuid(),
@@ -50,8 +68,14 @@ export const createLinkRouteSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
 });
 
-export const updateLinkRouteSchema = createLinkRouteSchema;
+export const createLinkRouteSchema = createLinkRouteFieldsSchema.merge(
+  graphOperationClientSchema
+);
 
-export const deleteLinkRouteSchema = z.object({
-  expectedRevision: z.coerce.number().int().min(0),
-});
+export const updateLinkRouteSchema = createLinkRouteFieldsSchema;
+
+export const deleteLinkRouteSchema = z
+  .object({
+    expectedRevision: z.coerce.number().int().min(0),
+  })
+  .merge(graphOperationClientSchema);

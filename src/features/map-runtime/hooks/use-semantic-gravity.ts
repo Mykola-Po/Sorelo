@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import ForceAtlas2Worker from "graphology-layout-forceatlas2/worker";
 import type { Sigma } from "sigma";
 import { cosineSimilarity } from "../utils/semantic-math";
@@ -18,12 +18,17 @@ function getMockEmbedding(type: string | undefined): number[] {
   return MOCK_EMBEDDINGS[type || "custom"] ?? MOCK_EMBEDDINGS["custom"]!;
 }
 
-export function useSemanticGravity(sigma: Sigma | null, enabled: boolean) {
+export function useSemanticGravity(
+  sigmaRef: RefObject<Sigma | null>,
+  enabled: boolean
+) {
   const workerRef = useRef<ForceAtlas2Worker | null>(null);
   const syncPositionsInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const updateConceptPosition = useMapStore(s => s.updateConceptPosition);
 
   useEffect(() => {
+    const sigma = sigmaRef.current;
+
     if (!sigma || !enabled) {
       if (workerRef.current) {
         workerRef.current.kill();
@@ -99,5 +104,5 @@ export function useSemanticGravity(sigma: Sigma | null, enabled: boolean) {
         syncPositionsInterval.current = null;
       }
     };
-  }, [sigma, enabled, updateConceptPosition]);
+  }, [enabled, sigmaRef, updateConceptPosition]);
 }

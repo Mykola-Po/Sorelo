@@ -426,6 +426,47 @@ export const maps = pgTable(
   ]
 );
 
+export const mapGraphOperations = pgTable(
+  "map_graph_operations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    mapId: uuid("map_id").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id").notNull(),
+    clientMutationId: uuid("client_mutation_id").notNull(),
+    opKind: varchar("op_kind", { length: 96 }).notNull(),
+    entityType: varchar("entity_type", { length: 64 }).notNull(),
+    entityId: uuid("entity_id").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.mapId, table.workspaceId],
+      foreignColumns: [maps.id, maps.workspaceId],
+      name: "map_graph_operations_map_workspace_fk",
+    }),
+    uniqueIndex("map_graph_operations_map_seq_key").on(table.mapId, table.seq),
+    uniqueIndex("map_graph_operations_map_client_mutation_key").on(
+      table.mapId,
+      table.clientId,
+      table.clientMutationId
+    ),
+    index("map_graph_operations_map_seq_idx").on(table.mapId, table.seq),
+  ]
+);
+
 export const concepts = pgTable(
   "concepts",
   {
@@ -502,6 +543,10 @@ export const links = pgTable(
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedByUserId: uuid("archived_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
