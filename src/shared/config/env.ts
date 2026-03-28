@@ -25,8 +25,19 @@ export const runtimeEnvSchema = {
   INBOX_LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().min(100).max(5000).optional(),
 };
 
+export function normalizeRuntimeEnv(
+  input: Record<string, string | undefined>
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.trim() : value,
+    ])
+  );
+}
+
 export function parseRuntimeEnv(input: Record<string, string | undefined>) {
-  return z.object(runtimeEnvSchema).parse(input);
+  return z.object(runtimeEnvSchema).parse(normalizeRuntimeEnv(input));
 }
 
 export const env = createEnv({
@@ -61,7 +72,7 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
       runtimeEnvSchema.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   },
-  runtimeEnv: {
+  runtimeEnv: normalizeRuntimeEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET,
     INBOX_INTERNAL_CREATE_SECRET: process.env.INBOX_INTERNAL_CREATE_SECRET,
@@ -84,7 +95,7 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  },
+  }),
   skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
   emptyStringAsUndefined: true,
 });
