@@ -639,31 +639,45 @@ test.describe("Map Runtime WebGL Canvas", () => {
   }) => {
     const card = page.getByRole("button", { name: /Node A/ }).first();
     const before = await getNodePosition(page, "node-a");
+    const passiveListenerWarnings: string[] = [];
+    const handleConsole = (message: { text(): string }) => {
+      const text = message.text();
+      if (text.includes("Unable to preventDefault inside passive event listener invocation")) {
+        passiveListenerWarnings.push(text);
+      }
+    };
 
-    await dragLocatorWithMouse(page, card, {
-      deltaX: 120,
-      deltaY: 80,
-    });
+    page.on("console", handleConsole);
 
-    await expect.poll(() => positionSavePayloads.length).toBe(1);
+    try {
+      await dragLocatorWithMouse(page, card, {
+        deltaX: 120,
+        deltaY: 80,
+      });
 
-    const after = await getNodePosition(page, "node-a");
-    expect(after.x).not.toBe(before.x);
-    expect(after.y).not.toBe(before.y);
-    expect(positionSavePayloads[0]).toEqual({
-      conceptId: "node-a",
-      expectedRevision: 1,
-      x: after.x,
-      y: after.y,
-      clientId: expect.any(String),
-      clientMutationId: expect.any(String),
-    });
+      await expect.poll(() => positionSavePayloads.length).toBe(1);
 
-    await page.reload();
-    await expect(page.locator("text=Loading snapshot")).not.toBeVisible();
-    await expect(page.locator("canvas").first()).toBeVisible();
+      const after = await getNodePosition(page, "node-a");
+      expect(after.x).not.toBe(before.x);
+      expect(after.y).not.toBe(before.y);
+      expect(positionSavePayloads[0]).toEqual({
+        conceptId: "node-a",
+        expectedRevision: 1,
+        x: after.x,
+        y: after.y,
+        clientId: expect.any(String),
+        clientMutationId: expect.any(String),
+      });
 
-    expect(await getNodePosition(page, "node-a")).toEqual(after);
+      await page.reload();
+      await expect(page.locator("text=Loading snapshot")).not.toBeVisible();
+      await expect(page.locator("canvas").first()).toBeVisible();
+
+      expect(await getNodePosition(page, "node-a")).toEqual(after);
+      expect(passiveListenerWarnings).toEqual([]);
+    } finally {
+      page.off("console", handleConsole);
+    }
   });
 
   test("Dragging one Concept keeps the other visible Concept stationary", async ({

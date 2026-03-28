@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 
 import {
   archiveConceptCommand,
@@ -25,6 +25,7 @@ import { db, sqlClient } from "@/shared/db/client";
 import {
   activityLog,
   concepts,
+  learningMapVersions,
   links,
   mapGraphOperations,
   maps,
@@ -296,6 +297,76 @@ describe.sequential("map graph operations integration", () => {
       .where(eq(mapGraphOperations.mapId, scope.mapId));
 
     expect(persistedOps).toHaveLength(1);
+  });
+
+  it("recovers map version numbering from legacy map_versions rows when version_revision is stale", async () => {
+    const scope = await createMapScopeFixture("version-backfill");
+    const now = new Date();
+
+    await db.insert(learningMapVersions).values({
+      workspaceId: scope.workspaceId,
+      mapId: scope.mapId,
+      versionNo: 38,
+      triggerType: "manual_edit",
+      actorUserId: scope.userId,
+      snapshotJson: {
+        entityType: "concept",
+        concept: {
+          id: scope.conceptId,
+          x: 100,
+          y: 120,
+        },
+      },
+      diffJson: {
+        action: "concept.repositioned",
+        conceptId: scope.conceptId,
+        after: {
+          x: 100,
+          y: 120,
+        },
+      },
+      createdAt: now,
+    });
+
+    await db
+      .update(maps)
+      .set({
+        versionRevision: 0,
+        updatedAt: now,
+      })
+      .where(eq(maps.id, scope.mapId));
+
+    const result = await repositionConceptWithOperationCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedRevision: 0,
+      conceptId: scope.conceptId,
+      x: 260,
+      y: 300,
+      clientId: randomUUID(),
+      clientMutationId: randomUUID(),
+    });
+
+    const [persistedMap] = await db
+      .select({
+        versionRevision: maps.versionRevision,
+      })
+      .from(maps)
+      .where(eq(maps.id, scope.mapId));
+
+    const [latestVersion] = await db
+      .select({
+        versionNo: learningMapVersions.versionNo,
+      })
+      .from(learningMapVersions)
+      .where(eq(learningMapVersions.mapId, scope.mapId))
+      .orderBy(desc(learningMapVersions.versionNo))
+      .limit(1);
+
+    expect(result.revision).toBe(1);
+    expect(persistedMap?.versionRevision).toBe(39);
+    expect(latestVersion?.versionNo).toBe(39);
   });
 
   it("records transport activity for published and duplicate client mutations", async () => {

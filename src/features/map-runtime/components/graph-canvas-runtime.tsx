@@ -1490,7 +1490,7 @@ export function GraphCanvasRuntime({
   );
 
   const bindConceptDrag = useDrag(
-    ({ args, event, last, xy }) => {
+    ({ args, last, xy }) => {
       const [conceptId] = args as [string];
       const session = dragSessionRef.current;
       if (!session || session.conceptId !== conceptId) {
@@ -1525,10 +1525,6 @@ export function GraphCanvasRuntime({
       }
 
       if (session.isDragging) {
-        if ("preventDefault" in event && typeof event.preventDefault === "function") {
-          event.preventDefault();
-        }
-
         updateDraggedConceptPosition(session, pointerViewport);
 
         const bounds =

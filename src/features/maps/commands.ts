@@ -16,7 +16,7 @@ import {
 } from "@/features/map-runtime/realtime/transport-telemetry";
 import { normalizeMapSlug } from "@/features/maps/utils";
 import { db } from "@/shared/db/client";
-import { mapGraphOperations, maps } from "@/shared/db/schema";
+import { learningMapVersions, mapGraphOperations, maps } from "@/shared/db/schema";
 
 type MapRevisionWriter = Pick<typeof db, "select" | "update" | "insert">;
 type MapGraphOperationWriter = Pick<typeof db, "select" | "insert">;
@@ -146,7 +146,17 @@ export async function bumpMapVersionRevision(
   const [map] = await dbOrTx
     .update(maps)
     .set({
-      versionRevision: sql`${maps.versionRevision} + 1`,
+      versionRevision: sql<number>`greatest(
+        ${maps.versionRevision},
+        coalesce(
+          (
+            select max(${learningMapVersions.versionNo})::bigint
+            from ${learningMapVersions}
+            where ${learningMapVersions.mapId} = ${maps.id}
+          ),
+          0
+        )
+      ) + 1`,
       updatedAt: new Date(),
     })
     .where(
