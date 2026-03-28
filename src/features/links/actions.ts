@@ -48,6 +48,7 @@ export async function createLinkAction(
   const parsed = createLinkSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     sourceConceptId: formData.get("sourceConceptId"),
     targetConceptId: formData.get("targetConceptId"),
     relationType: formData.get("relationType"),
@@ -100,6 +101,7 @@ export async function updateLinkAction(
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
     linkId: formData.get("linkId"),
+    expectedContentRevision: formData.get("expectedContentRevision"),
     sourceConceptId: formData.get("sourceConceptId"),
     targetConceptId: formData.get("targetConceptId"),
     relationType: formData.get("relationType"),
@@ -119,7 +121,7 @@ export async function updateLinkAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
-      expectedRevision: parsed.data.expectedRevision,
+      expectedContentRevision: parsed.data.expectedContentRevision,
       linkId: parsed.data.linkId,
       sourceConceptId: parsed.data.sourceConceptId,
       targetConceptId: parsed.data.targetConceptId,
@@ -149,6 +151,7 @@ export async function deleteLinkAction(formData: FormData) {
   const parsed = deleteLinkSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     linkId: formData.get("linkId"),
   });
 

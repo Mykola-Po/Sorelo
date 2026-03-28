@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNull, or, sql } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -11,10 +11,13 @@ import {
 import {
   appendGraphOperationTx,
   bumpMapGraphRevision,
+  bumpMapVersionRevision,
   createServerGraphOperationClientMetadata,
+  EntityContentRevisionConflictError,
   findGraphOperationByClientMutation,
   MAP_GRAPH_OPERATION_KIND,
   MapRevisionConflictError,
+  recordDuplicateClientMutationActivity,
   serializeMapGraphOperation,
   type SerializedMapGraphOperation,
 } from "@/features/maps/commands";
@@ -60,7 +63,7 @@ type UpdateConceptCommandInput = {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
-  expectedRevision: number;
+  expectedContentRevision: number;
   conceptId: string;
   title: string;
   conceptType:
@@ -73,8 +76,6 @@ type UpdateConceptCommandInput = {
     | "custom";
   summary?: string | null;
   description?: string | null;
-  x: number;
-  y: number;
   originType?: EntityOriginType;
   originSuggestionId?: string | null;
   causedByResolutionId?: string | null;
@@ -179,7 +180,7 @@ export async function createConceptWithTx(
           clientMutationId: input.clientMutationId,
         }
       : createServerGraphOperationClientMetadata();
-  const versionNo = await bumpMapGraphRevision(tx, {
+  const graphRevision = await bumpMapGraphRevision(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
     expectedRevision: input.expectedRevision,
@@ -232,11 +233,16 @@ export async function createConceptWithTx(
     throw new Error("Concept creation failed.");
   }
 
+  const mapVersionNo = await bumpMapVersionRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+  });
+
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
     actorUserId: input.actorUserId,
-    versionNo,
+    versionNo: mapVersionNo,
     triggerType: input.mapVersionTriggerType,
     causedByResolutionId: input.causedByResolutionId ?? null,
     snapshotJson: {
@@ -299,7 +305,7 @@ export async function createConceptWithTx(
   const operation = await appendGraphOperationTx(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
-    seq: versionNo,
+    seq: graphRevision,
     actorUserId: input.actorUserId,
     clientId: operationClientMetadata.clientId,
     clientMutationId: operationClientMetadata.clientMutationId,
@@ -319,7 +325,7 @@ export async function createConceptWithTx(
 
   return {
     concept,
-    revision: versionNo,
+    revision: graphRevision,
     op: serializeMapGraphOperation(operation),
   };
 }
@@ -328,12 +334,6 @@ export async function updateConceptWithTx(
   tx: ConceptCommandTx,
   input: UpdateConceptCommandInput
 ) {
-  const versionNo = await bumpMapGraphRevision(tx, {
-    workspaceId: input.workspaceId,
-    mapId: input.mapId,
-    expectedRevision: input.expectedRevision,
-  });
-
   const [existingConcept] = await tx
     .select({
       id: concepts.id,
@@ -341,9 +341,8 @@ export async function updateConceptWithTx(
       conceptType: concepts.conceptType,
       summary: concepts.summary,
       description: concepts.description,
-      x: concepts.x,
-      y: concepts.y,
       archivedAt: concepts.archivedAt,
+      contentRevision: concepts.contentRevision,
     })
     .from(concepts)
     .where(
@@ -360,6 +359,7 @@ export async function updateConceptWithTx(
     throw new Error("Concept not found.");
   }
 
+  const nextUpdatedAt = new Date();
   const [concept] = await tx
     .update(concepts)
     .set({
@@ -373,23 +373,41 @@ export async function updateConceptWithTx(
             originSuggestionId: input.originSuggestionId ?? null,
           }
         : {}),
-      x: input.x,
-      y: input.y,
-      updatedAt: new Date(),
+      contentRevision: sql`${concepts.contentRevision} + 1`,
+      updatedAt: nextUpdatedAt,
     })
     .where(
       and(
         eq(concepts.id, input.conceptId),
         eq(concepts.mapId, input.mapId),
         eq(concepts.workspaceId, input.workspaceId),
-        isNull(concepts.archivedAt)
+        isNull(concepts.archivedAt),
+        eq(concepts.contentRevision, input.expectedContentRevision)
       )
     )
     .returning();
 
   if (!concept) {
-    throw new Error("Concept not found.");
+    const currentConcept = await findConceptRecord(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+      conceptId: input.conceptId,
+    });
+
+    if (!currentConcept || currentConcept.archivedAt) {
+      throw new Error("Concept not found.");
+    }
+
+    throw new EntityContentRevisionConflictError(
+      "concept",
+      currentConcept.contentRevision
+    );
   }
+
+  const versionNo = await bumpMapVersionRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+  });
 
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
@@ -406,8 +424,6 @@ export async function updateConceptWithTx(
         conceptType: concept.conceptType,
         summary: concept.summary,
         description: concept.description,
-        x: concept.x,
-        y: concept.y,
         archivedAt: concept.archivedAt,
       },
     },
@@ -419,16 +435,12 @@ export async function updateConceptWithTx(
         conceptType: existingConcept.conceptType,
         summary: existingConcept.summary,
         description: existingConcept.description,
-        x: existingConcept.x,
-        y: existingConcept.y,
       },
       after: {
         title: concept.title,
         conceptType: concept.conceptType,
         summary: concept.summary,
         description: concept.description,
-        x: concept.x,
-        y: concept.y,
       },
     },
   });
@@ -530,6 +542,12 @@ export async function createConceptWithOperationCommand(
 
   const duplicateResult = await replayDuplicateResult();
   if (duplicateResult) {
+    await recordDuplicateClientMutationActivity(db, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      mapId: input.mapId,
+      operation: duplicateResult.op,
+    });
     return duplicateResult;
   }
 
@@ -552,6 +570,12 @@ export async function createConceptWithOperationCommand(
     if (error instanceof MapRevisionConflictError) {
       const conflictDuplicateResult = await replayDuplicateResult();
       if (conflictDuplicateResult) {
+        await recordDuplicateClientMutationActivity(db, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          mapId: input.mapId,
+          operation: conflictDuplicateResult.op,
+        });
         return conflictDuplicateResult;
       }
     }
@@ -580,7 +604,7 @@ export async function repositionConceptCommand(input: {
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction(async (tx) => {
-    const versionNo = await bumpMapGraphRevision(tx, {
+    await bumpMapGraphRevision(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       expectedRevision: input.expectedRevision,
@@ -617,11 +641,16 @@ export async function repositionConceptCommand(input: {
       throw new Error("Concept not found.");
     }
 
+    const mapVersionNo = await bumpMapVersionRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       actorUserId: input.actorUserId,
-      versionNo,
+      versionNo: mapVersionNo,
       snapshotJson: {
         entityType: "concept",
         concept: {
@@ -705,12 +734,18 @@ export async function repositionConceptWithOperationCommand(input: {
 
   const duplicateResult = await replayDuplicateResult();
   if (duplicateResult) {
+    await recordDuplicateClientMutationActivity(db, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      mapId: input.mapId,
+      operation: duplicateResult.op,
+    });
     return duplicateResult;
   }
 
   try {
     return await db.transaction(async (tx) => {
-      const versionNo = await bumpMapGraphRevision(tx, {
+      const graphRevision = await bumpMapGraphRevision(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
         expectedRevision: input.expectedRevision,
@@ -754,7 +789,7 @@ export async function repositionConceptWithOperationCommand(input: {
       const operation = await appendGraphOperationTx(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
-        seq: versionNo,
+        seq: graphRevision,
         actorUserId: input.actorUserId,
         clientId: input.clientId,
         clientMutationId: input.clientMutationId,
@@ -767,11 +802,16 @@ export async function repositionConceptWithOperationCommand(input: {
         },
       });
 
+      const mapVersionNo = await bumpMapVersionRevision(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+      });
+
       await recordMapManualVersion(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
         actorUserId: input.actorUserId,
-        versionNo,
+        versionNo: mapVersionNo,
         snapshotJson: {
           entityType: "concept",
           concept: {
@@ -807,8 +847,8 @@ export async function repositionConceptWithOperationCommand(input: {
       });
 
       return {
-        revision: versionNo,
-        seq: versionNo,
+        revision: graphRevision,
+        seq: graphRevision,
         concept,
         op: serializeMapGraphOperation(operation),
       };
@@ -817,6 +857,12 @@ export async function repositionConceptWithOperationCommand(input: {
     if (error instanceof MapRevisionConflictError) {
       const conflictDuplicateResult = await replayDuplicateResult();
       if (conflictDuplicateResult) {
+        await recordDuplicateClientMutationActivity(db, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          mapId: input.mapId,
+          operation: conflictDuplicateResult.op,
+        });
         return conflictDuplicateResult;
       }
     }
@@ -894,17 +940,22 @@ export async function repositionConceptsBatchCommand(input: {
       return [];
     }
 
-    const versionNo = await bumpMapGraphRevision(tx, {
+    await bumpMapGraphRevision(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       expectedRevision: input.expectedRevision,
+    });
+
+    const mapVersionNo = await bumpMapVersionRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
     });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       actorUserId: input.actorUserId,
-      versionNo,
+      versionNo: mapVersionNo,
       snapshotJson: {
         entityType: "map",
         movedConceptCount: updatedConcepts.length,
@@ -993,13 +1044,19 @@ export async function archiveConceptCommand(
 
   const duplicateResult = await replayDuplicateResult();
   if (duplicateResult) {
+    await recordDuplicateClientMutationActivity(db, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      mapId: input.mapId,
+      operation: duplicateResult.op,
+    });
     return duplicateResult;
   }
 
   try {
     const result = await db.transaction(async (tx) => {
       const archivedAt = new Date();
-      const versionNo = await bumpMapGraphRevision(tx, {
+      const graphRevision = await bumpMapGraphRevision(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
         expectedRevision: input.expectedRevision,
@@ -1047,11 +1104,16 @@ export async function archiveConceptCommand(
           id: links.id,
         });
 
+      const mapVersionNo = await bumpMapVersionRevision(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+      });
+
       await recordMapManualVersion(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
         actorUserId: input.actorUserId,
-        versionNo,
+        versionNo: mapVersionNo,
         snapshotJson: {
           entityType: "concept",
           concept: {
@@ -1119,7 +1181,7 @@ export async function archiveConceptCommand(
       const operation = await appendGraphOperationTx(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
-        seq: versionNo,
+        seq: graphRevision,
         actorUserId: input.actorUserId,
         clientId: operationClientMetadata.clientId,
         clientMutationId: operationClientMetadata.clientMutationId,
@@ -1134,8 +1196,8 @@ export async function archiveConceptCommand(
       });
 
       return {
-        revision: versionNo,
-        seq: versionNo,
+        revision: graphRevision,
+        seq: graphRevision,
         conceptId: concept.id,
         archivedLinkIds: archivedLinks.map((link) => link.id),
         op: serializeMapGraphOperation(operation),
@@ -1148,6 +1210,12 @@ export async function archiveConceptCommand(
     if (error instanceof MapRevisionConflictError) {
       const conflictDuplicateResult = await replayDuplicateResult();
       if (conflictDuplicateResult) {
+        await recordDuplicateClientMutationActivity(db, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          mapId: input.mapId,
+          operation: conflictDuplicateResult.op,
+        });
         return conflictDuplicateResult;
       }
     }

@@ -28,7 +28,13 @@ export const createConceptRouteSchema = createConceptRouteFieldsSchema.merge(
   graphOperationClientSchema
 );
 
-export const updateConceptRouteSchema = createConceptRouteFieldsSchema;
+export const updateConceptRouteSchema = z.object({
+  expectedContentRevision: z.coerce.number().int().min(0),
+  title: z.string().trim().min(2).max(160),
+  conceptType: z.enum(conceptTypeEnum.enumValues),
+  summary: z.string().trim().max(280).optional().nullable(),
+  description: z.string().trim().max(2000).optional().nullable(),
+});
 
 export const patchConceptPositionRouteSchema = z
   .object({
@@ -72,7 +78,14 @@ export const createLinkRouteSchema = createLinkRouteFieldsSchema.merge(
   graphOperationClientSchema
 );
 
-export const updateLinkRouteSchema = createLinkRouteFieldsSchema;
+export const updateLinkRouteSchema = z.object({
+  expectedContentRevision: z.coerce.number().int().min(0),
+  sourceConceptId: z.string().uuid(),
+  targetConceptId: z.string().uuid(),
+  relationType: z.enum(relationTypeEnum.enumValues),
+  strength: z.number().int().min(1).max(5),
+  description: z.string().trim().max(2000).optional().nullable(),
+});
 
 export const deleteLinkRouteSchema = z
   .object({

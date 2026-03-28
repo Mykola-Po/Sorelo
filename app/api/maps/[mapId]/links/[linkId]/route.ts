@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { deleteLinkCommand, updateLinkCommand } from "@/features/links/commands";
-import { MapRevisionConflictError } from "@/features/maps/commands";
+import {
+  EntityContentRevisionConflictError,
+  MapRevisionConflictError,
+} from "@/features/maps/commands";
 import { getMapGraphMetrics } from "@/features/maps/queries";
 import { parseRouteJson, requireMapRuntimeAccess } from "@/features/map-runtime/server";
 import {
@@ -32,7 +35,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
-      expectedRevision: parsed.data.expectedRevision,
+      expectedContentRevision: parsed.data.expectedContentRevision,
       linkId,
       sourceConceptId: parsed.data.sourceConceptId,
       targetConceptId: parsed.data.targetConceptId,
@@ -54,6 +57,17 @@ export async function PATCH(request: Request, { params }: RouteParams) {
           code: error.code,
           error: error.message,
           currentRevision: error.currentRevision,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (error instanceof EntityContentRevisionConflictError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          error: error.message,
+          currentContentRevision: error.currentRevision,
         },
         { status: 409 }
       );

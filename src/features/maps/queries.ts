@@ -588,6 +588,7 @@ export async function getInspectorPayload(
         .select({
           id: concepts.id,
           title: concepts.title,
+          contentRevision: concepts.contentRevision,
           conceptType: concepts.conceptType,
           summary: concepts.summary,
           description: concepts.description,
@@ -706,6 +707,7 @@ export async function getInspectorPayload(
       db
         .select({
           id: links.id,
+          contentRevision: links.contentRevision,
           relationType: links.relationType,
           strength: links.strength,
           description: links.description,

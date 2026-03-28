@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
@@ -11,10 +11,13 @@ import {
 import {
   appendGraphOperationTx,
   bumpMapGraphRevision,
+  bumpMapVersionRevision,
   createServerGraphOperationClientMetadata,
+  EntityContentRevisionConflictError,
   findGraphOperationByClientMutation,
   MAP_GRAPH_OPERATION_KIND,
   MapRevisionConflictError,
+  recordDuplicateClientMutationActivity,
   serializeMapGraphOperation,
 } from "@/features/maps/commands";
 import {
@@ -133,7 +136,7 @@ export async function createLinkWithTx(
           clientMutationId: input.clientMutationId,
         }
       : createServerGraphOperationClientMetadata();
-  const versionNo = await bumpMapGraphRevision(tx, {
+  const graphRevision = await bumpMapGraphRevision(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
     expectedRevision: input.expectedRevision,
@@ -185,11 +188,16 @@ export async function createLinkWithTx(
     throw new Error("Link creation failed.");
   }
 
+  const mapVersionNo = await bumpMapVersionRevision(tx, {
+    workspaceId: input.workspaceId,
+    mapId: input.mapId,
+  });
+
   await recordMapManualVersion(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
     actorUserId: input.actorUserId,
-    versionNo,
+    versionNo: mapVersionNo,
     triggerType: input.mapVersionTriggerType,
     causedByResolutionId: input.causedByResolutionId ?? null,
     snapshotJson: {
@@ -251,7 +259,7 @@ export async function createLinkWithTx(
   const operation = await appendGraphOperationTx(tx, {
     workspaceId: input.workspaceId,
     mapId: input.mapId,
-    seq: versionNo,
+    seq: graphRevision,
     actorUserId: input.actorUserId,
     clientId: operationClientMetadata.clientId,
     clientMutationId: operationClientMetadata.clientMutationId,
@@ -270,7 +278,7 @@ export async function createLinkWithTx(
 
   return {
     link,
-    revision: versionNo,
+    revision: graphRevision,
     op: serializeMapGraphOperation(operation),
   };
 }
@@ -336,6 +344,12 @@ export async function createLinkWithOperationCommand(
 
   const duplicateResult = await replayDuplicateResult();
   if (duplicateResult) {
+    await recordDuplicateClientMutationActivity(db, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      mapId: input.mapId,
+      operation: duplicateResult.op,
+    });
     return duplicateResult;
   }
 
@@ -358,6 +372,12 @@ export async function createLinkWithOperationCommand(
     if (error instanceof MapRevisionConflictError) {
       const conflictDuplicateResult = await replayDuplicateResult();
       if (conflictDuplicateResult) {
+        await recordDuplicateClientMutationActivity(db, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          mapId: input.mapId,
+          operation: conflictDuplicateResult.op,
+        });
         return conflictDuplicateResult;
       }
     }
@@ -370,7 +390,7 @@ export async function updateLinkCommand(input: {
   workspaceId: string;
   actorUserId: string;
   mapId: string;
-  expectedRevision: number;
+  expectedContentRevision: number;
   linkId: string;
   sourceConceptId: string;
   targetConceptId: string;
@@ -391,12 +411,6 @@ export async function updateLinkCommand(input: {
   ]);
 
   return db.transaction(async (tx) => {
-    const versionNo = await bumpMapGraphRevision(tx, {
-      workspaceId: input.workspaceId,
-      mapId: input.mapId,
-      expectedRevision: input.expectedRevision,
-    });
-
     const [existingLink] = await tx
       .select({
         id: links.id,
@@ -405,6 +419,7 @@ export async function updateLinkCommand(input: {
         relationType: links.relationType,
         strength: links.strength,
         description: links.description,
+        contentRevision: links.contentRevision,
       })
       .from(links)
       .where(
@@ -429,6 +444,7 @@ export async function updateLinkCommand(input: {
         relationType: input.relationType,
         strength: input.strength,
         description: input.description || null,
+        contentRevision: sql`${links.contentRevision} + 1`,
         updatedAt: new Date(),
       })
       .where(
@@ -436,14 +452,33 @@ export async function updateLinkCommand(input: {
           eq(links.id, input.linkId),
           eq(links.workspaceId, input.workspaceId),
           eq(links.mapId, input.mapId),
-          isNull(links.archivedAt)
+          isNull(links.archivedAt),
+          eq(links.contentRevision, input.expectedContentRevision)
         )
       )
       .returning();
 
     if (!link) {
-      throw new Error("Link not found.");
+      const currentLink = await findLinkRecord(tx, {
+        workspaceId: input.workspaceId,
+        mapId: input.mapId,
+        linkId: input.linkId,
+      });
+
+      if (!currentLink || currentLink.archivedAt) {
+        throw new Error("Link not found.");
+      }
+
+      throw new EntityContentRevisionConflictError(
+        "link",
+        currentLink.contentRevision
+      );
     }
+
+    const versionNo = await bumpMapVersionRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
 
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
@@ -565,13 +600,19 @@ export async function deleteLinkCommand(
 
   const duplicateResult = await replayDuplicateResult();
   if (duplicateResult) {
+    await recordDuplicateClientMutationActivity(db, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      mapId: input.mapId,
+      operation: duplicateResult.op,
+    });
     return duplicateResult;
   }
 
   try {
     return await db.transaction(async (tx) => {
     const archivedAt = new Date();
-    const versionNo = await bumpMapGraphRevision(tx, {
+    const graphRevision = await bumpMapGraphRevision(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       expectedRevision: input.expectedRevision,
@@ -606,11 +647,16 @@ export async function deleteLinkCommand(
       throw new Error("Link not found.");
     }
 
+    const mapVersionNo = await bumpMapVersionRevision(tx, {
+      workspaceId: input.workspaceId,
+      mapId: input.mapId,
+    });
+
     await recordMapManualVersion(tx, {
       workspaceId: input.workspaceId,
       mapId: input.mapId,
       actorUserId: input.actorUserId,
-      versionNo,
+      versionNo: mapVersionNo,
       snapshotJson: {
         entityType: "link",
         link: {
@@ -658,7 +704,7 @@ export async function deleteLinkCommand(
       const operation = await appendGraphOperationTx(tx, {
         workspaceId: input.workspaceId,
         mapId: input.mapId,
-        seq: versionNo,
+        seq: graphRevision,
         actorUserId: input.actorUserId,
         clientId: operationClientMetadata.clientId,
         clientMutationId: operationClientMetadata.clientMutationId,
@@ -673,8 +719,8 @@ export async function deleteLinkCommand(
       });
 
       return {
-        revision: versionNo,
-        seq: versionNo,
+        revision: graphRevision,
+        seq: graphRevision,
         linkId: archivedLink.id,
         op: serializeMapGraphOperation(operation),
         duplicate: false,
@@ -684,6 +730,12 @@ export async function deleteLinkCommand(
     if (error instanceof MapRevisionConflictError) {
       const conflictDuplicateResult = await replayDuplicateResult();
       if (conflictDuplicateResult) {
+        await recordDuplicateClientMutationActivity(db, {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          mapId: input.mapId,
+          operation: conflictDuplicateResult.op,
+        });
         return conflictDuplicateResult;
       }
     }

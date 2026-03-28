@@ -3,8 +3,8 @@
 ## Work metadata
 - `Date`: `2026-03-27`
 - `Start`: `2026-03-27`
-- `End`: `TBD`
-- `Status`: `planned`
+- `End`: `2026-03-28`
+- `Status`: `completed`
 - `Owner`: `engineering`
 - `Primary surface`: `Map Runtime`
 - `Primary scope`: `delta transport for hot-path graph collaboration`
@@ -18,7 +18,7 @@ The current system is safe, but it is still coarse for collaboration and scale. 
 ## Current baseline
 - The authoritative read model is still full `GraphSnapshot` data from `GET /api/maps/[mapId]/graph`.
 - Graph writes are guarded by `maps.graphRevision` compare-and-swap in `src/features/maps/commands.ts`.
-- `GraphCanvasRuntime` in `src/features/map-runtime/components/graph-canvas-runtime.tsx` persists final drag positions through `/concepts/positions`, then patches the in-memory snapshot on success.
+- `GraphCanvasRuntime` in `src/features/map-runtime/components/graph-canvas-runtime.tsx` persists final drag positions through `/concepts/[conceptId]/position`, then patches the runtime snapshot on success.
 - Realtime transport is invalidation-only. The client subscribes to the `maps` row and performs full snapshot refresh when `graphRevision` increases.
 - `learningMapVersions` and provenance already exist for explainability. They should not be reused as transport history.
 
@@ -81,7 +81,7 @@ Replace full snapshot invalidation for final drag positions with durable delta r
 ### Deliverables
 - Add `GET /api/maps/[mapId]/ops?afterSeq=...&limit=...`.
 - Add the first supported op kind: `concept.position.set`.
-- Update the position write path in `app/api/maps/[mapId]/concepts/positions/route.ts`.
+- Update the position write path in `app/api/maps/[mapId]/concepts/[conceptId]/position/route.ts`.
 - Update the Concept command path in `src/features/concepts/commands.ts` so position writes can append operations.
 - Update the client runtime to send `clientMutationId` on drag-end writes.
 - Update the runtime to apply incoming position deltas directly to Graphology and Zustand without full snapshot reload.
@@ -174,7 +174,14 @@ After the layout path is proven, split spatial collaboration from semantic colla
 6. Structural delta ops.
 7. Layout versus content conflict split.
 
+## Progress snapshot
+- `Workstreams 1-6`: implemented in the current runtime and command stack. Durable replay now covers `concept.position.set`, `concept.create`, `concept.archive`, `link.create`, and `link.archive`, with reconnect replay and deterministic snapshot fallback kept in place.
+- `Workstream 7`: implemented across Concept and Link semantic edit flows. Layout writes continue to use `maps.graphRevision`, while semantic Inspector and review/apply updates now use entity-scoped `contentRevision` conflict checks.
+- `Verification`: unit and integration coverage exists for op-log replay, tombstones, structural delta replay, content-revision conflicts, learning apply behavior, and transport telemetry publish/duplicate paths. The full `tests/e2e/map-runtime.spec.ts` browser suite is now green, covering drag/save, zoomed-out card-to-dot LOD, edge auto-pan, retry exhaustion, replay on focus, structural replay, and stale conflict surfacing.
+- `Operational counters`: `ops_published`, `ops_replayed`, `gap_recovery`, `snapshot_fallback`, `duplicate_client_mutation`, and `transport_resubscribe` are now emitted through the runtime transport telemetry path.
+- `Closeout`: the rollout acceptance bar is met. Any future two-browser or distributed multi-client expansion is now follow-on hardening rather than a blocker for this work item.
+
 ## Status notes
 - This file is the first work record in the new handbook work-files area.
-- The current status is `planned` because the roadmap is documented but the follow-up implementation epics have not yet started.
-- The end date stays `TBD` until the rollout is explicitly closed or superseded by a newer work file.
+- The work item is `completed`: the implementation, observability, and browser-hardening workstreams are landed and verified.
+- Any further expansion of multi-client end-to-end coverage can proceed as a new follow-up item rather than keeping this rollout open.

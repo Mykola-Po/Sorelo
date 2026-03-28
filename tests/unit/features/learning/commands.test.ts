@@ -281,6 +281,7 @@ describe("applyInboxReviewResolutionTx", () => {
         description: "Existing description",
         x: 120,
         y: 180,
+        contentRevision: 4,
       },
     ]);
     txState.queueSelect(maps, [{ revision: 1 }]);
@@ -348,11 +349,14 @@ describe("applyInboxReviewResolutionTx", () => {
         workspaceId,
         mapId,
         conceptId,
+        expectedContentRevision: 4,
         causedByResolutionId: resolutionId,
       })
     );
     expect(updateInput).not.toHaveProperty("originType");
     expect(updateInput).not.toHaveProperty("originSuggestionId");
+    expect(updateInput).not.toHaveProperty("x");
+    expect(updateInput).not.toHaveProperty("y");
     expect(txState.getInsertedValues(learningCanonicalMutationProvenance)[0]).toEqual(
       expect.objectContaining({
         entityType: "concept",

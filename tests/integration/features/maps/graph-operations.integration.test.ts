@@ -7,11 +7,14 @@ import {
   archiveConceptCommand,
   createConceptWithOperationCommand,
   repositionConceptWithOperationCommand,
+  updateConceptCommand,
 } from "@/features/concepts/commands";
 import {
   createLinkWithOperationCommand,
   deleteLinkCommand,
+  updateLinkCommand,
 } from "@/features/links/commands";
+import { EntityContentRevisionConflictError } from "@/features/maps/commands";
 import {
   getFullGraphSnapshot,
   getMapGraphMetrics,
@@ -20,6 +23,7 @@ import {
 } from "@/features/maps/queries";
 import { db, sqlClient } from "@/shared/db/client";
 import {
+  activityLog,
   concepts,
   links,
   mapGraphOperations,
@@ -90,6 +94,23 @@ async function ensureLinksTombstoneColumns() {
   await sqlClient`
     alter table public.links
       add column if not exists archived_by_user_id uuid references public.users(id) on delete set null
+  `;
+}
+
+async function ensureLayoutContentRevisionColumns() {
+  await sqlClient`
+    alter table public.maps
+      add column if not exists version_revision bigint not null default 0
+  `;
+
+  await sqlClient`
+    alter table public.concepts
+      add column if not exists content_revision bigint not null default 0
+  `;
+
+  await sqlClient`
+    alter table public.links
+      add column if not exists content_revision bigint not null default 0
   `;
 }
 
@@ -198,6 +219,7 @@ describe.sequential("map graph operations integration", () => {
     trackedUserIds.length = 0;
     await ensureMapGraphOperationsTable();
     await ensureLinksTombstoneColumns();
+    await ensureLayoutContentRevisionColumns();
   });
 
   afterEach(async () => {
@@ -274,6 +296,185 @@ describe.sequential("map graph operations integration", () => {
       .where(eq(mapGraphOperations.mapId, scope.mapId));
 
     expect(persistedOps).toHaveLength(1);
+  });
+
+  it("records transport activity for published and duplicate client mutations", async () => {
+    const scope = await createMapScopeFixture("transport-activity");
+    const clientId = randomUUID();
+    const clientMutationId = randomUUID();
+
+    const first = await repositionConceptWithOperationCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedRevision: 0,
+      conceptId: scope.conceptId,
+      x: 240,
+      y: 320,
+      clientId,
+      clientMutationId,
+    });
+
+    const replay = await repositionConceptWithOperationCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedRevision: 0,
+      conceptId: scope.conceptId,
+      x: 240,
+      y: 320,
+      clientId,
+      clientMutationId,
+    });
+
+    const transportActivity = await db
+      .select({
+        action: activityLog.action,
+        payload: activityLog.payload,
+      })
+      .from(activityLog)
+      .where(eq(activityLog.entityId, scope.mapId));
+
+    const publishActivity = transportActivity.find(
+      (entry) => entry.action === "map_transport.ops_published"
+    );
+    const duplicateActivity = transportActivity.find(
+      (entry) => entry.action === "map_transport.duplicate_client_mutation"
+    );
+
+    expect(first.seq).toBe(1);
+    expect(replay.seq).toBe(1);
+    expect(publishActivity).toMatchObject({
+      action: "map_transport.ops_published",
+      payload: expect.objectContaining({
+        seq: 1,
+        opKind: "concept.position.set",
+        entityType: "concept",
+        entityId: scope.conceptId,
+      }),
+    });
+    expect(duplicateActivity).toMatchObject({
+      action: "map_transport.duplicate_client_mutation",
+      payload: expect.objectContaining({
+        seq: 1,
+        opKind: "concept.position.set",
+        entityType: "concept",
+        entityId: scope.conceptId,
+        clientId,
+        clientMutationId,
+      }),
+    });
+  });
+
+  it("allows concept movement after a semantic concept edit without reusing the content conflict path", async () => {
+    const scope = await createMapScopeFixture("content-split-concept");
+
+    const updatedConcept = await updateConceptCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedContentRevision: 0,
+      conceptId: scope.conceptId,
+      title: "Edited concept",
+      conceptType: "belief",
+      summary: "Semantic update",
+      description: "Inspector content changed first",
+    });
+
+    const move = await repositionConceptWithOperationCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedRevision: 0,
+      conceptId: scope.conceptId,
+      x: 260,
+      y: 300,
+      clientId: randomUUID(),
+      clientMutationId: randomUUID(),
+    });
+
+    await expect(
+      updateConceptCommand({
+        workspaceId: scope.workspaceId,
+        actorUserId: scope.userId,
+        mapId: scope.mapId,
+        expectedContentRevision: 0,
+        conceptId: scope.conceptId,
+        title: "Stale edit",
+        conceptType: "belief",
+        summary: "Outdated content",
+        description: "Should conflict on content revision",
+      })
+    ).rejects.toBeInstanceOf(EntityContentRevisionConflictError);
+
+    await expect(
+      updateConceptCommand({
+        workspaceId: scope.workspaceId,
+        actorUserId: scope.userId,
+        mapId: scope.mapId,
+        expectedContentRevision: 0,
+        conceptId: scope.conceptId,
+        title: "Stale edit",
+        conceptType: "belief",
+        summary: "Outdated content",
+        description: "Should conflict on content revision",
+      })
+    ).rejects.toMatchObject({
+      code: "entity_content_revision_conflict",
+      currentRevision: 1,
+    });
+
+    const [persistedConcept] = await db
+      .select({
+        title: concepts.title,
+        conceptType: concepts.conceptType,
+        summary: concepts.summary,
+        description: concepts.description,
+        x: concepts.x,
+        y: concepts.y,
+        contentRevision: concepts.contentRevision,
+      })
+      .from(concepts)
+      .where(eq(concepts.id, scope.conceptId));
+
+    const metrics = await getMapGraphMetrics(scope.mapId, scope.workspaceId);
+    const revision = await getMapRevision(scope.mapId, scope.workspaceId);
+    const ops = await listMapGraphOperationsAfterSeq({
+      mapId: scope.mapId,
+      workspaceId: scope.workspaceId,
+      afterSeq: 0,
+      limit: 10,
+    });
+
+    expect(updatedConcept).toMatchObject({
+      title: "Edited concept",
+      conceptType: "belief",
+      summary: "Semantic update",
+      description: "Inspector content changed first",
+      contentRevision: 1,
+    });
+    expect(move.revision).toBe(1);
+    expect(persistedConcept).toMatchObject({
+      title: "Edited concept",
+      conceptType: "belief",
+      summary: "Semantic update",
+      description: "Inspector content changed first",
+      x: 260,
+      y: 300,
+      contentRevision: 1,
+    });
+    expect(metrics).toMatchObject({
+      revision: 1,
+      conceptCount: 1,
+      linkCount: 0,
+    });
+    expect(revision).toBe(1);
+    expect(ops.ops).toHaveLength(1);
+    expect(ops.ops[0]).toMatchObject({
+      seq: 1,
+      opKind: "concept.position.set",
+      entityId: scope.conceptId,
+    });
   });
 
   it("publishes durable concept.create and link.create operations for structural writes", async () => {
@@ -373,6 +574,140 @@ describe.sequential("map graph operations integration", () => {
       opKind: "link.create",
       entityType: "link",
       entityId: linkResult.link.id,
+    });
+  });
+
+  it("allows semantic link edits after graph revision changes and keeps stale content conflicts explicit", async () => {
+    const scope = await createMapScopeFixture("content-split-link");
+    const secondConceptId = randomUUID();
+    const linkId = randomUUID();
+    const now = new Date();
+
+    await db.insert(concepts).values({
+      id: secondConceptId,
+      workspaceId: scope.workspaceId,
+      mapId: scope.mapId,
+      title: "Linked concept",
+      conceptType: "custom",
+      x: 240,
+      y: 180,
+      createdByUserId: scope.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(links).values({
+      id: linkId,
+      workspaceId: scope.workspaceId,
+      mapId: scope.mapId,
+      sourceConceptId: scope.conceptId,
+      targetConceptId: secondConceptId,
+      relationType: "causes",
+      strength: 2,
+      description: "Original link",
+      createdByUserId: scope.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await repositionConceptWithOperationCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedRevision: 0,
+      conceptId: scope.conceptId,
+      x: 190,
+      y: 210,
+      clientId: randomUUID(),
+      clientMutationId: randomUUID(),
+    });
+
+    const updatedLink = await updateLinkCommand({
+      workspaceId: scope.workspaceId,
+      actorUserId: scope.userId,
+      mapId: scope.mapId,
+      expectedContentRevision: 0,
+      linkId,
+      sourceConceptId: scope.conceptId,
+      targetConceptId: secondConceptId,
+      relationType: "explains",
+      strength: 5,
+      description: "Semantic link update after drag",
+    });
+
+    await expect(
+      updateLinkCommand({
+        workspaceId: scope.workspaceId,
+        actorUserId: scope.userId,
+        mapId: scope.mapId,
+        expectedContentRevision: 0,
+        linkId,
+        sourceConceptId: scope.conceptId,
+        targetConceptId: secondConceptId,
+        relationType: "weakens",
+        strength: 1,
+        description: "Outdated link edit",
+      })
+    ).rejects.toBeInstanceOf(EntityContentRevisionConflictError);
+
+    await expect(
+      updateLinkCommand({
+        workspaceId: scope.workspaceId,
+        actorUserId: scope.userId,
+        mapId: scope.mapId,
+        expectedContentRevision: 0,
+        linkId,
+        sourceConceptId: scope.conceptId,
+        targetConceptId: secondConceptId,
+        relationType: "weakens",
+        strength: 1,
+        description: "Outdated link edit",
+      })
+    ).rejects.toMatchObject({
+      code: "entity_content_revision_conflict",
+      currentRevision: 1,
+    });
+
+    const [persistedLink] = await db
+      .select({
+        relationType: links.relationType,
+        strength: links.strength,
+        description: links.description,
+        contentRevision: links.contentRevision,
+      })
+      .from(links)
+      .where(eq(links.id, linkId));
+
+    const metrics = await getMapGraphMetrics(scope.mapId, scope.workspaceId);
+    const ops = await listMapGraphOperationsAfterSeq({
+      mapId: scope.mapId,
+      workspaceId: scope.workspaceId,
+      afterSeq: 0,
+      limit: 10,
+    });
+
+    expect(updatedLink).toMatchObject({
+      relationType: "explains",
+      strength: 5,
+      description: "Semantic link update after drag",
+      contentRevision: 1,
+    });
+    expect(persistedLink).toMatchObject({
+      relationType: "explains",
+      strength: 5,
+      description: "Semantic link update after drag",
+      contentRevision: 1,
+    });
+    expect(metrics).toMatchObject({
+      revision: 1,
+      conceptCount: 2,
+      linkCount: 1,
+    });
+    expect(ops.ops).toHaveLength(1);
+    expect(ops.ops[0]).toMatchObject({
+      seq: 1,
+      opKind: "concept.position.set",
+      entityId: scope.conceptId,
     });
   });
 

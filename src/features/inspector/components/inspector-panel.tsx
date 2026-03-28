@@ -712,10 +712,12 @@ function ConceptInspectorCard({
         <form action={formAction}>
           <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
           <input type="hidden" name="mapId" value={mapId} />
-          <input type="hidden" name="expectedRevision" value={expectedRevision} />
+          <input
+            type="hidden"
+            name="expectedContentRevision"
+            value={payload.concept.contentRevision}
+          />
           <input type="hidden" name="conceptId" value={payload.concept.id} />
-          <input type="hidden" name="x" value={payload.concept.x} />
-          <input type="hidden" name="y" value={payload.concept.y} />
           <Flex direction="column" gap="3">
             <InlineFormField
               label={messages.inspector.titleLabel}
@@ -1256,7 +1258,11 @@ function LinkInspectorCard({
         <form action={formAction}>
           <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
           <input type="hidden" name="mapId" value={mapId} />
-          <input type="hidden" name="expectedRevision" value={expectedRevision} />
+          <input
+            type="hidden"
+            name="expectedContentRevision"
+            value={payload.link.contentRevision}
+          />
           <input type="hidden" name="linkId" value={payload.link.id} />
           <Flex direction="column" gap="3">
             <InlineFormField

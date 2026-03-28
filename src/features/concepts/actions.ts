@@ -45,6 +45,7 @@ export async function createConceptAction(
   const parsed = createConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     title: formData.get("title"),
     conceptType: formData.get("conceptType"),
     summary: formData.get("summary"),
@@ -101,12 +102,11 @@ export async function updateConceptAction(
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
     conceptId: formData.get("conceptId"),
+    expectedContentRevision: formData.get("expectedContentRevision"),
     title: formData.get("title"),
     conceptType: formData.get("conceptType"),
     summary: formData.get("summary"),
     description: formData.get("description"),
-    x: formData.get("x"),
-    y: formData.get("y"),
   });
 
   if (!parsed.success) {
@@ -123,14 +123,12 @@ export async function updateConceptAction(
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
-      expectedRevision: parsed.data.expectedRevision,
+      expectedContentRevision: parsed.data.expectedContentRevision,
       conceptId: parsed.data.conceptId,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
       summary: parsed.data.summary || null,
       description: parsed.data.description || null,
-      x: parsed.data.x,
-      y: parsed.data.y,
     });
 
     revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
@@ -182,6 +180,7 @@ export async function archiveConceptAction(formData: FormData) {
   const parsed = archiveConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     conceptId: formData.get("conceptId"),
   });
 
@@ -190,13 +189,13 @@ export async function archiveConceptAction(formData: FormData) {
   }
 
   const { user, access } = await requireWorkspaceAccess(parsed.data.workspaceSlug);
-    await archiveConceptCommand({
-      workspaceId: access.workspace.id,
-      actorUserId: user.id,
-      mapId: parsed.data.mapId,
-      expectedRevision: parsed.data.expectedRevision,
-      conceptId: parsed.data.conceptId,
-    });
+  await archiveConceptCommand({
+    workspaceId: access.workspace.id,
+    actorUserId: user.id,
+    mapId: parsed.data.mapId,
+    expectedRevision: parsed.data.expectedRevision,
+    conceptId: parsed.data.conceptId,
+  });
 
   revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
 }

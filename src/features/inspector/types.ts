@@ -55,6 +55,7 @@ export type InspectorConceptPayload = {
   concept: {
     id: string;
     title: string;
+    contentRevision: number;
     conceptType:
       | "thought"
       | "state"
@@ -99,6 +100,7 @@ export type InspectorLinkPayload = {
   kind: "link";
   link: {
     id: string;
+    contentRevision: number;
     sourceConceptId: string;
     targetConceptId: string;
     relationType:

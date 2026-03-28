@@ -25,7 +25,7 @@ export const createConceptSchema = z.object({
 export const updateConceptSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
-  expectedRevision: z.coerce.number().int().min(0),
+  expectedContentRevision: z.coerce.number().int().min(0),
   conceptId: z.string().uuid(),
   title: z.string().trim().min(2).max(160),
   conceptType: z.enum([
@@ -39,8 +39,6 @@ export const updateConceptSchema = z.object({
   ]),
   summary: z.string().trim().max(280).optional().nullable(),
   description: z.string().trim().max(4000).optional().nullable(),
-  x: coordinateSchema,
-  y: coordinateSchema,
 });
 
 export const repositionConceptSchema = z.object({

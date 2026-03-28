@@ -407,19 +407,30 @@ export function GraphCanvasRuntime({
         return;
       }
 
-      const concept = activeSnapshot.concepts.find(
-        (candidate) => candidate.id === conceptId
+      const nextX = Math.round(position.x);
+      const nextY = Math.round(position.y);
+      const nextRevision =
+        typeof revision === "number" ? revision : activeSnapshot.revision;
+      const nextConcepts = activeSnapshot.concepts.map((candidate) =>
+        candidate.id === conceptId
+          ? {
+              ...candidate,
+              x: nextX,
+              y: nextY,
+            }
+          : candidate
       );
-      if (concept) {
-        concept.x = Math.round(position.x);
-        concept.y = Math.round(position.y);
-      }
 
-      if (typeof revision === "number") {
-        activeSnapshot.revision = revision;
-      }
+      const nextSnapshot = {
+        ...activeSnapshot,
+        revision: nextRevision,
+        concepts: nextConcepts,
+      };
+
+      snapshotRef.current = nextSnapshot;
+      setSnapshot(nextSnapshot);
     },
-    []
+    [setSnapshot]
   );
 
   const ensureStableSigmaBBox = useCallback(
@@ -429,19 +440,34 @@ export function GraphCanvasRuntime({
       nextGhosts: GraphConceptNode[],
       nextPositions?: Record<string, DragViewportPoint>
     ) => {
-      if (stableSigmaBBoxRef.current === null) {
-        stableSigmaBBoxRef.current = deriveGraphSigmaBBox(
-          nextPositions
-            ? {
-                snapshot: nextSnapshot,
-                ghosts: nextGhosts,
-                positions: nextPositions,
-              }
+      const nextBBox = deriveGraphSigmaBBox(
+        nextPositions
+          ? {
+              snapshot: nextSnapshot,
+              ghosts: nextGhosts,
+              positions: nextPositions,
+            }
+          : {
+              snapshot: nextSnapshot,
+              ghosts: nextGhosts,
+            }
+      );
+
+      if (nextBBox !== null) {
+        const currentBBox = stableSigmaBBoxRef.current;
+        stableSigmaBBoxRef.current =
+          currentBBox === null
+            ? nextBBox
             : {
-                snapshot: nextSnapshot,
-                ghosts: nextGhosts,
-              }
-        );
+                x: [
+                  Math.min(currentBBox.x[0], nextBBox.x[0]),
+                  Math.max(currentBBox.x[1], nextBBox.x[1]),
+                ],
+                y: [
+                  Math.min(currentBBox.y[0], nextBBox.y[0]),
+                  Math.max(currentBBox.y[1], nextBBox.y[1]),
+                ],
+              };
       }
 
       if (stableSigmaBBoxRef.current !== null) {
@@ -451,6 +477,11 @@ export function GraphCanvasRuntime({
     []
   );
 
+  const clearLocalPositions = useCallback(() => {
+    positionsRef.current = {};
+    setPositions({});
+  }, [setPositions]);
+
   const { fetchLatestSnapshot, isSnapshotLoading, snapshotError } =
     useGraphSnapshotBootstrap({
       mapId: map.id,
@@ -458,11 +489,13 @@ export function GraphCanvasRuntime({
       setSnapshot,
       setLastAppliedSeq,
       setNeedsSnapshotFallback,
-      clearPositions: () => {
-        positionsRef.current = {};
-        setPositions({});
-      },
+      clearPositions: clearLocalPositions,
     });
+  const fetchLatestSnapshotRef = useRef(fetchLatestSnapshot);
+
+  useEffect(() => {
+    fetchLatestSnapshotRef.current = fetchLatestSnapshot;
+  }, [fetchLatestSnapshot]);
 
   const stopAutoPan = useCallback(() => {
     if (autoPanFrameRef.current !== null) {
@@ -1704,7 +1737,7 @@ export function GraphCanvasRuntime({
             }
 
             if (response.status === 409) {
-              void fetchLatestSnapshot();
+              void fetchLatestSnapshotRef.current();
               throw new GraphRevisionConflictError(
                 data?.error ?? "Map changed since your last snapshot. Refresh and try again.",
                 typeof data?.currentRevision === "number"
@@ -1732,7 +1765,7 @@ export function GraphCanvasRuntime({
             const applied =
               data.op !== undefined ? applyIncomingOperation(data.op) : false;
             if (!applied) {
-              void fetchLatestSnapshot();
+              void fetchLatestSnapshotRef.current();
             } else if (typeof data.seq === "number") {
               lastAppliedSeqRef.current = data.seq;
               setLastAppliedSeq(data.seq);
@@ -1818,7 +1851,6 @@ export function GraphCanvasRuntime({
     clearGhostCreateErrorTimer,
     clientId,
     ensureStableSigmaBBox,
-    fetchLatestSnapshot,
     handleConceptActivation,
     canEditGraph,
     map.id,
@@ -1856,8 +1888,8 @@ export function GraphCanvasRuntime({
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
     const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghosts);
-    ensureStableSigmaBBox(sigma, snapshot, ghosts, positionsRef.current);
     sigma.setGraph(nextGraph);
+    ensureStableSigmaBBox(sigma, snapshot, ghosts, positionsRef.current);
     lastHydratedSnapshotRef.current = snapshot;
     lastHydratedGhostsRef.current = ghosts;
 

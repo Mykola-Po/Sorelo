@@ -26,7 +26,7 @@ export const updateLinkSchema = z
   .object({
     workspaceSlug: z.string().min(1),
     mapId: z.string().uuid(),
-    expectedRevision: z.coerce.number().int().min(0),
+    expectedContentRevision: z.coerce.number().int().min(0),
     linkId: z.string().uuid(),
     sourceConceptId: z.string().uuid(),
     targetConceptId: z.string().uuid(),

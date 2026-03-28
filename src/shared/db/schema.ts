@@ -408,6 +408,9 @@ export const maps = pgTable(
     graphRevision: bigint("graph_revision", { mode: "number" })
       .notNull()
       .default(0),
+    versionRevision: bigint("version_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -490,6 +493,9 @@ export const concepts = pgTable(
     ),
     x: integer("x").notNull().default(160),
     y: integer("y").notNull().default(120),
+    contentRevision: bigint("content_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -533,6 +539,9 @@ export const links = pgTable(
     relationType: relationTypeEnum("relation_type").notNull(),
     strength: integer("strength").notNull().default(1),
     description: text("description"),
+    contentRevision: bigint("content_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     originType: entityOriginTypeEnum("origin_type").notNull().default("manual"),
     originSuggestionId: uuid("origin_suggestion_id").references(
       () => learningSuggestions.id,

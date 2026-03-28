@@ -10,12 +10,17 @@ import {
   requireWorkspaceGraphEditAccess,
   requireWorkspaceMapMetadataAccess,
 } from "@/features/maps/access";
+import {
+  mapTransportTelemetryActions,
+  type MapTransportTelemetryAction,
+} from "@/features/map-runtime/realtime/transport-telemetry";
 import { normalizeMapSlug } from "@/features/maps/utils";
 import { db } from "@/shared/db/client";
 import { mapGraphOperations, maps } from "@/shared/db/schema";
 
 type MapRevisionWriter = Pick<typeof db, "select" | "update" | "insert">;
 type MapGraphOperationWriter = Pick<typeof db, "select" | "insert">;
+type MapTransportActivityWriter = Pick<typeof db, "insert">;
 
 export const MAP_GRAPH_OPERATION_KIND = {
   conceptPositionSet: "concept.position.set",
@@ -60,6 +65,24 @@ export class MapRevisionConflictError extends Error {
   constructor(currentRevision: number) {
     super("Map changed since your last snapshot. Refresh and try again.");
     this.name = "MapRevisionConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
+
+export class EntityContentRevisionConflictError extends Error {
+  readonly statusCode = 409;
+  readonly code = "entity_content_revision_conflict";
+  readonly entityType: "concept" | "link";
+  readonly currentRevision: number;
+
+  constructor(entityType: "concept" | "link", currentRevision: number) {
+    super(
+      entityType === "concept"
+        ? "Concept changed since you opened Inspector. Refresh and try again."
+        : "Link changed since you opened Inspector. Refresh and try again."
+    );
+    this.name = "EntityContentRevisionConflictError";
+    this.entityType = entityType;
     this.currentRevision = currentRevision;
   }
 }
@@ -111,6 +134,35 @@ export async function bumpMapGraphRevision(
   }
 
   return map.graphRevision;
+}
+
+export async function bumpMapVersionRevision(
+  dbOrTx: MapRevisionWriter,
+  input: {
+    workspaceId: string;
+    mapId: string;
+  }
+) {
+  const [map] = await dbOrTx
+    .update(maps)
+    .set({
+      versionRevision: sql`${maps.versionRevision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(maps.id, input.mapId),
+        eq(maps.workspaceId, input.workspaceId),
+        isNull(maps.archivedAt)
+      )
+    )
+    .returning({ versionRevision: maps.versionRevision });
+
+  if (!map) {
+    throw new Error("Map not found.");
+  }
+
+  return map.versionRevision;
 }
 
 export function serializeMapGraphOperation(
@@ -167,6 +219,19 @@ export async function appendGraphOperationTx(
     throw new Error("Unable to append graph operation.");
   }
 
+  await recordMapTransportActivity(dbOrTx, {
+    workspaceId: input.workspaceId,
+    actorUserId: input.actorUserId,
+    mapId: input.mapId,
+    action: mapTransportTelemetryActions.opsPublished,
+    payload: {
+      seq: operation.seq,
+      opKind: operation.opKind,
+      entityType: operation.entityType,
+      entityId: operation.entityId,
+    },
+  });
+
   return operation;
 }
 
@@ -191,6 +256,54 @@ export async function findGraphOperationByClientMutation(
     .limit(1);
 
   return operation ?? null;
+}
+
+export async function recordMapTransportActivity(
+  dbOrTx: MapTransportActivityWriter,
+  input: {
+    workspaceId: string;
+    actorUserId: string;
+    mapId: string;
+    action: MapTransportTelemetryAction;
+    payload?: Record<string, unknown>;
+  }
+) {
+  await recordActivity(dbOrTx, {
+    workspaceId: input.workspaceId,
+    actorUserId: input.actorUserId,
+    entityType: "map",
+    entityId: input.mapId,
+    action: input.action,
+    ...(input.payload ? { payload: input.payload } : {}),
+  });
+}
+
+export async function recordDuplicateClientMutationActivity(
+  dbOrTx: MapTransportActivityWriter,
+  input: {
+    workspaceId: string;
+    actorUserId: string;
+    mapId: string;
+    operation: Pick<
+      MapGraphOperationRow,
+      "seq" | "opKind" | "entityType" | "entityId" | "clientId" | "clientMutationId"
+    >;
+  }
+) {
+  await recordMapTransportActivity(dbOrTx, {
+    workspaceId: input.workspaceId,
+    actorUserId: input.actorUserId,
+    mapId: input.mapId,
+    action: mapTransportTelemetryActions.duplicateClientMutation,
+    payload: {
+      seq: input.operation.seq,
+      opKind: input.operation.opKind,
+      entityType: input.operation.entityType,
+      entityId: input.operation.entityId,
+      clientId: input.operation.clientId,
+      clientMutationId: input.operation.clientMutationId,
+    },
+  });
 }
 
 export async function createMapCommand(input: {

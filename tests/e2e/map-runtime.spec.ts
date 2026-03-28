@@ -52,14 +52,50 @@ type CameraSnapshot = {
   maxRatio: number;
 };
 
-type PositionSavePayload = {
+type PositionSaveRequestPayload = {
   expectedRevision: number;
-  positions: Array<{
-    conceptId: string;
-    x: number;
-    y: number;
-  }>;
+  clientId?: string;
+  clientMutationId?: string;
+  x: number;
+  y: number;
 };
+
+type PositionSavePayload = PositionSaveRequestPayload & {
+  conceptId: string;
+};
+
+type MockRealtimeOperation = {
+  id: string;
+  workspaceId: string;
+  mapId: string;
+  seq: number;
+  actorUserId: string;
+  clientId: string;
+  clientMutationId: string;
+  opKind: string;
+  entityType: "concept" | "link";
+  entityId: string;
+  payload: unknown;
+  createdAt: string;
+};
+
+function createMockRealtimeOperation(
+  input: Pick<
+    MockRealtimeOperation,
+    "seq" | "opKind" | "entityType" | "entityId" | "payload"
+  >
+): MockRealtimeOperation {
+  return {
+    id: `op-${input.seq}`,
+    workspaceId: "test-workspace",
+    mapId: "test-map",
+    actorUserId: "remote-user",
+    clientId: "remote-client",
+    clientMutationId: `remote-mutation-${input.seq}`,
+    createdAt: `2026-03-24T00:00:${String(input.seq).padStart(2, "0")}.000Z`,
+    ...input,
+  };
+}
 
 async function getCameraSnapshot(page: Page): Promise<CameraSnapshot> {
   return page.evaluate(() => {
@@ -136,6 +172,35 @@ async function getNodePosition(page: Page, conceptId: string) {
       y: graph.getNodeAttribute(nodeId, "y"),
     };
   }, conceptId);
+}
+
+async function getGraphStructure(page: Page) {
+  return page.evaluate(() => {
+    const sigma = (
+      window as Window & {
+        __SIGMA__?: {
+          getGraph: () => {
+            nodes: () => string[];
+            edges: () => string[];
+            order: number;
+            size: number;
+          };
+        };
+      }
+    ).__SIGMA__;
+
+    if (!sigma) {
+      throw new Error("Sigma instance is not available");
+    }
+
+    const graph = sigma.getGraph();
+    return {
+      nodeIds: [...graph.nodes()].sort(),
+      edgeIds: [...graph.edges()].sort(),
+      order: graph.order,
+      size: graph.size,
+    };
+  });
 }
 
 async function getCardLayerPosition(locator: Locator) {
@@ -274,14 +339,18 @@ async function dispatchTouchSequence(
 
 test.describe("Map Runtime WebGL Canvas", () => {
   let graphRequestCount = 0;
+  let opsRequestCount = 0;
   let positionSavePayloads: PositionSavePayload[] = [];
   let positionSaveFailuresRemaining = 0;
+  let queuedOperations: MockRealtimeOperation[] = [];
   let currentGraphSnapshot = createMockGraphSnapshot();
 
   test.beforeEach(async ({ page }) => {
     graphRequestCount = 0;
+    opsRequestCount = 0;
     positionSavePayloads = [];
     positionSaveFailuresRemaining = 0;
+    queuedOperations = [];
     currentGraphSnapshot = createMockGraphSnapshot();
 
     // Intercept network requests made by GraphCanvasRuntime React component
@@ -295,17 +364,78 @@ test.describe("Map Runtime WebGL Canvas", () => {
       });
     });
 
-    // Mock the position save endpoint to prevent network errors in console
-    await page.route("**/api/maps/test-map/concepts/positions", async (route) => {
-      const payload = route.request().postDataJSON() as PositionSavePayload | null;
+    await page.route("**/api/maps/test-map/ops*", async (route) => {
+      opsRequestCount += 1;
+
+      const requestUrl = new URL(route.request().url());
+      const afterSeqParam = Number(requestUrl.searchParams.get("afterSeq") ?? "0");
+      const limitParam = Number(requestUrl.searchParams.get("limit") ?? "100");
+      const afterSeq = Number.isFinite(afterSeqParam) ? afterSeqParam : 0;
+      const limit = Number.isFinite(limitParam) ? limitParam : 100;
+
+      const nextOperations = queuedOperations
+        .filter((operation) => operation.seq > afterSeq)
+        .sort((left, right) => left.seq - right.seq)
+        .slice(0, limit);
+
+      const highestSeq = queuedOperations.reduce(
+        (maxSeq, operation) => Math.max(maxSeq, operation.seq),
+        currentGraphSnapshot.revision
+      );
+      const hasMore = queuedOperations.some(
+        (operation) =>
+          operation.seq > afterSeq &&
+          !nextOperations.some((candidate) => candidate.id === operation.id)
+      );
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          revision: highestSeq,
+          hasMore,
+          ops: nextOperations,
+          cursor: {
+            afterSeq,
+            lastSeq:
+              nextOperations.length > 0
+                ? nextOperations[nextOperations.length - 1]?.seq ?? afterSeq
+                : afterSeq,
+            hasMore,
+          },
+        }),
+      });
+    });
+
+    await page.route("**/api/maps/test-map/telemetry/transport", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
+    // Mock the current per-concept position save endpoint used by the runtime.
+    await page.route("**/api/maps/test-map/concepts/*/position", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const conceptId = requestUrl.pathname.split("/").at(-2) ?? null;
+      const requestBody = route.request().postDataJSON() as PositionSaveRequestPayload | null;
+      const payload =
+        requestBody && conceptId
+          ? {
+              ...requestBody,
+              conceptId,
+            }
+          : null;
+
       if (payload) {
         positionSavePayloads.push(payload);
       }
 
-      const hasNonIntegerCoordinate = payload?.positions.some(
-        (position) =>
-          !Number.isInteger(position.x) || !Number.isInteger(position.y)
-      );
+      const hasNonIntegerCoordinate =
+        payload != null &&
+        (!Number.isInteger(payload.x) || !Number.isInteger(payload.y));
 
       if (hasNonIntegerCoordinate) {
         await route.fulfill({
@@ -345,39 +475,62 @@ test.describe("Map Runtime WebGL Canvas", () => {
       }
 
       if (payload) {
+        const nextRevision = currentGraphSnapshot.revision + 1;
         currentGraphSnapshot = {
           ...currentGraphSnapshot,
-          revision: currentGraphSnapshot.revision + 1,
-          concepts: currentGraphSnapshot.concepts.map((concept) => {
-            const savedPosition = payload.positions.find(
-              (position) => position.conceptId === concept.id
-            );
-
-            if (!savedPosition) {
-              return concept;
-            }
-
-            return {
-              ...concept,
-              x: savedPosition.x,
-              y: savedPosition.y,
-            };
-          }),
+          revision: nextRevision,
+          concepts: currentGraphSnapshot.concepts.map((concept) =>
+            concept.id === payload.conceptId
+              ? {
+                  ...concept,
+                  x: payload.x,
+                  y: payload.y,
+                }
+              : concept
+          ),
         };
+
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            revision: currentGraphSnapshot.revision,
+            seq: nextRevision,
+            concept: {
+              id: payload.conceptId,
+              x: payload.x,
+              y: payload.y,
+            },
+            op: {
+              id: `op-${nextRevision}`,
+              workspaceId: "test-workspace",
+              mapId: "test-map",
+              seq: nextRevision,
+              actorUserId: "test-user",
+              clientId: payload.clientId ?? "test-client",
+              clientMutationId:
+                payload.clientMutationId ?? `local-mutation-${nextRevision}`,
+              opKind: "concept.position.set",
+              entityType: "concept",
+              entityId: payload.conceptId,
+              payload: {
+                x: payload.x,
+                y: payload.y,
+              },
+              createdAt: `2026-03-24T00:00:${String(nextRevision).padStart(2, "0")}.000Z`,
+            },
+            duplicate: false,
+          }),
+        });
+        return;
       }
 
       await route.fulfill({
-        status: 200,
+        status: 400,
         contentType: "application/json",
         body: JSON.stringify({
-          ok: true,
-          revision: currentGraphSnapshot.revision,
-          concepts:
-            payload?.positions.map((position) => ({
-              id: position.conceptId,
-              x: position.x,
-              y: position.y,
-            })) ?? [],
+          error: "Missing position save payload.",
         }),
       });
     });
@@ -498,14 +651,12 @@ test.describe("Map Runtime WebGL Canvas", () => {
     expect(after.x).not.toBe(before.x);
     expect(after.y).not.toBe(before.y);
     expect(positionSavePayloads[0]).toEqual({
+      conceptId: "node-a",
       expectedRevision: 1,
-      positions: [
-        {
-          conceptId: "node-a",
-          x: after.x,
-          y: after.y,
-        },
-      ],
+      x: after.x,
+      y: after.y,
+      clientId: expect.any(String),
+      clientMutationId: expect.any(String),
     });
 
     await page.reload();
@@ -918,6 +1069,17 @@ test.describe("Map Runtime WebGL Canvas", () => {
   test("Window focus refreshes the graph snapshot when the revision advances", async ({
     page,
   }) => {
+    queuedOperations = [
+      createMockRealtimeOperation({
+        seq: 2,
+        opKind: "concept.title.set",
+        entityType: "concept",
+        entityId: "node-a",
+        payload: {
+          title: "Node A (remote edit)",
+        },
+      }),
+    ];
     currentGraphSnapshot = {
       ...currentGraphSnapshot,
       revision: currentGraphSnapshot.revision + 1,
@@ -936,10 +1098,99 @@ test.describe("Map Runtime WebGL Canvas", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
+    await expect.poll(() => opsRequestCount).toBe(1);
     await expect.poll(() => graphRequestCount).toBe(1);
     await expect.poll(() => getNodePosition(page, "node-a")).toEqual({
       x: 148,
       y: 124,
+    });
+  });
+
+  test("Window focus replays structural create ops through GET /ops without a graph refetch", async ({
+    page,
+  }) => {
+    queuedOperations = [
+      createMockRealtimeOperation({
+        seq: 2,
+        opKind: "concept.create",
+        entityType: "concept",
+        entityId: "node-c",
+        payload: {
+          id: "node-c",
+          conceptType: "custom",
+          title: "Node C",
+          summary: null,
+          description: null,
+          x: 420,
+          y: 180,
+          updatedAt: "2026-03-24T00:00:02.000Z",
+        },
+      }),
+      createMockRealtimeOperation({
+        seq: 3,
+        opKind: "link.create",
+        entityType: "link",
+        entityId: "link-b-c",
+        payload: {
+          id: "link-b-c",
+          sourceConceptId: "node-b",
+          targetConceptId: "node-c",
+          relationType: "supports",
+          strength: 2,
+          description: null,
+          updatedAt: "2026-03-24T00:00:03.000Z",
+        },
+      }),
+    ];
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await expect.poll(() => opsRequestCount).toBe(1);
+    expect(graphRequestCount).toBe(0);
+    await expect(page.getByRole("button", { name: /Node C/ }).first()).toBeVisible();
+    await expect.poll(() => getNodePosition(page, "node-c")).toEqual({
+      x: 420,
+      y: 180,
+    });
+    await expect.poll(() => getGraphStructure(page)).toEqual({
+      nodeIds: ["node-a", "node-b", "node-c"],
+      edgeIds: ["link-a-b", "link-b-c"],
+      order: 3,
+      size: 2,
+    });
+  });
+
+  test("Window focus replays structural archive ops through GET /ops without a graph refetch", async ({
+    page,
+  }) => {
+    queuedOperations = [
+      createMockRealtimeOperation({
+        seq: 2,
+        opKind: "concept.archive",
+        entityType: "concept",
+        entityId: "node-a",
+        payload: {
+          archivedAt: "2026-03-24T00:00:02.000Z",
+          archivedLinkIds: ["link-a-b"],
+        },
+      }),
+    ];
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await expect.poll(() => opsRequestCount).toBe(1);
+    expect(graphRequestCount).toBe(0);
+    await expect(page.getByRole("button", { name: /Node A/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Node B/ }).first()).toBeVisible();
+    await expect.poll(() => getGraphStructure(page)).toEqual({
+      nodeIds: ["node-b"],
+      edgeIds: [],
+      order: 1,
+      size: 0,
     });
   });
 

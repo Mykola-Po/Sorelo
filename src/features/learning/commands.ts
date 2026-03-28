@@ -78,6 +78,7 @@ type ConceptReviewSnapshot = {
   description: string | null;
   x: number;
   y: number;
+  contentRevision: number;
 };
 
 type LinkReviewSnapshot = {
@@ -334,6 +335,7 @@ async function getConceptReviewSnapshotTx(
       description: concepts.description,
       x: concepts.x,
       y: concepts.y,
+      contentRevision: concepts.contentRevision,
     })
     .from(concepts)
     .where(
@@ -357,6 +359,7 @@ async function getConceptReviewSnapshotTx(
     description: concept.description,
     x: concept.x,
     y: concept.y,
+    contentRevision: concept.contentRevision,
   } satisfies ConceptReviewSnapshot;
 }
 
@@ -726,9 +729,7 @@ function areConceptSnapshotsEqual(
     left.title === right.title &&
     left.conceptType === right.conceptType &&
     left.summary === right.summary &&
-    left.description === right.description &&
-    left.x === right.x &&
-    left.y === right.y
+    left.description === right.description
   );
 }
 
@@ -755,6 +756,7 @@ function toConceptReviewSnapshot(
         : fallback.description,
     x: typeof value.x === "number" ? value.x : fallback.x,
     y: typeof value.y === "number" ? value.y : fallback.y,
+    contentRevision: fallback.contentRevision,
   };
 }
 
@@ -783,6 +785,7 @@ function toCreateConceptAfterSnapshot(
         : (operation.description ?? null),
     x: typeof value.x === "number" ? value.x : position.x,
     y: typeof value.y === "number" ? value.y : position.y,
+    contentRevision: 0,
   };
 }
 
@@ -1128,17 +1131,11 @@ export async function applyInboxReviewResolutionTx(
       actorUserId: input.actorUserId,
       mapId: input.mapId,
       conceptId: operation.conceptId,
-      expectedRevision: await getMapGraphRevisionTx(
-        tx,
-        input.workspaceId,
-        input.mapId
-      ),
+      expectedContentRevision: currentBefore.contentRevision,
       title: afterSnapshot.title,
       conceptType: afterSnapshot.conceptType,
       summary: afterSnapshot.summary,
       description: afterSnapshot.description,
-      x: afterSnapshot.x,
-      y: afterSnapshot.y,
       causedByResolutionId: input.resolutionId,
       mapVersionTriggerType: "suggestion_resolution",
     });

@@ -4,27 +4,39 @@ const {
   createConceptWithOperationCommandMock,
   createLinkWithOperationCommandMock,
   deleteLinkCommandMock,
+  getMapGraphMetricsMock,
   repositionConceptWithOperationCommandMock,
   repositionConceptsBatchCommandMock,
   requireMapRuntimeAccessMock,
+  updateConceptCommandMock,
+  updateLinkCommandMock,
 } = vi.hoisted(() => ({
   createConceptWithOperationCommandMock: vi.fn(),
   createLinkWithOperationCommandMock: vi.fn(),
   deleteLinkCommandMock: vi.fn(),
+  getMapGraphMetricsMock: vi.fn(),
   repositionConceptWithOperationCommandMock: vi.fn(),
   repositionConceptsBatchCommandMock: vi.fn(),
   requireMapRuntimeAccessMock: vi.fn(),
+  updateConceptCommandMock: vi.fn(),
+  updateLinkCommandMock: vi.fn(),
 }));
 
 vi.mock("@/features/concepts/commands", () => ({
   createConceptWithOperationCommand: createConceptWithOperationCommandMock,
   repositionConceptWithOperationCommand: repositionConceptWithOperationCommandMock,
   repositionConceptsBatchCommand: repositionConceptsBatchCommandMock,
+  updateConceptCommand: updateConceptCommandMock,
 }));
 
 vi.mock("@/features/links/commands", () => ({
   createLinkWithOperationCommand: createLinkWithOperationCommandMock,
   deleteLinkCommand: deleteLinkCommandMock,
+  updateLinkCommand: updateLinkCommandMock,
+}));
+
+vi.mock("@/features/maps/queries", () => ({
+  getMapGraphMetrics: getMapGraphMetricsMock,
 }));
 
 vi.mock("@/features/map-runtime/server", async () => {
@@ -40,11 +52,16 @@ vi.mock("@/features/map-runtime/server", async () => {
 });
 
 import { POST as createConceptRoute } from "../../../../app/api/maps/[mapId]/concepts/route";
+import { PATCH as updateConceptRoute } from "../../../../app/api/maps/[mapId]/concepts/[conceptId]/route";
 import { PATCH as repositionConceptPositionRoute } from "../../../../app/api/maps/[mapId]/concepts/[conceptId]/position/route";
 import { PATCH as repositionConceptPositionsRoute } from "../../../../app/api/maps/[mapId]/concepts/positions/route";
 import { POST as createLinkRoute } from "../../../../app/api/maps/[mapId]/links/route";
+import { PATCH as updateLinkRoute } from "../../../../app/api/maps/[mapId]/links/[linkId]/route";
 import { DELETE as deleteLinkRoute } from "../../../../app/api/maps/[mapId]/links/[linkId]/route";
-import { MapRevisionConflictError } from "@/features/maps/commands";
+import {
+  EntityContentRevisionConflictError,
+  MapRevisionConflictError,
+} from "@/features/maps/commands";
 
 describe("map runtime write routes", () => {
   beforeEach(() => {
@@ -52,6 +69,11 @@ describe("map runtime write routes", () => {
     requireMapRuntimeAccessMock.mockResolvedValue({
       user: { id: "user-1", email: "user@example.com" },
       access: { workspaceId: "workspace-1" },
+    });
+    getMapGraphMetricsMock.mockResolvedValue({
+      revision: 17,
+      conceptCount: 2,
+      linkCount: 1,
     });
   });
 
@@ -213,6 +235,157 @@ describe("map runtime write routes", () => {
         opKind: "link.create",
         entityId: "link-1",
       },
+    });
+  });
+
+  it("forwards expectedContentRevision on concept updates", async () => {
+    updateConceptCommandMock.mockResolvedValue({
+      id: "concept-1",
+      title: "Updated concept",
+      conceptType: "belief",
+      summary: "Fresh summary",
+      description: "Fresh description",
+      x: 180,
+      y: 220,
+      contentRevision: 4,
+    });
+
+    const response = await updateConceptRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/concepts/concept-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedContentRevision: 3,
+          title: "Updated concept",
+          conceptType: "belief",
+          summary: "Fresh summary",
+          description: "Fresh description",
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1", conceptId: "concept-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateConceptCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        conceptId: "concept-1",
+        expectedContentRevision: 3,
+      })
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 17,
+      concept: {
+        id: "concept-1",
+        title: "Updated concept",
+        contentRevision: 4,
+      },
+    });
+  });
+
+  it("maps stale concept updates to content-revision conflicts", async () => {
+    updateConceptCommandMock.mockRejectedValue(
+      new EntityContentRevisionConflictError("concept", 6)
+    );
+
+    const response = await updateConceptRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/concepts/concept-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedContentRevision: 5,
+          title: "Updated concept",
+          conceptType: "belief",
+          summary: null,
+          description: null,
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1", conceptId: "concept-1" }) }
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "entity_content_revision_conflict",
+      error: "Concept changed since you opened Inspector. Refresh and try again.",
+      currentContentRevision: 6,
+    });
+  });
+
+  it("forwards expectedContentRevision on link updates", async () => {
+    updateLinkCommandMock.mockResolvedValue({
+      id: "link-1",
+      sourceConceptId: "11111111-1111-4111-8111-111111111111",
+      targetConceptId: "22222222-2222-4222-8222-222222222222",
+      relationType: "explains",
+      strength: 5,
+      description: "Updated link",
+      contentRevision: 2,
+    });
+
+    const response = await updateLinkRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/links/link-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedContentRevision: 1,
+          sourceConceptId: "11111111-1111-4111-8111-111111111111",
+          targetConceptId: "22222222-2222-4222-8222-222222222222",
+          relationType: "explains",
+          strength: 5,
+          description: "Updated link",
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1", linkId: "link-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateLinkCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        mapId: "map-1",
+        linkId: "link-1",
+        expectedContentRevision: 1,
+      })
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      revision: 17,
+      link: {
+        id: "link-1",
+        relationType: "explains",
+        contentRevision: 2,
+      },
+    });
+  });
+
+  it("maps stale link updates to content-revision conflicts", async () => {
+    updateLinkCommandMock.mockRejectedValue(
+      new EntityContentRevisionConflictError("link", 4)
+    );
+
+    const response = await updateLinkRoute(
+      new Request("http://127.0.0.1:3000/api/maps/map-1/links/link-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedContentRevision: 3,
+          sourceConceptId: "11111111-1111-4111-8111-111111111111",
+          targetConceptId: "22222222-2222-4222-8222-222222222222",
+          relationType: "explains",
+          strength: 5,
+          description: "Updated link",
+        }),
+      }),
+      { params: Promise.resolve({ mapId: "map-1", linkId: "link-1" }) }
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "entity_content_revision_conflict",
+      error: "Link changed since you opened Inspector. Refresh and try again.",
+      currentContentRevision: 4,
     });
   });
 

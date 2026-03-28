@@ -6,13 +6,33 @@ export type MapRevisionInvalidationEvent = {
   revision: number | null;
 };
 
+type MapRevisionInvalidationSubscriptionInput = {
+  onEvent: (event: MapRevisionInvalidationEvent) => void;
+  onSubscribed?: (isResubscribe: boolean) => void;
+};
+
+type MapRevisionInvalidationTestSubscribe = (
+  mapId: string,
+  input: MapRevisionInvalidationSubscriptionInput
+) => () => void;
+
+declare global {
+  interface Window {
+    __SORELO_E2E_MAP_RUNTIME_SUBSCRIBE__?: MapRevisionInvalidationTestSubscribe;
+  }
+}
+
 export function subscribeToMapRevisionInvalidation(
   mapId: string,
-  input: {
-    onEvent: (event: MapRevisionInvalidationEvent) => void;
-    onSubscribed?: (isResubscribe: boolean) => void;
-  }
+  input: MapRevisionInvalidationSubscriptionInput
 ) {
+  if (typeof window !== "undefined") {
+    const subscribeOverride = window.__SORELO_E2E_MAP_RUNTIME_SUBSCRIBE__;
+    if (typeof subscribeOverride === "function") {
+      return subscribeOverride(mapId, input);
+    }
+  }
+
   const supabase = createBrowserSupabaseClient();
   let hasSubscribedOnce = false;
 

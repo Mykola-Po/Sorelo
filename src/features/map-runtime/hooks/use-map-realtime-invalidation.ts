@@ -12,6 +12,12 @@ import {
   isLinkCreateOperation,
 } from "@/features/map-runtime/realtime/contracts";
 import { subscribeToMapRevisionInvalidation } from "@/features/map-runtime/realtime/browser-transport";
+import {
+  mapTransportTelemetryActions,
+  type MapTransportClientTelemetryEvent,
+  type MapTransportReplayTrigger,
+  type MapTransportSnapshotFallbackReason,
+} from "@/features/map-runtime/realtime/transport-telemetry";
 
 type UseMapRealtimeInvalidationInput = {
   mapId: string;
@@ -36,10 +42,40 @@ export function useMapRealtimeInvalidation(
   const deferredOperationsRef = useRef<MapGraphOperation[]>([]);
   const replayRequestInFlightRef = useRef(false);
 
-  const triggerSnapshotFallback = useCallback(() => {
-    input.setNeedsSnapshotFallback(true);
-    void input.fetchLatestSnapshot();
-  }, [input]);
+  const sendTransportTelemetry = useCallback(
+    (event: MapTransportClientTelemetryEvent) => {
+      void fetch(`/api/maps/${input.mapId}/telemetry/transport`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+        cache: "no-store",
+        keepalive:
+          event.action === mapTransportTelemetryActions.transportResubscribe,
+      }).catch(() => {
+        // Telemetry must never block runtime recovery.
+      });
+    },
+    [input.mapId]
+  );
+
+  const triggerSnapshotFallback = useCallback(
+    (
+      reason: MapTransportSnapshotFallbackReason,
+      afterSeq: number,
+      operation?: { opKind: string }
+    ) => {
+      sendTransportTelemetry({
+        action: mapTransportTelemetryActions.snapshotFallback,
+        reason,
+        afterSeq,
+        ...(operation ? { opKind: operation.opKind } : {}),
+      });
+
+      input.setNeedsSnapshotFallback(true);
+      void input.fetchLatestSnapshot();
+    },
+    [input, sendTransportTelemetry]
+  );
 
   const enqueueDeferredOperation = useCallback((operation: MapGraphOperation) => {
     const remaining = deferredOperationsRef.current.filter(
@@ -63,7 +99,21 @@ export function useMapRealtimeInvalidation(
         isLinkArchiveOperation(operation);
 
       if (!isSupportedOperation) {
-        triggerSnapshotFallback();
+        const unsupportedOperation = operation as unknown as {
+          seq?: number;
+          opKind?: string;
+        };
+
+        triggerSnapshotFallback(
+          "unsupported_op",
+          Math.max(
+            0,
+            (unsupportedOperation.seq ?? input.lastAppliedSeqRef.current) - 1
+          ),
+          unsupportedOperation.opKind
+            ? { opKind: unsupportedOperation.opKind }
+            : undefined
+        );
         return false;
       }
 
@@ -84,7 +134,7 @@ export function useMapRealtimeInvalidation(
 
       const applied = input.applyIncomingOperation(operation);
       if (!applied) {
-        triggerSnapshotFallback();
+        triggerSnapshotFallback("apply_failed", operation.seq - 1, operation);
         return false;
       }
 
@@ -94,7 +144,7 @@ export function useMapRealtimeInvalidation(
   );
 
   const replayOperationsAfterSeq = useCallback(
-    async (afterSeq: number) => {
+    async (afterSeq: number, trigger: MapTransportReplayTrigger) => {
       if (replayRequestInFlightRef.current) {
         return;
       }
@@ -102,6 +152,7 @@ export function useMapRealtimeInvalidation(
       replayRequestInFlightRef.current = true;
       try {
         let cursor = afterSeq;
+        let replayedCount = 0;
 
         while (true) {
           const response = await fetch(
@@ -113,7 +164,7 @@ export function useMapRealtimeInvalidation(
           );
 
           if (!response.ok) {
-            triggerSnapshotFallback();
+            triggerSnapshotFallback("response_not_ok", cursor);
             return;
           }
 
@@ -127,7 +178,7 @@ export function useMapRealtimeInvalidation(
 
           for (const operation of operations) {
             if (operation.seq !== cursor + 1) {
-              triggerSnapshotFallback();
+              triggerSnapshotFallback("missing_sequence", cursor, operation);
               return;
             }
 
@@ -137,6 +188,7 @@ export function useMapRealtimeInvalidation(
             }
 
             cursor = operation.seq;
+            replayedCount += 1;
             input.lastAppliedSeqRef.current = operation.seq;
             input.setLastAppliedSeq(operation.seq);
           }
@@ -144,16 +196,36 @@ export function useMapRealtimeInvalidation(
           input.setNeedsSnapshotFallback(false);
 
           if (!body.hasMore && !body.cursor?.hasMore) {
+            if (replayedCount > 0) {
+              sendTransportTelemetry({
+                action: mapTransportTelemetryActions.opsReplayed,
+                trigger,
+                opCount: replayedCount,
+                fromSeq: afterSeq,
+                toSeq: cursor,
+              });
+
+              if (trigger !== "revision_event" && afterSeq > 0) {
+                sendTransportTelemetry({
+                  action: mapTransportTelemetryActions.gapRecovery,
+                  trigger,
+                  opCount: replayedCount,
+                  fromSeq: afterSeq,
+                  toSeq: cursor,
+                });
+              }
+            }
+
             return;
           }
         }
       } catch {
-        triggerSnapshotFallback();
+        triggerSnapshotFallback("network_error", afterSeq);
       } finally {
         replayRequestInFlightRef.current = false;
       }
     },
-    [applyOperation, input, triggerSnapshotFallback]
+    [applyOperation, input, sendTransportTelemetry, triggerSnapshotFallback]
   );
 
   const flushDeferredOperations = useCallback(() => {
@@ -167,7 +239,7 @@ export function useMapRealtimeInvalidation(
     for (const operation of deferredOperations) {
       const applied = input.applyIncomingOperation(operation);
       if (!applied) {
-        triggerSnapshotFallback();
+        triggerSnapshotFallback("apply_failed", operation.seq - 1, operation);
         return;
       }
     }
@@ -196,19 +268,32 @@ export function useMapRealtimeInvalidation(
           return;
         }
 
-        void replayOperationsAfterSeq(input.lastAppliedSeqRef.current);
+        void replayOperationsAfterSeq(
+          input.lastAppliedSeqRef.current,
+          "revision_event"
+        );
       },
       onSubscribed: (isResubscribe) => {
         if (!isResubscribe) {
           return;
         }
 
-        void replayOperationsAfterSeq(input.lastAppliedSeqRef.current);
+        sendTransportTelemetry({
+          action: mapTransportTelemetryActions.transportResubscribe,
+          afterSeq: input.lastAppliedSeqRef.current,
+        });
+        void replayOperationsAfterSeq(
+          input.lastAppliedSeqRef.current,
+          "transport_resubscribe"
+        );
       },
     });
 
     const handleWindowFocus = () => {
-      void replayOperationsAfterSeq(input.lastAppliedSeqRef.current);
+      void replayOperationsAfterSeq(
+        input.lastAppliedSeqRef.current,
+        "window_focus"
+      );
     };
 
     window.addEventListener("focus", handleWindowFocus);
@@ -217,5 +302,10 @@ export function useMapRealtimeInvalidation(
       window.removeEventListener("focus", handleWindowFocus);
       unsubscribe();
     };
-  }, [input.mapId, input.lastAppliedSeqRef, replayOperationsAfterSeq]);
+  }, [
+    input.lastAppliedSeqRef,
+    input.mapId,
+    replayOperationsAfterSeq,
+    sendTransportTelemetry,
+  ]);
 }
