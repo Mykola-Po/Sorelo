@@ -97,6 +97,11 @@ Copy `.env.example` into a local env file and provide:
 - `DATABASE_URL`
 - `INTERNAL_API_SECRET`
 
+On hosted Supabase deployments, the app runtime expects pooled access. When
+`DATABASE_URL` points at the Supabase pooler on port `5432`, the runtime
+automatically switches to transaction mode on port `6543` to avoid exhausting
+session-mode clients on serverless hosts.
+
 Optional:
 
 - `SUPABASE_SECRET_KEY`
