@@ -1,7 +1,7 @@
 import { createStore } from "zustand";
 import type { InspectorSelection } from "@/features/inspector/types";
 import type { CanvasInteractionMode } from "@/features/maps/workspace-state";
-import type { GraphSnapshot, GraphConceptNode } from "@/features/map-runtime/types";
+import type { GraphSnapshot } from "@/features/map-runtime/types";
 import type {
   MapGraphEntityType,
   MapGraphOpKind,
@@ -68,7 +68,6 @@ export type MapState = {
   // Graph Data
   snapshot: GraphSnapshot | null;
   positions: Record<string, ConceptPosition>;
-  ghosts: GraphConceptNode[];
   lastAppliedSeq: number;
   pendingLocalOps: Record<string, PendingLocalGraphOperation>;
   activeLocalEntityLocks: Record<string, ActiveLocalEntityLock>;
@@ -79,11 +78,9 @@ export type MapState = {
   selection: InspectorSelection;
   dragState: DragState;
   connectLinkSourceId: string | null;
-  isGravityEnabled: boolean;
 
   // Actions
   setSnapshot: (snapshot: GraphSnapshot) => void;
-  setGhosts: (ghosts: GraphConceptNode[]) => void;
   setPositions: (positions: Record<string, ConceptPosition>) => void;
   updateConceptPosition: (id: string, position: ConceptPosition) => void;
   setLastAppliedSeq: (seq: number) => void;
@@ -98,7 +95,6 @@ export type MapState = {
   setDragState: (dragState: DragState) => void;
   resetDragState: () => void;
   setConnectLinkSourceId: (id: string | null) => void;
-  toggleGravity: () => void;
 };
 
 function createClientId() {
@@ -122,7 +118,6 @@ export function createMapStore(
     clientId: createClientId(),
     snapshot: initProps.initialSnapshot,
     positions: {},
-    ghosts: [],
     lastAppliedSeq: initProps.initialSnapshot.revision,
     pendingLocalOps: {},
     activeLocalEntityLocks: {},
@@ -131,7 +126,6 @@ export function createMapStore(
     selection: { kind: "none" },
     dragState: IDLE_DRAG_STATE,
     connectLinkSourceId: null,
-    isGravityEnabled: false,
 
     setSnapshot: (snapshot) => set({ snapshot }),
 
@@ -203,8 +197,6 @@ export function createMapStore(
     resetDragState: () => set({ dragState: IDLE_DRAG_STATE }),
 
     setConnectLinkSourceId: (connectLinkSourceId) => set({ connectLinkSourceId }),
-    toggleGravity: () => set((state) => ({ isGravityEnabled: !state.isGravityEnabled })),
-    setGhosts: (ghosts) => set({ ghosts }),
   }));
 }
 

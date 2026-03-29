@@ -27,8 +27,6 @@ import type {
   MapGraphOperation,
 } from "@/features/map-runtime/realtime/contracts";
 import {
-  createGraphClientMutationId,
-  getPendingGraphOperationKey,
   isConceptArchiveOperation,
   isConceptPositionSetOperation,
   isLinkArchiveOperation,
@@ -65,7 +63,6 @@ import {
 } from "../renderers/concept-drag";
 import type { Sigma } from "sigma";
 import { IDLE_DRAG_STATE } from "../store/map-store";
-import { useSemanticGravity } from "../hooks/use-semantic-gravity";
 import { useGraphSnapshotBootstrap } from "../hooks/use-graph-snapshot-bootstrap";
 import { useGraphMutationQueue } from "../hooks/use-graph-mutation-queue";
 import { useMapRealtimeInvalidation } from "../hooks/use-map-realtime-invalidation";
@@ -88,37 +85,6 @@ type ViewportNodePosition = {
   y: number;
   isOutside: boolean;
 };
-
-type GhostCreateConceptResponse = {
-  ok?: boolean;
-  revision?: number;
-  seq?: number;
-  currentRevision?: number;
-  code?: string;
-  concept?: {
-    id: string;
-    title: string;
-    conceptType: GraphConceptNode["conceptType"];
-    summary: string | null;
-    description: string | null;
-    x: number;
-    y: number;
-    updatedAt: string | Date;
-  } | null;
-  op?: MapGraphOperation;
-  duplicate?: boolean;
-  error?: string;
-};
-
-class GraphRevisionConflictError extends Error {
-  readonly currentRevision: number | null;
-
-  constructor(message: string, currentRevision: number | null) {
-    super(message);
-    this.name = "GraphRevisionConflictError";
-    this.currentRevision = currentRevision;
-  }
-}
 
 type ConceptDragSession = {
   conceptId: string;
@@ -205,7 +171,6 @@ export function GraphCanvasRuntime({
   const zoomPolicyRef = useRef<Omit<CanvasZoomState, "ratio"> | null>(null);
   const stableSigmaBBoxRef = useRef<StableSigmaBBox | null>(null);
   const lastHydratedSnapshotRef = useRef<GraphSnapshot | null>(null);
-  const lastHydratedGhostsRef = useRef<GraphConceptNode[] | null>(null);
 
   const [isZoomedOut, setIsZoomedOut] = useState(false);
   const isZoomedOutRef = useRef(isZoomedOut);
@@ -215,10 +180,7 @@ export function GraphCanvasRuntime({
   // Zustand State
   const snapshot = useMapStore((s) => s.snapshot);
   const setSnapshot = useMapStore((s) => s.setSnapshot);
-  const isGravityEnabled = useMapStore((s) => s.isGravityEnabled);
   const clientId = useMapStore((s) => s.clientId);
-  
-  useSemanticGravity(sigmaRef, isGravityEnabled);
   const positions = useMapStore((s) => s.positions);
   const setPositions = useMapStore((s) => s.setPositions);
   const updateConceptPosition = useMapStore((s) => s.updateConceptPosition);
@@ -233,19 +195,13 @@ export function GraphCanvasRuntime({
   const dragState = useMapStore((s) => s.dragState);
   const setDragState = useMapStore((s) => s.setDragState);
   const resetDragState = useMapStore((s) => s.resetDragState);
-  const ghosts = useMapStore((s) => s.ghosts);
-  const setGhosts = useMapStore((s) => s.setGhosts);
   const snapshotRef = useRef(snapshot);
   const positionsRef = useRef(positions);
   const lastAppliedSeqRef = useRef(lastAppliedSeq);
   const activeLocalEntityLocksRef = useRef(activeLocalEntityLocks);
   const dragStateRef = useRef(dragState);
-  const ghostsRef = useRef(ghosts);
-  const ghostCreateControllersRef = useRef<Map<string, AbortController>>(new Map());
-  const ghostCreateInFlightIdsRef = useRef<Set<string>>(new Set());
   const feedbackConceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ghostCreateErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPanFrameRef = useRef<number | null>(null);
@@ -254,7 +210,6 @@ export function GraphCanvasRuntime({
   const appliedFeedbackEventIdRef = useRef<string | null>(null);
   const [feedbackConceptId, setFeedbackConceptId] = useState<string | null>(null);
   const [mutationStatusMessage, setMutationStatusMessage] = useState<string | null>(null);
-  const [ghostCreateErrorMessage, setGhostCreateErrorMessage] = useState<string | null>(null);
 
   // Store refs for stable Sigma closures
   const interactionModeRef = useRef(interactionMode);
@@ -265,7 +220,6 @@ export function GraphCanvasRuntime({
   const onClearSelectionRef = useRef(onClearSelection);
   const onPickConnectSourceRef = useRef(onPickConnectSource);
   const onCompleteConnectLinkRef = useRef(onCompleteConnectLink);
-  const ghostCreateFailedMessageRef = useRef(messages.canvas.ghostCreateFailed);
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
@@ -300,30 +254,6 @@ export function GraphCanvasRuntime({
   }, [onCompleteConnectLink]);
 
   useEffect(() => {
-    ghostCreateFailedMessageRef.current = messages.canvas.ghostCreateFailed;
-  }, [messages.canvas.ghostCreateFailed]);
-
-  useEffect(() => {
-    ghostsRef.current = ghosts;
-  }, [ghosts]);
-
-  useEffect(() => {
-    let active = true;
-    fetch(`/api/maps/${map.id}/ghosts`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (active && data.ok && data.ghosts) {
-          setGhosts(data.ghosts);
-        }
-      });
-    return () => { active = false; };
-  }, [map.id, setGhosts]);
-
-  useEffect(() => {
-    hoveredConceptIdRef.current = hoveredConceptId;
-  }, [hoveredConceptId]);
-
-  useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
 
@@ -344,22 +274,20 @@ export function GraphCanvasRuntime({
   }, [isZoomedOut]);
 
   useEffect(() => {
+    hoveredConceptIdRef.current = hoveredConceptId;
+  }, [hoveredConceptId]);
+
+  useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
 
   useEffect(() => {
-    const ghostCreateControllers = ghostCreateControllersRef.current;
-    const ghostCreateInFlightIds = ghostCreateInFlightIdsRef.current;
-
     return () => {
       if (feedbackConceptTimerRef.current !== null) {
         clearTimeout(feedbackConceptTimerRef.current);
       }
       if (feedbackEdgeTimerRef.current !== null) {
         clearTimeout(feedbackEdgeTimerRef.current);
-      }
-      if (ghostCreateErrorTimerRef.current !== null) {
-        clearTimeout(ghostCreateErrorTimerRef.current);
       }
       if (mutationStatusTimerRef.current !== null) {
         clearTimeout(mutationStatusTimerRef.current);
@@ -372,14 +300,8 @@ export function GraphCanvasRuntime({
       }
       teardownTouchDragRef.current?.();
       restoreEdgeStyleRef.current?.();
-      for (const controller of ghostCreateControllers.values()) {
-        controller.abort();
-      }
-      ghostCreateControllers.clear();
-      ghostCreateInFlightIds.clear();
       feedbackConceptTimerRef.current = null;
       feedbackEdgeTimerRef.current = null;
-      ghostCreateErrorTimerRef.current = null;
       autoPanDelayTimerRef.current = null;
       autoPanFrameRef.current = null;
       restoreEdgeStyleRef.current = null;
@@ -437,19 +359,16 @@ export function GraphCanvasRuntime({
     (
       nextSigma: Sigma,
       nextSnapshot: GraphSnapshot,
-      nextGhosts: GraphConceptNode[],
       nextPositions?: Record<string, DragViewportPoint>
     ) => {
       const nextBBox = deriveGraphSigmaBBox(
         nextPositions
           ? {
               snapshot: nextSnapshot,
-              ghosts: nextGhosts,
               positions: nextPositions,
             }
           : {
               snapshot: nextSnapshot,
-              ghosts: nextGhosts,
             }
       );
 
@@ -510,27 +429,6 @@ export function GraphCanvasRuntime({
       autoPanDelayTimerRef.current = null;
     }
   }, []);
-
-  const clearGhostCreateErrorTimer = useCallback(() => {
-    if (ghostCreateErrorTimerRef.current !== null) {
-      clearTimeout(ghostCreateErrorTimerRef.current);
-      ghostCreateErrorTimerRef.current = null;
-    }
-  }, []);
-
-  const showGhostCreateError = useCallback(
-    (message?: string) => {
-      clearGhostCreateErrorTimer();
-      setGhostCreateErrorMessage(
-        message?.trim() || ghostCreateFailedMessageRef.current
-      );
-      ghostCreateErrorTimerRef.current = setTimeout(() => {
-        setGhostCreateErrorMessage(null);
-        ghostCreateErrorTimerRef.current = null;
-      }, MUTATION_FEEDBACK_DURATION_MS);
-    },
-    [clearGhostCreateErrorTimer]
-  );
 
   const toViewportPoint = useCallback((clientX: number, clientY: number) => {
     const container = containerRef.current;
@@ -1644,17 +1542,15 @@ export function GraphCanvasRuntime({
     if (!containerRef.current) return;
 
     const initialSnapshot = snapshotRef.current ?? EMPTY_GRAPH_SNAPSHOT;
-    const initialGhosts = ghostsRef.current;
-    const graph = buildGraphologyInstance(initialSnapshot, undefined, initialGhosts);
+    const graph = buildGraphologyInstance(initialSnapshot);
 
     const sigma = createSigmaInstance({
       container: containerRef.current,
       graph,
     });
     sigmaRef.current = sigma;
-    ensureStableSigmaBBox(sigma, initialSnapshot, initialGhosts);
+    ensureStableSigmaBBox(sigma, initialSnapshot);
     lastHydratedSnapshotRef.current = initialSnapshot;
-    lastHydratedGhostsRef.current = initialGhosts;
 
     const camera = sigma.getCamera();
     const baseRatio = camera.getState().ratio;
@@ -1678,117 +1574,6 @@ export function GraphCanvasRuntime({
     }
 
     sigma.on("clickNode", (e) => {
-      const ghost = ghostsRef.current.find((candidate) => candidate.id === e.node);
-      if (ghost) {
-        if (!canEditGraph) {
-          return;
-        }
-
-        if (ghostCreateInFlightIdsRef.current.has(ghost.id)) {
-          return;
-        }
-
-        clearGhostCreateErrorTimer();
-        setGhostCreateErrorMessage(null);
-
-        const controller = new AbortController();
-        const clientMutationId = createGraphClientMutationId();
-        const pendingLocalOpKey = getPendingGraphOperationKey(
-          clientId,
-          clientMutationId
-        );
-        ghostCreateInFlightIdsRef.current.add(ghost.id);
-        ghostCreateControllersRef.current.set(ghost.id, controller);
-        addPendingLocalOp({
-          clientId,
-          clientMutationId,
-          opKind: "concept.create",
-          entityType: "concept",
-          entityId: ghost.id,
-        });
-
-        void fetch(`/api/maps/${map.id}/concepts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedRevision: lastAppliedSeqRef.current,
-            title: ghost.title || "Unknown",
-            conceptType: ghost.conceptType || "custom",
-            summary: ghost.summary,
-            description: ghost.description,
-            x: Math.round(ghost.x),
-            y: Math.round(ghost.y),
-            clientId,
-            clientMutationId,
-          }),
-          signal: controller.signal,
-        })
-          .then(async (response) => {
-            const data = (await response.json().catch(() => null)) as
-              | GhostCreateConceptResponse
-              | null;
-
-            if (controller.signal.aborted) {
-              return;
-            }
-
-            if (response.status === 409) {
-              void fetchLatestSnapshotRef.current();
-              throw new GraphRevisionConflictError(
-                data?.error ?? "Map changed since your last snapshot. Refresh and try again.",
-                typeof data?.currentRevision === "number"
-                  ? data.currentRevision
-                  : null
-              );
-            }
-
-            if (!response.ok || !data?.ok || !data.concept) {
-              throw new Error(
-                data?.error ?? ghostCreateFailedMessageRef.current
-              );
-            }
-
-            clearGhostCreateErrorTimer();
-            setGhostCreateErrorMessage(null);
-            const nextGhosts = ghostsRef.current.filter(
-              (candidate) => candidate.id !== ghost.id
-            );
-            ghostsRef.current = nextGhosts;
-            setGhosts(nextGhosts);
-
-            clearPendingLocalOp(pendingLocalOpKey);
-
-            const applied =
-              data.op !== undefined ? applyIncomingOperation(data.op) : false;
-            if (!applied) {
-              void fetchLatestSnapshotRef.current();
-            } else if (typeof data.seq === "number") {
-              lastAppliedSeqRef.current = data.seq;
-              setLastAppliedSeq(data.seq);
-            } else if (typeof data.revision === "number") {
-              lastAppliedSeqRef.current = data.revision;
-              setLastAppliedSeq(data.revision);
-            }
-
-            onOpenConceptInspectorRef.current(data.concept.id);
-          })
-          .catch((error) => {
-            if (controller.signal.aborted) {
-              return;
-            }
-
-            clearPendingLocalOp(pendingLocalOpKey);
-            showGhostCreateError(
-              error instanceof Error ? error.message : undefined
-            );
-          })
-          .finally(() => {
-            clearPendingLocalOp(pendingLocalOpKey);
-            ghostCreateInFlightIdsRef.current.delete(ghost.id);
-            ghostCreateControllersRef.current.delete(ghost.id);
-          });
-        return;
-      }
       handleConceptActivation(e.node);
     });
 
@@ -1841,18 +1626,9 @@ export function GraphCanvasRuntime({
       sigmaRef.current = null;
     };
   }, [
-    addPendingLocalOp,
-    applyIncomingOperation,
-    clearPendingLocalOp,
-    clearGhostCreateErrorTimer,
-    clientId,
     ensureStableSigmaBBox,
     handleConceptActivation,
     canEditGraph,
-    map.id,
-    setLastAppliedSeq,
-    setGhosts,
-    showGhostCreateError,
     syncConceptPresentation,
     updateZoomMode,
   ]);
@@ -1863,8 +1639,7 @@ export function GraphCanvasRuntime({
     }
 
     const snapshotChanged = lastHydratedSnapshotRef.current !== snapshot;
-    const ghostsChanged = lastHydratedGhostsRef.current !== ghosts;
-    if (!snapshotChanged && !ghostsChanged) {
+    if (!snapshotChanged) {
       return;
     }
 
@@ -1883,11 +1658,10 @@ export function GraphCanvasRuntime({
 
     const camera = sigma.getCamera();
     const previousCameraState = camera.getState();
-    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current, ghosts);
+    const nextGraph = buildGraphologyInstance(snapshot, positionsRef.current);
     sigma.setGraph(nextGraph);
-    ensureStableSigmaBBox(sigma, snapshot, ghosts, positionsRef.current);
+    ensureStableSigmaBBox(sigma, snapshot, positionsRef.current);
     lastHydratedSnapshotRef.current = snapshot;
-    lastHydratedGhostsRef.current = ghosts;
 
     const boundedRatio = camera.getBoundedRatio(previousCameraState.ratio);
     camera.setState({
@@ -1902,7 +1676,6 @@ export function GraphCanvasRuntime({
   }, [
     dragState.phase,
     ensureStableSigmaBBox,
-    ghosts,
     snapshot,
     syncConceptPresentation,
     updateZoomMode,
@@ -1940,8 +1713,6 @@ export function GraphCanvasRuntime({
   const runtimeStatusMessage =
     mutationStatusMessage
       ? mutationStatusMessage
-      : ghostCreateErrorMessage
-      ? ghostCreateErrorMessage
       : snapshotError
       ? snapshotError
       : isSnapshotLoading && !snapshot
@@ -1988,7 +1759,7 @@ export function GraphCanvasRuntime({
           className={
             mutationStatusMessage
               ? "canvas-runtime-status is-success"
-              : ghostCreateErrorMessage || snapshotError || dragState.phase === "error"
+              : snapshotError || dragState.phase === "error"
                 ? "canvas-runtime-status is-error"
                 : "canvas-runtime-status"
           }
@@ -2000,7 +1771,7 @@ export function GraphCanvasRuntime({
             color={
               mutationStatusMessage
                 ? "green"
-                : ghostCreateErrorMessage || snapshotError || dragState.phase === "error"
+                : snapshotError || dragState.phase === "error"
                   ? "red"
                   : "gray"
             }

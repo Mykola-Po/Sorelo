@@ -36,10 +36,7 @@ export type EdgeAutoPanIntent = {
   isActive: boolean;
 };
 
-import type {
-  GraphConceptNode,
-  GraphSnapshot,
-} from "@/features/map-runtime/types";
+import type { GraphSnapshot } from "@/features/map-runtime/types";
 
 export type StableSigmaBBox = {
   x: [number, number];
@@ -69,7 +66,6 @@ export const INITIAL_POSITION_PERSISTENCE_STATE: PositionPersistenceState = {
 
 export function deriveGraphSigmaBBox(input: {
   snapshot: GraphSnapshot;
-  ghosts?: GraphConceptNode[];
   positions?: Record<string, DragViewportPoint>;
 }): StableSigmaBBox | null {
   const positions = input.positions ?? {};
@@ -97,10 +93,6 @@ export function deriveGraphSigmaBBox(input: {
 
   for (const concept of input.snapshot.concepts) {
     collectPoint(concept.id, concept.x, concept.y);
-  }
-
-  for (const ghost of input.ghosts ?? []) {
-    collectPoint(ghost.id, ghost.x, ghost.y);
   }
 
   if (!hasFiniteCoordinate) {

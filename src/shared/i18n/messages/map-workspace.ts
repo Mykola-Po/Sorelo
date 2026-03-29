@@ -37,7 +37,6 @@ export type MapWorkspaceMessages = {
     conceptSummaryFallback: string;
     updatingPosition: string;
     positionSaveFailed: string;
-    ghostCreateFailed: string;
     zoomInToMoveConcepts: string;
   };
   guided: Record<
@@ -584,14 +583,12 @@ export const mapWorkspaceMessages: Record<
         emptyOverlay:
           "The first Concept starts the map. Click New Concept, then place it directly on the canvas.",
         loadingSnapshot: "Loading graph snapshot...",
-        conceptSummaryFallback:
-          "Open Inspector to define the meaning of this Concept.",
-        updatingPosition: "Updating canvas position...",
-        positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
-        ghostCreateFailed:
-          "Couldn't create a Concept from this ghost. Try again.",
-        zoomInToMoveConcepts: "Zoom in to move Concepts.",
-      },
+      conceptSummaryFallback:
+        "Open Inspector to define the meaning of this Concept.",
+      updatingPosition: "Updating canvas position...",
+      positionSaveFailed: "Couldn't save the new position. Drag again to retry.",
+      zoomInToMoveConcepts: "Zoom in to move Concepts.",
+    },
     guided: buildGuidedMessages("en"),
     inspector: {
       placeConceptTitle: "Click on the canvas to place the Concept",
@@ -805,14 +802,12 @@ export const mapWorkspaceMessages: Record<
         emptyOverlay:
           "Перший Концепт починає карту. Натисніть Новий Концепт, а потім поставте його прямо на canvas.",
         loadingSnapshot: "Завантажуємо snapshot графа...",
-        conceptSummaryFallback:
-          "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
-        updatingPosition: "Оновлюємо позицію на canvas...",
-        positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
-        ghostCreateFailed:
-          "Не вдалося створити Концепт із цього ghost. Спробуйте ще раз.",
-        zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
-      },
+      conceptSummaryFallback:
+        "Відкрийте Інспектор, щоб уточнити сенс цього Концепту.",
+      updatingPosition: "Оновлюємо позицію на canvas...",
+      positionSaveFailed: "Не вдалося зберегти нову позицію. Перетягніть ще раз, щоб повторити.",
+      zoomInToMoveConcepts: "Наблизьте canvas, щоб пересувати Концепти.",
+    },
     guided: buildGuidedMessages("uk"),
     inspector: {
       placeConceptTitle: "Клікніть на canvas, щоб поставити Концепт",
@@ -1026,14 +1021,12 @@ export const mapWorkspaceMessages: Record<
         emptyOverlay:
           "Первый Концепт начинает карту. Нажмите Новый Концепт, а затем поставьте его прямо на canvas.",
         loadingSnapshot: "Загружаем snapshot графа...",
-        conceptSummaryFallback:
-          "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
-        updatingPosition: "Обновляем позицию на canvas...",
-        positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
-        ghostCreateFailed:
-          "Не удалось создать Концепт из этого ghost. Попробуйте ещё раз.",
-        zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
-      },
+      conceptSummaryFallback:
+        "Откройте Инспектор, чтобы уточнить смысл этого Концепта.",
+      updatingPosition: "Обновляем позицию на canvas...",
+      positionSaveFailed: "Не удалось сохранить новую позицию. Перетащите ещё раз, чтобы повторить.",
+      zoomInToMoveConcepts: "Приблизьте canvas, чтобы перемещать Концепты.",
+    },
     guided: buildGuidedMessages("ru"),
     inspector: {
       placeConceptTitle: "Кликните по canvas, чтобы поставить Концепт",
