@@ -5,6 +5,7 @@ import {
   deriveGuidedOnboardingStep,
   getDefaultConceptPosition,
   getGuidedOnboardingCopy,
+  isPreFirstLinkGuidedStep,
 } from "@/features/maps/workspace-state";
 
 describe("workspace state helpers", () => {
@@ -67,5 +68,12 @@ describe("workspace state helpers", () => {
       relationType: "causes",
       strength: 3,
     });
+  });
+
+  it("marks pre-link steps for drop-off telemetry", () => {
+    expect(isPreFirstLinkGuidedStep("one_concept_no_link")).toBe(true);
+    expect(isPreFirstLinkGuidedStep("multiple_concepts_no_link")).toBe(true);
+    expect(isPreFirstLinkGuidedStep("no_concepts")).toBe(false);
+    expect(isPreFirstLinkGuidedStep("has_links_no_run")).toBe(false);
   });
 });

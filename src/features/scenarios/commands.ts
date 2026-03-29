@@ -1,11 +1,12 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { recordActivity } from "@/features/activity/commands";
 import {
   requireActiveMap,
-  requireWorkspaceMembership,
+  requireWorkspaceGraphEditAccess,
+  requireWorkspaceLearningReviewAccess,
 } from "@/features/maps/access";
 import { fallbackMapTitleFromSituation } from "@/features/maps/utils";
 import { runRuleBasedScenario } from "@/features/scenarios/engine";
@@ -28,7 +29,7 @@ export async function createScenarioCommand(input: {
   situation: string;
   seedConceptIds: string[];
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   return db.transaction(async (tx) => {
@@ -75,7 +76,11 @@ async function loadScenarioGraph(workspaceId: string, mapId: string) {
       })
       .from(concepts)
       .where(
-        and(eq(concepts.workspaceId, workspaceId), eq(concepts.mapId, mapId))
+        and(
+          eq(concepts.workspaceId, workspaceId),
+          eq(concepts.mapId, mapId),
+          isNull(concepts.archivedAt)
+        )
       ),
     db
       .select({
@@ -86,7 +91,13 @@ async function loadScenarioGraph(workspaceId: string, mapId: string) {
         strength: links.strength,
       })
       .from(links)
-      .where(and(eq(links.workspaceId, workspaceId), eq(links.mapId, mapId))),
+      .where(
+        and(
+          eq(links.workspaceId, workspaceId),
+          eq(links.mapId, mapId),
+          isNull(links.archivedAt)
+        )
+      ),
   ]);
 
   return {
@@ -103,7 +114,7 @@ export async function runScenarioCommand(input: {
   triggerText?: string | null;
   seedConceptIds?: string[];
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceGraphEditAccess(input.workspaceId, input.actorUserId);
   await requireActiveMap(input.workspaceId, input.mapId);
 
   const scenario =
@@ -270,7 +281,10 @@ export async function upsertScenarioRunFeedbackCommand(input: {
   verdict: (typeof learningScenarioRunFeedback.$inferInsert)["verdict"];
   feedbackText?: string | null;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceLearningReviewAccess(
+    input.workspaceId,
+    input.actorUserId
+  );
   await requireActiveMap(input.workspaceId, input.mapId);
   await requireScenarioRunForMap({
     workspaceId: input.workspaceId,
@@ -334,7 +348,10 @@ export async function upsertScenarioStepFeedbackCommand(input: {
   correctedExplanation?: string | null;
   correctedScore?: number | null;
 }) {
-  await requireWorkspaceMembership(input.workspaceId, input.actorUserId);
+  await requireWorkspaceLearningReviewAccess(
+    input.workspaceId,
+    input.actorUserId
+  );
   await requireActiveMap(input.workspaceId, input.mapId);
   await requireScenarioRunForMap({
     workspaceId: input.workspaceId,

@@ -4,6 +4,7 @@ export const createLinkSchema = z
   .object({
     workspaceSlug: z.string().min(1),
     mapId: z.string().uuid(),
+    expectedRevision: z.coerce.number().int().min(0),
     sourceConceptId: z.string().uuid(),
     targetConceptId: z.string().uuid(),
     relationType: z.enum([
@@ -25,6 +26,7 @@ export const updateLinkSchema = z
   .object({
     workspaceSlug: z.string().min(1),
     mapId: z.string().uuid(),
+    expectedContentRevision: z.coerce.number().int().min(0),
     linkId: z.string().uuid(),
     sourceConceptId: z.string().uuid(),
     targetConceptId: z.string().uuid(),
@@ -46,5 +48,6 @@ export const updateLinkSchema = z
 export const deleteLinkSchema = z.object({
   workspaceSlug: z.string().min(1),
   mapId: z.string().uuid(),
+  expectedRevision: z.coerce.number().int().min(0),
   linkId: z.string().uuid(),
 });

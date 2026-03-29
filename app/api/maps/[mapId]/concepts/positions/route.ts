@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
-import { repositionConceptsBatchCommand } from "@/features/concepts/commands";
-import { getMapRevision } from "@/features/maps/queries";
+import {
+  repositionConceptsBatchCommand,
+  repositionConceptWithOperationCommand,
+} from "@/features/concepts/commands";
+import { MapRevisionConflictError } from "@/features/maps/commands";
 import { patchConceptPositionsRouteSchema } from "@/features/map-runtime/schemas";
 import { parseRouteJson, requireMapRuntimeAccess } from "@/features/map-runtime/server";
 
@@ -23,20 +28,61 @@ async function handlePositionsPatch(request: Request, params: RouteParams["param
   }
 
   try {
+    if (parsed.data.positions.length === 1) {
+      const [position] = parsed.data.positions;
+      if (!position) {
+        throw new Error("Position payload is empty.");
+      }
+
+      const clientId = parsed.data.clientId ?? user.id;
+      const clientMutationId = parsed.data.clientMutationId ?? randomUUID();
+      const result = await repositionConceptWithOperationCommand({
+        workspaceId: access.workspaceId,
+        actorUserId: user.id,
+        mapId,
+        expectedRevision: parsed.data.expectedRevision,
+        conceptId: position.conceptId,
+        x: position.x,
+        y: position.y,
+        clientId,
+        clientMutationId,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        revision: result.revision,
+        seq: result.seq,
+        concept: result.concept,
+        concepts: [result.concept],
+        op: result.op,
+      });
+    }
+
     const concepts = await repositionConceptsBatchCommand({
       workspaceId: access.workspaceId,
       actorUserId: user.id,
       mapId,
+      expectedRevision: parsed.data.expectedRevision,
       positions: parsed.data.positions,
     });
-    const revision = await getMapRevision(mapId, access.workspaceId);
 
     return NextResponse.json({
       ok: true,
-      revision: revision ?? 0,
+      revision: parsed.data.expectedRevision + 1,
       concepts,
     });
   } catch (error) {
+    if (error instanceof MapRevisionConflictError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          error: error.message,
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         error:

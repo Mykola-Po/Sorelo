@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import {
   createWorkspaceCommand,
@@ -61,6 +62,10 @@ export async function createWorkspaceAction(
 
     redirect(workspaceRootPath(workspace.slug));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
+
     return toActionError<"name" | "slug">(
       error instanceof Error ? error.message : "Unable to create workspace."
     );

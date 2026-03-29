@@ -17,24 +17,35 @@ import {
 import { requireWorkspaceAccess } from "@/shared/auth/session";
 import { workspaceMapPath } from "@/shared/config/routes";
 import {
-  createIdleState,
+  type FieldErrors,
   toActionError,
   zodErrorToActionState,
 } from "@/shared/validation/action-state";
 
+type ConceptFormField = "title" | "conceptType" | "summary" | "description";
+type ConceptMutation = "created" | "updated";
+
+export type ConceptMutationPayload = {
+  conceptId: string;
+  mutation: ConceptMutation;
+  eventId: string;
+};
+
+export type ConceptActionState = {
+  status: "idle" | "error" | "success";
+  message?: string;
+  fieldErrors?: FieldErrors<ConceptFormField>;
+  payload?: ConceptMutationPayload;
+};
+
 export async function createConceptAction(
-  _: {
-    status: "idle" | "error";
-    message?: string;
-    fieldErrors?: Partial<
-      Record<"title" | "conceptType" | "summary" | "description", string[]>
-    >;
-  },
+  _: ConceptActionState,
   formData: FormData
-) {
+): Promise<ConceptActionState> {
   const parsed = createConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     title: formData.get("title"),
     conceptType: formData.get("conceptType"),
     summary: formData.get("summary"),
@@ -53,10 +64,11 @@ export async function createConceptAction(
     const { user, access } = await requireWorkspaceAccess(
       parsed.data.workspaceSlug
     );
-    await createConceptCommand({
+    const concept = await createConceptCommand({
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedRevision: parsed.data.expectedRevision,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
       summary: parsed.data.summary || null,
@@ -66,34 +78,35 @@ export async function createConceptAction(
     });
 
     revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
-    return createIdleState<"title" | "conceptType" | "summary" | "description">();
+    const eventId = crypto.randomUUID();
+    return {
+      status: "success",
+      payload: {
+        conceptId: concept.id,
+        mutation: "created",
+        eventId,
+      },
+    };
   } catch (error) {
-    return toActionError<"title" | "conceptType" | "summary" | "description">(
+    return toActionError<ConceptFormField>(
       error instanceof Error ? error.message : "Unable to create concept."
     );
   }
 }
 
 export async function updateConceptAction(
-  _: {
-    status: "idle" | "error";
-    message?: string;
-    fieldErrors?: Partial<
-      Record<"title" | "conceptType" | "summary" | "description", string[]>
-    >;
-  },
+  _: ConceptActionState,
   formData: FormData
-) {
+): Promise<ConceptActionState> {
   const parsed = updateConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
     conceptId: formData.get("conceptId"),
+    expectedContentRevision: formData.get("expectedContentRevision"),
     title: formData.get("title"),
     conceptType: formData.get("conceptType"),
     summary: formData.get("summary"),
     description: formData.get("description"),
-    x: formData.get("x"),
-    y: formData.get("y"),
   });
 
   if (!parsed.success) {
@@ -106,23 +119,30 @@ export async function updateConceptAction(
     const { user, access } = await requireWorkspaceAccess(
       parsed.data.workspaceSlug
     );
-    await updateConceptCommand({
+    const concept = await updateConceptCommand({
       workspaceId: access.workspace.id,
       actorUserId: user.id,
       mapId: parsed.data.mapId,
+      expectedContentRevision: parsed.data.expectedContentRevision,
       conceptId: parsed.data.conceptId,
       title: parsed.data.title,
       conceptType: parsed.data.conceptType,
       summary: parsed.data.summary || null,
       description: parsed.data.description || null,
-      x: parsed.data.x,
-      y: parsed.data.y,
     });
 
     revalidatePath(workspaceMapPath(parsed.data.workspaceSlug, parsed.data.mapId));
-    return createIdleState<"title" | "conceptType" | "summary" | "description">();
+    const eventId = crypto.randomUUID();
+    return {
+      status: "success",
+      payload: {
+        conceptId: concept.id,
+        mutation: "updated",
+        eventId,
+      },
+    };
   } catch (error) {
-    return toActionError<"title" | "conceptType" | "summary" | "description">(
+    return toActionError<ConceptFormField>(
       error instanceof Error ? error.message : "Unable to update concept."
     );
   }
@@ -131,6 +151,7 @@ export async function updateConceptAction(
 export async function repositionConceptAction(input: {
   workspaceSlug: string;
   mapId: string;
+  expectedRevision: number;
   conceptId: string;
   x: number;
   y: number;
@@ -146,6 +167,7 @@ export async function repositionConceptAction(input: {
     workspaceId: access.workspace.id,
     actorUserId: user.id,
     mapId: parsed.data.mapId,
+    expectedRevision: parsed.data.expectedRevision,
     conceptId: parsed.data.conceptId,
     x: parsed.data.x,
     y: parsed.data.y,
@@ -158,6 +180,7 @@ export async function archiveConceptAction(formData: FormData) {
   const parsed = archiveConceptSchema.safeParse({
     workspaceSlug: formData.get("workspaceSlug"),
     mapId: formData.get("mapId"),
+    expectedRevision: formData.get("expectedRevision"),
     conceptId: formData.get("conceptId"),
   });
 
@@ -170,6 +193,7 @@ export async function archiveConceptAction(formData: FormData) {
     workspaceId: access.workspace.id,
     actorUserId: user.id,
     mapId: parsed.data.mapId,
+    expectedRevision: parsed.data.expectedRevision,
     conceptId: parsed.data.conceptId,
   });
 

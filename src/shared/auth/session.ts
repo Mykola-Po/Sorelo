@@ -33,12 +33,29 @@ type SyncedUserProfile = CurrentUser & {
   emailVerifiedAt: Date | null;
 };
 
+type AuthIdentityRecord = {
+  userId: string;
+  provider: string;
+  providerSubject: string;
+  email: string;
+  rawProfile: Record<string, unknown>;
+  lastSignInAt: Date;
+};
+
 type SupabaseIdentity = {
   provider?: string | null;
   id?: string | null;
   identity_id?: string | null;
   last_sign_in_at?: string | null;
   identity_data?: Record<string, unknown> | null;
+};
+
+type SupabaseAuthenticatedUser = {
+  id: string;
+  email: string;
+  user_metadata: Record<string, unknown>;
+  email_confirmed_at?: string | null;
+  identities?: unknown;
 };
 
 function asIdentityRecords(input: unknown): SupabaseIdentity[] {
@@ -69,29 +86,59 @@ function getIdentitySubject(identity: SupabaseIdentity) {
   return typeof subject === "string" ? subject : null;
 }
 
-export async function syncAuthenticatedUser() {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user || !user.email) {
-    return null;
+async function hasE2EAuthCookie() {
+  if (!isE2EAuthBypassEnabled()) {
+    return false;
   }
 
-  const profile = {
+  const cookieStore = await cookies();
+  return cookieStore.get(E2E_AUTH_COOKIE)?.value === "1";
+}
+
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function getE2EAuthUserId() {
+  const cookieStore = await cookies();
+  const candidate = cookieStore.get(E2E_AUTH_USER_COOKIE)?.value ?? "";
+
+  if (UUID_V4_PATTERN.test(candidate)) {
+    return candidate;
+  }
+
+  return "11111111-1111-4111-8111-111111111111";
+}
+
+function toCurrentUserProfile(user: SupabaseAuthenticatedUser) {
+  return {
     id: user.id,
     email: user.email,
-    fullName: user.user_metadata.full_name ?? user.user_metadata.name ?? null,
-    avatarUrl: user.user_metadata.avatar_url ?? null,
+    fullName:
+      typeof user.user_metadata.full_name === "string"
+        ? user.user_metadata.full_name
+        : typeof user.user_metadata.name === "string"
+          ? user.user_metadata.name
+          : null,
+    avatarUrl:
+      typeof user.user_metadata.avatar_url === "string"
+        ? user.user_metadata.avatar_url
+        : null,
+  } satisfies CurrentUser;
+}
+
+function toSyncedUserProfile(
+  user: SupabaseAuthenticatedUser
+): SyncedUserProfile {
+  return {
+    ...toCurrentUserProfile(user),
     emailVerifiedAt: user.email_confirmed_at
       ? new Date(user.email_confirmed_at)
       : null,
-  } satisfies SyncedUserProfile;
+  };
+}
 
-  const identityRecords = asIdentityRecords(
-    (user as { identities?: unknown }).identities
-  )
+function toIdentityRecords(user: SupabaseAuthenticatedUser) {
+  return asIdentityRecords(user.identities)
     .map((identity) => {
       const provider =
         typeof identity.provider === "string" ? identity.provider : null;
@@ -116,21 +163,28 @@ export async function syncAuthenticatedUser() {
         lastSignInAt: identity.last_sign_in_at
           ? new Date(identity.last_sign_in_at)
           : new Date(),
-      };
+      } satisfies AuthIdentityRecord;
     })
-    .filter(
-      (
-        identity
-      ): identity is {
-        userId: string;
-        provider: string;
-        providerSubject: string;
-        email: string;
-        rawProfile: Record<string, unknown>;
-        lastSignInAt: Date;
-      } => identity !== null
-    );
+    .filter((identity): identity is AuthIdentityRecord => identity !== null);
+}
 
+async function readSupabaseAuthenticatedUser() {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user || !user.email) {
+    return null;
+  }
+
+  return user as SupabaseAuthenticatedUser;
+}
+
+async function persistAuthenticatedUser(
+  profile: SyncedUserProfile,
+  identityRecords: AuthIdentityRecord[]
+) {
   await db.transaction(async (tx) => {
     await tx
       .insert(users)
@@ -155,58 +209,28 @@ export async function syncAuthenticatedUser() {
     await tx
       .insert(userPreferences)
       .values({
-        userId: user.id,
+        userId: profile.id,
       })
       .onConflictDoNothing({
         target: userPreferences.userId,
       });
 
-    if (identityRecords.length > 0) {
-      for (const identity of identityRecords) {
-        await tx
-          .insert(authIdentities)
-          .values(identity)
-          .onConflictDoUpdate({
-            target: [
-              authIdentities.provider,
-              authIdentities.providerSubject,
-            ],
-            set: {
-              userId: user.id,
-              email: identity.email,
-              rawProfile: identity.rawProfile,
-              lastSignInAt: identity.lastSignInAt,
-              updatedAt: new Date(),
-            },
-          });
-      }
+    for (const identity of identityRecords) {
+      await tx
+        .insert(authIdentities)
+        .values(identity)
+        .onConflictDoUpdate({
+          target: [authIdentities.provider, authIdentities.providerSubject],
+          set: {
+            userId: profile.id,
+            email: identity.email,
+            rawProfile: identity.rawProfile,
+            lastSignInAt: identity.lastSignInAt,
+            updatedAt: new Date(),
+          },
+        });
     }
   });
-
-  return profile;
-}
-
-async function hasE2EAuthCookie() {
-  if (!isE2EAuthBypassEnabled()) {
-    return false;
-  }
-
-  const cookieStore = await cookies();
-  return cookieStore.get(E2E_AUTH_COOKIE)?.value === "1";
-}
-
-const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-async function getE2EAuthUserId() {
-  const cookieStore = await cookies();
-  const candidate = cookieStore.get(E2E_AUTH_USER_COOKIE)?.value ?? "";
-
-  if (UUID_V4_PATTERN.test(candidate)) {
-    return candidate;
-  }
-
-  return "11111111-1111-4111-8111-111111111111";
 }
 
 async function syncE2EAuthenticatedUser() {
@@ -265,36 +289,7 @@ async function syncE2EAuthenticatedUser() {
     }
   }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(users)
-      .values({
-        id: profile.id,
-        email: profile.email,
-        fullName: profile.fullName,
-        avatarUrl: profile.avatarUrl,
-        emailVerifiedAt: profile.emailVerifiedAt,
-      })
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          email: profile.email,
-          fullName: profile.fullName,
-          avatarUrl: profile.avatarUrl,
-          emailVerifiedAt: profile.emailVerifiedAt,
-          updatedAt: new Date(),
-        },
-      });
-
-    await tx
-      .insert(userPreferences)
-      .values({
-        userId: profile.id,
-      })
-      .onConflictDoNothing({
-        target: userPreferences.userId,
-      });
-  });
+  await persistAuthenticatedUser(profile, []);
 
   return profile;
 }
@@ -317,10 +312,42 @@ export async function getCurrentSession() {
 
 export async function getCurrentUser() {
   if (await hasE2EAuthCookie()) {
+    const e2eUserId = await getE2EAuthUserId();
+    const profile = getE2EAuthProfile(e2eUserId);
+    return {
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.fullName,
+      avatarUrl: profile.avatarUrl,
+    };
+  }
+
+  const user = await readSupabaseAuthenticatedUser();
+
+  if (!user) {
+    return null;
+  }
+
+  return toCurrentUserProfile(user);
+}
+
+export async function syncAuthenticatedUser() {
+  if (await hasE2EAuthCookie()) {
     return syncE2EAuthenticatedUser();
   }
 
-  return syncAuthenticatedUser();
+  const user = await readSupabaseAuthenticatedUser();
+
+  if (!user) {
+    return null;
+  }
+
+  const profile = toSyncedUserProfile(user);
+  const identityRecords = toIdentityRecords(user);
+
+  await persistAuthenticatedUser(profile, identityRecords);
+
+  return profile;
 }
 
 export async function requireUser() {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { and, count, eq } from "drizzle-orm";
 
 import { db } from "@/shared/db/client";
@@ -10,7 +11,7 @@ import {
   workspaces,
 } from "@/shared/db/schema";
 
-export async function listWorkspacesForUser(userId: string) {
+export const listWorkspacesForUser = cache(async (userId: string) => {
   return db
     .select({
       id: workspaces.id,
@@ -23,7 +24,7 @@ export async function listWorkspacesForUser(userId: string) {
     .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
     .where(eq(workspaceMembers.userId, userId))
     .orderBy(workspaces.name);
-}
+});
 
 export async function countWorkspacesForUser(userId: string) {
   const [row] = await db
@@ -60,7 +61,7 @@ export async function getWorkspaceBySlugForUser(
   return rows[0] ?? null;
 }
 
-export async function getLastActiveWorkspaceForUser(userId: string) {
+export const getLastActiveWorkspaceForUser = cache(async (userId: string) => {
   const rows = await db
     .select({
       id: workspaces.id,
@@ -83,7 +84,7 @@ export async function getLastActiveWorkspaceForUser(userId: string) {
     .limit(1);
 
   return rows[0] ?? null;
-}
+});
 
 export async function listWorkspaceMembers(workspaceId: string) {
   return db

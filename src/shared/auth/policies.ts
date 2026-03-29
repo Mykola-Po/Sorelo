@@ -1,10 +1,13 @@
-export const workspaceRoleRank = {
-  member: 1,
-  admin: 2,
-  owner: 3,
-} as const;
+import type { WorkspaceRole } from "@/shared/db/schema";
 
-export type WorkspaceRole = keyof typeof workspaceRoleRank;
+export type { WorkspaceRole } from "@/shared/db/schema";
+
+export const workspaceRoleRank: Record<WorkspaceRole, number> = {
+  viewer: 1,
+  editor: 2,
+  admin: 3,
+  owner: 4,
+} as const;
 
 export function hasWorkspaceRole(
   currentRole: WorkspaceRole,
@@ -17,8 +20,28 @@ export function canManageMembers(role: WorkspaceRole) {
   return hasWorkspaceRole(role, "admin");
 }
 
-export function canManageWorkspace(role: WorkspaceRole) {
+export function canOwnWorkspace(role: WorkspaceRole) {
   return role === "owner";
+}
+
+export function canManageWorkspace(role: WorkspaceRole) {
+  return canOwnWorkspace(role);
+}
+
+export function canViewWorkspace(role: WorkspaceRole) {
+  return hasWorkspaceRole(role, "viewer");
+}
+
+export function canEditMapGraph(role: WorkspaceRole) {
+  return hasWorkspaceRole(role, "editor");
+}
+
+export function canManageMapMetadata(role: WorkspaceRole) {
+  return hasWorkspaceRole(role, "admin");
+}
+
+export function canReviewLearning(role: WorkspaceRole) {
+  return hasWorkspaceRole(role, "editor");
 }
 
 export function canCreateProject(role: WorkspaceRole) {
@@ -30,5 +53,7 @@ export function canEditTask(
   createdByUserId: string,
   currentUserId: string
 ) {
-  return hasWorkspaceRole(role, "admin") || createdByUserId === currentUserId;
+  return hasWorkspaceRole(role, "admin")
+    ? true
+    : canEditMapGraph(role) && createdByUserId === currentUserId;
 }

@@ -46,8 +46,21 @@ export function TextInputField({
   ...inputProps
 }: TextInputFieldProps) {
   return (
-    <InlineFormField label={label} error={error}>
-      <TextField.Root {...inputProps} />
+    <InlineFormField label={label} error={error} controlId={inputProps.id}>
+      {({ controlProps }) => (
+        <TextField.Root
+          {...inputProps}
+          id={controlProps.id}
+          aria-describedby={
+            [inputProps["aria-describedby"], controlProps["aria-describedby"]]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+          aria-invalid={
+            inputProps["aria-invalid"] ?? controlProps["aria-invalid"]
+          }
+        />
+      )}
     </InlineFormField>
   );
 }
@@ -63,8 +76,24 @@ export function TextAreaField({
   ...textAreaProps
 }: TextAreaFieldProps) {
   return (
-    <InlineFormField label={label} error={error}>
-      <TextArea {...textAreaProps} />
+    <InlineFormField label={label} error={error} controlId={textAreaProps.id}>
+      {({ controlProps }) => (
+        <TextArea
+          {...textAreaProps}
+          id={controlProps.id}
+          aria-describedby={
+            [
+              textAreaProps["aria-describedby"],
+              controlProps["aria-describedby"],
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+          aria-invalid={
+            textAreaProps["aria-invalid"] ?? controlProps["aria-invalid"]
+          }
+        />
+      )}
     </InlineFormField>
   );
 }

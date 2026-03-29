@@ -101,7 +101,7 @@
           "status": "existing",
           "owner": "shared",
           "path": "handbook/surfaces/current-user-flows.md",
-          "summary": "Current sign-in, workspace, map, Inspector, and Scenario flows derived from the active product model.",
+          "summary": "Current sign-in, workspace, inbox, map, Inspector, and Scenario flows derived from the active product model.",
           "tags": ["surfaces", "flows", "maps", "scenarios"],
           "derivedFrom": ["product-spec", "implementation-principles"]
         },
@@ -123,6 +123,16 @@
       "summary": "Describes what is currently true in schema, routes, runtime behavior, and deterministic scenario execution.",
       "documents": [
         {
+          "id": "project-working-guide",
+          "title": "Project Working Guide",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/project-working-guide.md",
+          "summary": "Primary engineering entrypoint for the current repository layout, feature boundaries, change workflows, risk areas, and verification expectations.",
+          "tags": ["executable", "onboarding", "architecture", "workflow", "verification"],
+          "derivedFrom": ["implementation-principles", "repository-operations", "map-first-routing-and-flows", "public-schema", "map-runtime-architecture"]
+        },
+        {
           "id": "public-schema",
           "title": "Public Schema",
           "status": "existing",
@@ -140,6 +150,33 @@
           "path": "handbook/executable/learning-schema.md",
           "summary": "Current learning/provenance layer for source fragments, suggestions, resolutions, versions, lineage, and scenario feedback.",
           "tags": ["executable", "schema", "learning", "provenance"]
+        },
+        {
+          "id": "inbox-ai-core",
+          "title": "Inbox AI Core",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-ai-core.md",
+          "summary": "Current Inbox AI Core and workspace-visible Inbox release boundary for app_private persistence, routing state machine, and the Learning review bridge.",
+          "tags": ["executable", "schema", "inbox", "ai-core", "workflow"]
+        },
+        {
+          "id": "inbox-operator-workbench-adr",
+          "title": "Inbox Operator Workbench ADR",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-operator-workbench-adr.md",
+          "summary": "Accepted decision that Inbox is an internal operator workbench and Learning remains the review/apply surface.",
+          "tags": ["executable", "inbox", "adr", "product"]
+        },
+        {
+          "id": "inbox-acceptance-checklist",
+          "title": "Inbox Acceptance Checklist",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/executable/inbox-acceptance-checklist.md",
+          "summary": "Minimum product acceptance checklist for the Inbox triage-first release model.",
+          "tags": ["executable", "inbox", "acceptance", "checklist"]
         },
         {
           "id": "scenario-engine-v1",
@@ -179,6 +216,24 @@
           "tags": ["executable", "legacy", "cleanup", "compatibility"],
           "derivedFrom": ["public-schema", "map-first-routing-and-flows"],
           "legacyNote": "Do not remove legacy tables or compatibility redirects in the current cycle."
+        }
+      ]
+    },
+    {
+      "id": "work-files",
+      "title": "Work Files",
+      "tier": "executable",
+      "summary": "Execution-facing work records that capture active implementation plans, status windows, and delivery scope without replacing canon or executable truth.",
+      "documents": [
+        {
+          "id": "collaboration-runtime-delta-rollout-2026-03-27",
+          "title": "Collaboration Runtime Delta Rollout",
+          "status": "existing",
+          "owner": "engineering",
+          "path": "handbook/work-items/collaboration-runtime-delta-rollout-2026-03-27.md",
+          "summary": "Detailed rollout plan for evolving the map runtime from snapshot-first invalidation toward scalable delta transport, op-log replay, and structural tombstones.",
+          "tags": ["work", "roadmap", "collaboration", "realtime", "maps", "scale"],
+          "derivedFrom": ["project-working-guide", "public-schema", "learning-schema", "map-runtime-architecture"]
         }
       ]
     }

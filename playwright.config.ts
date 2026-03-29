@@ -1,9 +1,19 @@
+import path from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
+
+const isCI = Boolean(process.env.CI);
+const playwrightWebServerCommand = "node scripts/playwright-web-server.mjs";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
-  reporter: "list",
+  outputDir: path.resolve(process.cwd(), "..", ".playwright-artifacts"),
+  fullyParallel: false,
+  workers: 2,
+  retries: isCI ? 1 : 0,
+  reporter: isCI
+    ? [["list"], ["html", { open: "never" }]]
+    : "list",
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",
     trace: "on-first-retry",
@@ -15,8 +25,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    command: playwrightWebServerCommand,
+    env: {
+      ...process.env,
+      E2E_AUTH_BYPASS: "true",
+    },
     url: "http://127.0.0.1:3000",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
   },
 });

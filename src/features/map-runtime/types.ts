@@ -6,14 +6,6 @@ import type {
   ScenarioStepFeedbackVerdict,
 } from "@/shared/db/schema";
 
-export type GraphViewport = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  overscan: number;
-};
-
 export type GraphCounts = {
   conceptCount: number;
   linkCount: number;

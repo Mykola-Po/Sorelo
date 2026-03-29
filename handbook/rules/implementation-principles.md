@@ -34,7 +34,11 @@ When requirements conflict, use this priority order:
 
 ## UI And UX Rules
 
+- Sorelo's active visual direction is **signal-first expressive minimalism**.
+- This means expressive typography, purposeful shape, living motion, and glanceable hierarchy.
+- Glassmorphism or frosted-chrome styling is not part of the current direction.
 - The canvas is the main working surface.
+- `canvas-first signal UI` is reserved for the map workspace and future canvas-first work zones, not for every product surface.
 - Inspector and Scenario remain secondary bounded surfaces.
 - Scrolling behavior should be chosen per surface for clarity and predictable interaction.
 - Radix primitives and vanilla CSS remain the active UI baseline.

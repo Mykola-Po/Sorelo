@@ -25,6 +25,7 @@ Published internal documentation now lives under `./handbook` and is organized b
 Start with:
 
 - [Handbook overview](handbook/README.md)
+- [Project working guide](handbook/executable/project-working-guide.md)
 - [Sorelo source of truth](handbook/canon/sorelo-source-of-truth.md)
 - [Product spec](handbook/canon/product-spec.md)
 - [Implementation principles](handbook/rules/implementation-principles.md)
@@ -34,6 +35,8 @@ Start with:
 - [Security policy](SECURITY.md)
 
 `docs/` is retained only for drafting assets and templates such as `docs/engineering/adr-template.md`.
+
+If you are onboarding to the codebase or preparing a non-trivial change, the default engineering entrypoint is [`handbook/executable/project-working-guide.md`](handbook/executable/project-working-guide.md).
 
 ## Current architectural position
 
@@ -73,9 +76,11 @@ The next domain rewrite should keep moving the product layer away from legacy `p
 npm run dev
 npm run lint
 npm run typecheck
+npm run db:check
 npm run test
 npm run test:e2e
 npm run build
+npm run ops:inbox:check -- --base-url http://localhost:3000
 npm run format
 npm run db:generate
 npm run verify
@@ -90,9 +95,36 @@ Copy `.env.example` into a local env file and provide:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `DATABASE_URL`
+- `INTERNAL_API_SECRET`
+
+On hosted Supabase deployments, the app runtime expects pooled access. When
+`DATABASE_URL` points at the Supabase pooler on port `5432`, the runtime
+automatically switches to transaction mode on port `6543` to avoid exhausting
+session-mode clients on serverless hosts.
+
+Optional:
+
 - `SUPABASE_SECRET_KEY`
 
 The env contract is validated with Zod. Missing required values should fail fast.
+
+## Inbox Runtime Operations
+
+Internal Inbox and Learning routes authenticate only with `INTERNAL_API_SECRET`.
+
+Production-safe Inbox delivery flow:
+
+1. Set `INTERNAL_API_SECRET` in the deployment secret manager.
+2. Apply the latest SQL migration in `supabase/migrations/`.
+3. Run `npm run db:check`.
+4. Deploy the Next.js app.
+5. Run `npm run ops:inbox:check -- --base-url <deployment-url>`.
+
+`ops:inbox:check` returns a machine-readable Inbox runtime report:
+
+- `ok`: ready
+- `degraded`: Inbox has `failed_needs_review` items, but runtime is still operational
+- `failed`: env, internal auth, schema, or migration state is not production-safe
 
 ## Structure
 

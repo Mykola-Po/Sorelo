@@ -37,6 +37,7 @@ export default function RootLayout({
           accentColor="blue"
           appearance="light"
           grayColor="sand"
+          panelBackground="solid"
           radius="large"
           scaling="100%"
         >

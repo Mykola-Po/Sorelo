@@ -128,6 +128,13 @@ For every non-trivial change, answer these questions:
 - Use **@radix-ui/themes** primitives first.
 - Keep visual decisions centralized in theme config, CSS variables, and `app/globals.css`.
 - Do not accept ad hoc styling systems or styling drift.
+- The current visual direction is **signal-first expressive minimalism**:
+  - expressive typography
+  - purposeful shape
+  - living motion
+  - glanceable hierarchy
+- Flag glassmorphism, frosted panels, or blur-heavy chrome when they become the primary style language.
+- `canvas-first signal UI` should be used only in the map workspace and future canvas-first work zones, not spread indiscriminately across utility surfaces.
 - Keyboard navigation, visible focus, contrast, readable structure, and reduced motion support must not regress.
 - Review whether the screen clearly answers:
   - what is selected

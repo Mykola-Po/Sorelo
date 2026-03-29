@@ -36,11 +36,27 @@ export type AppShellMessageSet = {
       openMap: string;
     };
   };
+  newWorkspace: {
+    title: string;
+    description: string;
+    detailsTitle: string;
+    detailsDescription: string;
+    helperText: string;
+    form: {
+      nameLabel: string;
+      namePlaceholder: string;
+      advancedLabel: string;
+      slugLabel: string;
+      slugPlaceholder: string;
+      submit: string;
+    };
+  };
   createMapForm: {
     titleLabel: string;
     titlePlaceholder: string;
     subjectLabel: string;
     subjectPlaceholder: string;
+    advancedLabel: string;
     slugLabel: string;
     slugPlaceholder: string;
     descriptionLabel: string;
@@ -85,7 +101,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
       recentRuns: {
         title: "Recent scenario runs",
         description:
-          "Recent checks across this workspace stay inside a bounded panel.",
+          "Keep recent Scenario checks in one place so everyone can quickly see what was tested and why it led to that outcome.",
         emptyTitle: "No scenario runs yet",
         emptyDescription:
           "Runs appear after someone tests a situation against a map. Each run keeps an ordered explanation path.",
@@ -99,11 +115,30 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
         openMap: "Open map",
       },
     },
+    newWorkspace: {
+      title: "Create your first workspace",
+      description:
+        "Start a dedicated space for one team or context so your maps stay focused and easy to trust.",
+      detailsTitle: "Workspace details",
+      detailsDescription:
+        "Choose a clear name people recognize, then add a URL-safe slug so links stay clean.",
+      helperText:
+        "Your workspace keeps maps, Scenarios, and collaboration in one place. You can rename it later in Settings.",
+      form: {
+        nameLabel: "Workspace name",
+        namePlaceholder: "Product Operations",
+        advancedLabel: "Advanced (optional)",
+        slugLabel: "Workspace slug",
+        slugPlaceholder: "product-operations",
+        submit: "Create workspace",
+      },
+    },
     createMapForm: {
       titleLabel: "Map title",
       titlePlaceholder: "Conflict reactions",
       subjectLabel: "Subject label",
       subjectPlaceholder: "Alex",
+      advancedLabel: "Advanced (optional)",
       slugLabel: "Slug",
       slugPlaceholder: "conflict-reactions",
       descriptionLabel: "Description",
@@ -117,7 +152,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
   uk: {
     shell: {
       brandNote: "Пояснювані карти людини",
-      workspaceSwitcherLabel: "Workspace",
+      workspaceSwitcherLabel: "Робочий простір",
       settings: "Налаштування",
       maps: "Карти",
       members: "Учасники",
@@ -147,17 +182,36 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
       recentRuns: {
         title: "Останні сценарні прогони",
         description:
-          "Останні перевірки в цьому workspace залишаються в межах обмеженої панелі.",
+          "Зберігайте останні прогони Сценаріїв в одному місці, щоб швидко бачити, що перевіряли і чому отримали саме такий результат.",
         emptyTitle: "Сценарних прогонів ще немає",
         emptyDescription:
           "Прогони з’являються після перевірки конкретної ситуації на карті. Кожен прогін зберігає впорядкований шлях пояснення.",
       },
       workspaceMaps: {
-        title: "Карти workspace",
-        description: "Відкрийте існуючу карту або створіть нову для цього workspace.",
+        title: "Карти робочого простору",
+        description:
+          "Відкрийте наявну карту або створіть нову для цього робочого простору.",
         emptyDescription:
           "Відкрийте карту, щоб почати визначати Концепти, Зв’язки та Сценарії.",
         openMap: "Відкрити карту",
+      },
+    },
+    newWorkspace: {
+      title: "Створіть перший робочий простір",
+      description:
+        "Створіть окремий простір для однієї команди або контексту, щоб карти лишалися сфокусованими й надійними.",
+      detailsTitle: "Деталі робочого простору",
+      detailsDescription:
+        "Оберіть зрозумілу назву, яку легко впізнати, а потім додайте URL-безпечний slug, щоб посилання лишалися охайними.",
+      helperText:
+        "У робочому просторі карти, Сценарії та спільна робота зібрані в одному місці. Назву можна змінити пізніше в Налаштуваннях.",
+      form: {
+        nameLabel: "Назва робочого простору",
+        namePlaceholder: "Операційна команда",
+        advancedLabel: "Додатково (необов’язково)",
+        slugLabel: "Slug робочого простору",
+        slugPlaceholder: "operatsiina-komanda",
+        submit: "Створити робочий простір",
       },
     },
     createMapForm: {
@@ -165,6 +219,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
       titlePlaceholder: "Реакції на конфлікт",
       subjectLabel: "Позначка людини",
       subjectPlaceholder: "Олексій",
+      advancedLabel: "Додатково (необов’язково)",
       slugLabel: "Slug",
       slugPlaceholder: "reaktsii-na-konflikt",
       descriptionLabel: "Опис",
@@ -178,7 +233,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
   ru: {
     shell: {
       brandNote: "Объяснимые карты человека",
-      workspaceSwitcherLabel: "Workspace",
+      workspaceSwitcherLabel: "Рабочее пространство",
       settings: "Настройки",
       maps: "Карты",
       members: "Участники",
@@ -206,20 +261,38 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
           "Начните с одного человека, одной карты и первого значимого Концепта.",
       },
       recentRuns: {
-        title: "Последние прогоны сценариев",
+        title: "Последние сценарные прогоны",
         description:
-          "Последние проверки по этому workspace остаются внутри ограниченной панели.",
-        emptyTitle: "Прогонов сценариев пока нет",
+          "Собирайте последние прогоны Сценариев в одном месте, чтобы быстро видеть, что проверяли и почему получился такой результат.",
+        emptyTitle: "Сценарных прогонов пока нет",
         emptyDescription:
           "Прогоны появляются после проверки конкретной ситуации на карте. Каждый прогон сохраняет упорядоченный путь объяснения.",
       },
       workspaceMaps: {
-        title: "Карты workspace",
+        title: "Карты рабочего пространства",
         description:
-          "Откройте существующую карту или создайте новую для этого workspace.",
+          "Откройте существующую карту или создайте новую для этого рабочего пространства.",
         emptyDescription:
           "Откройте карту, чтобы начать определять Концепты, Связи и Сценарии.",
         openMap: "Открыть карту",
+      },
+    },
+    newWorkspace: {
+      title: "Создайте первое рабочее пространство",
+      description:
+        "Создайте отдельное пространство для одной команды или контекста, чтобы карты оставались сфокусированными и надежными.",
+      detailsTitle: "Детали рабочего пространства",
+      detailsDescription:
+        "Выберите понятное название, которое легко узнать, а затем добавьте URL-безопасный slug, чтобы ссылки оставались аккуратными.",
+      helperText:
+        "В рабочем пространстве карты, Сценарии и совместная работа собраны в одном месте. Название можно изменить позже в Настройках.",
+      form: {
+        nameLabel: "Название рабочего пространства",
+        namePlaceholder: "Операционная команда",
+        advancedLabel: "Дополнительно (необязательно)",
+        slugLabel: "Slug рабочего пространства",
+        slugPlaceholder: "operacionnaya-komanda",
+        submit: "Создать рабочее пространство",
       },
     },
     createMapForm: {
@@ -227,6 +300,7 @@ export const appShellMessages: Record<SupportedLocale, AppShellMessageSet> = {
       titlePlaceholder: "Реакции на конфликт",
       subjectLabel: "Метка человека",
       subjectPlaceholder: "Алекс",
+      advancedLabel: "Дополнительно (необязательно)",
       slugLabel: "Slug",
       slugPlaceholder: "reakcii-na-konflikt",
       descriptionLabel: "Описание",

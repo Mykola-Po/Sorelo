@@ -28,14 +28,14 @@ export default function MapWorkspaceLoading() {
           <div className="map-overlay-bottom">
             <div className="map-bottom-dock">
               <div className="map-bottom-dock-group">
-                <Skeleton width="40px" height="40px" />
+                <Skeleton width="44px" height="44px" />
               </div>
               <div className="map-bottom-dock-group is-clustered">
-                <Skeleton width="40px" height="40px" />
-                <Skeleton width="40px" height="40px" />
+                <Skeleton width="44px" height="44px" />
+                <Skeleton width="44px" height="44px" />
               </div>
               <div className="map-bottom-dock-group">
-                <Skeleton width="40px" height="40px" />
+                <Skeleton width="44px" height="44px" />
               </div>
             </div>
           </div>

@@ -100,6 +100,29 @@ Maps home should support two things:
 
 Recent Scenario runs are useful, but they must remain secondary to entering or creating a Map.
 
+## Inbox Flow
+
+### Purpose
+
+Inbox is the workspace-visible operator workbench for evidence that may become map changes.
+
+### Current Release Contract
+
+- signed-in workspace operators can open Inbox from workspace section navigation
+- the queue is scoped to the current workspace
+- the user chooses a target Map before creating an Inbox item
+- clarification and processing reruns happen in Inbox
+- Inbox explains routing status and provenance
+- review/apply happen in the Learning panel inside the target Map after promotion
+
+### Expected Path
+
+1. open Inbox from workspace navigation
+2. pick the target Map and create an Inbox item
+3. process the item or answer one clarification request
+4. open the target Map Learning panel
+5. resolve the promoted Learning suggestions
+
 ## Map Workspace Flow
 
 ### Purpose
@@ -119,6 +142,13 @@ The screen should be understood as:
 The user should never wonder where the main action is.
 
 The canvas must visually dominate the screen.
+
+This is the one current surface where `canvas-first signal UI` should be applied directly:
+
+- expressive typography and glanceable hierarchy should help the user parse current structure quickly
+- shape and motion should reinforce selection, connection, and next action
+- Inspector and Scenario must stay visually related, but secondary
+- glass or frosted chrome must not compete with structural readability
 
 ## Guided Onboarding Flow Inside A Map
 

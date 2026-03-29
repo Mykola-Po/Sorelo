@@ -31,6 +31,40 @@ describe("loadParsedDocsHubDocument", () => {
     ).toBe(true);
   });
 
+  it("loads and parses the project working guide from the handbook", async () => {
+    const loadedDocument = await loadParsedDocsHubDocument("project-working-guide");
+
+    expect(loadedDocument).not.toBeNull();
+    expect(loadedDocument?.document.path).toBe(
+      "handbook/executable/project-working-guide.md"
+    );
+    expect(loadedDocument?.content.title).toBe("Project Working Guide");
+    expect(
+      loadedDocument?.content.headings.some(
+        (heading) => heading.text === "Repository Map"
+      )
+    ).toBe(true);
+  });
+
+  it("loads and parses published work files from the handbook", async () => {
+    const loadedDocument = await loadParsedDocsHubDocument(
+      "collaboration-runtime-delta-rollout-2026-03-27"
+    );
+
+    expect(loadedDocument).not.toBeNull();
+    expect(loadedDocument?.document.path).toBe(
+      "handbook/work-items/collaboration-runtime-delta-rollout-2026-03-27.md"
+    );
+    expect(loadedDocument?.content.title).toBe(
+      "Collaboration Runtime Delta Rollout"
+    );
+    expect(
+      loadedDocument?.content.headings.some(
+        (heading) => heading.text === "Work metadata"
+      )
+    ).toBe(true);
+  });
+
   it("returns null for roadmap entries without published files", async () => {
     await expect(loadParsedDocsHubDocument("surface-copy-audit")).resolves.toBeNull();
   });
