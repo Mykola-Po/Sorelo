@@ -428,27 +428,33 @@ export function MapWorkspace({
                 </Flex>
               </Flex>
 
-              <Flex gap="2" className="map-dialog-tabs" wrap="wrap">
+              <Flex gap="1" className="map-dialog-tabs" wrap="wrap">
                 <Button
                   type="button"
-                  size="2"
-                  variant={panelTab === "inspector" ? "solid" : "surface"}
+                  size="1"
+                  radius="medium"
+                  variant={panelTab === "inspector" ? "solid" : "ghost"}
+                  color="gray"
                   onClick={openInspectorPanel}
                 >
                   {messages.topBar.inspector}
                 </Button>
                 <Button
                   type="button"
-                  size="2"
-                  variant={panelTab === "scenario" ? "solid" : "surface"}
+                  size="1"
+                  radius="medium"
+                  variant={panelTab === "scenario" ? "solid" : "ghost"}
+                  color="gray"
                   onClick={openScenarioPanel}
                 >
                   {messages.topBar.scenario}
                 </Button>
                 <Button
                   type="button"
-                  size="2"
-                  variant={panelTab === "learning" ? "solid" : "surface"}
+                  size="1"
+                  radius="medium"
+                  variant={panelTab === "learning" ? "solid" : "ghost"}
+                  color="gray"
                   onClick={openLearningPanel}
                 >
                   {getLearningTabLabel()}
@@ -504,9 +510,9 @@ function MapIconAction({
       <IconButton
         type="button"
         size="2"
-        radius="full"
-        variant={active ? "solid" : "surface"}
-        color={active ? "gray" : "gray"}
+        radius="medium"
+        variant={active ? "solid" : "ghost"}
+        color="gray"
         aria-label={label}
         aria-pressed={active}
         onClick={onClick}
@@ -572,7 +578,7 @@ function MapModeIndicator({
 
   return (
     <Flex gap="2" wrap="wrap" align="center" className="map-mode-indicator">
-      <Badge radius="full" variant="surface" color="gray" className="map-mode-indicator-badge">
+      <Badge radius="medium" variant="soft" color="gray" className="map-mode-indicator-badge">
         <span className="map-mode-indicator-icon" aria-hidden="true">
           {interactionMode === "placeConcept" ? (
             <PlusIcon />
@@ -586,7 +592,7 @@ function MapModeIndicator({
       </Badge>
 
       {interactionMode === "connectLink" && linkingSourceConceptTitle ? (
-        <Badge color="gray" radius="full" variant="surface" className="map-mode-context">
+        <Badge color="gray" radius="medium" variant="outline" className="map-mode-context">
           {linkingSourceConceptTitle}
         </Badge>
       ) : null}
@@ -682,13 +688,13 @@ function MapBottomDock({
 
           <Badge
             color={stepBadgeReady ? "green" : "gray"}
-            radius="full"
-            variant={stepBadgeReady ? "soft" : "surface"}
+            radius="medium"
+            variant="soft"
           >
             {stepBadgeLabel}
           </Badge>
 
-          <Badge color="gray" radius="full" variant="surface">
+          <Badge color="gray" radius="medium" variant="outline">
             {subjectLabel}
           </Badge>
         </div>

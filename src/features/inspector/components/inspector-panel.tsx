@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useMemo, useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "@radix-ui/react-icons";
@@ -191,7 +191,7 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
             align="center"
             className="inspector-empty-eyebrow-group"
           >
-            <Badge color="blue" radius="full" variant="soft">
+            <Badge color="gray" radius="medium" variant="soft">
               {messages.canvas.placeConceptBadge}
             </Badge>
           </Flex>
@@ -199,7 +199,7 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
         title={messages.inspector.placeConceptTitle}
         description={messages.inspector.placeConceptDescription}
         action={
-          <Button type="button" variant="soft" onClick={onCancelInteraction}>
+          <Button type="button" variant="outline" color="gray" onClick={onCancelInteraction}>
             {messages.inspector.cancel}
           </Button>
         }
@@ -218,11 +218,11 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
             align="center"
             className="inspector-empty-eyebrow-group"
           >
-            <Badge color="blue" radius="full" variant="soft">
+            <Badge color="gray" radius="medium" variant="soft">
               {messages.canvas.createLinkBadge}
             </Badge>
             {linkingSourceConceptTitle ? (
-              <Badge color="gray" radius="full" variant="surface">
+              <Badge color="gray" radius="medium" variant="outline">
                 {linkingSourceConceptTitle}
               </Badge>
             ) : null}
@@ -239,7 +239,7 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
             : messages.inspector.connectLinkSourceDescription
         }
         action={
-          <Button type="button" variant="soft" onClick={onCancelInteraction}>
+          <Button type="button" variant="outline" color="gray" onClick={onCancelInteraction}>
             {messages.inspector.cancel}
           </Button>
         }
@@ -286,8 +286,8 @@ function GuidedInspectorState({ locale, guidedStep, interactionMode, linkingSour
           className="inspector-empty-eyebrow-group"
         >
           <Badge
-            color={guidedStep === "done" ? "green" : "blue"}
-            radius="full"
+            color={guidedStep === "done" ? "green" : "gray"}
+            radius="medium"
             variant="soft"
           >
             {stepBadge}

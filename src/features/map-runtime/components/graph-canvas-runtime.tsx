@@ -815,8 +815,8 @@ export function GraphCanvasRuntime({
               </Text>
               <Badge
                 color="gray"
-                variant="soft"
-                radius="full"
+                variant="outline"
+                radius="medium"
                 className="sl-concept-card-type"
               >
                 {conceptTypeLabel}
@@ -869,7 +869,7 @@ export function GraphCanvasRuntime({
             <Text as="span" size="1" color="gray" className="sl-concept-card-summary">
               {getShortSummary(hoveredConcept)}
             </Text>
-            <Badge color="gray" variant="soft" radius="full" className="sl-concept-card-type">
+            <Badge color="gray" variant="outline" radius="medium" className="sl-concept-card-type">
               {messages.labels.conceptTypes[hoveredConcept.conceptType]}
             </Badge>
           </div>

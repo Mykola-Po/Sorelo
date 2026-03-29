@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useState } from "react";
 import {
@@ -158,13 +158,13 @@ export function ScenarioPanel({
                 <Text size="2">
                   {latestRun.summary ?? messages.scenario.noSummaryYet}
                 </Text>
-                <Flex gap="2" wrap="wrap">
-                  {latestRun.steps.slice(0, 2).map((step) => (
-                    <Badge key={step.id} color="gray" variant="surface">
-                      {step.stepOrder}. {step.conceptTitle}
-                    </Badge>
-                  ))}
-                </Flex>
+                    <Flex gap="2" wrap="wrap">
+                      {latestRun.steps.slice(0, 2).map((step) => (
+                        <Badge key={step.id} color="gray" radius="medium" variant="outline">
+                          {step.stepOrder}. {step.conceptTitle}
+                        </Badge>
+                      ))}
+                    </Flex>
                 <Button
                   type="button"
                   size="2"
@@ -179,11 +179,13 @@ export function ScenarioPanel({
         </Flex>
       </Card>
 
-      <Flex gap="2" wrap="wrap">
+      <Flex gap="1" wrap="wrap">
         <Button
           type="button"
           size="1"
-          variant={secondaryTab === "save" ? "solid" : "surface"}
+          radius="medium"
+          variant={secondaryTab === "save" ? "solid" : "ghost"}
+          color="gray"
           onClick={() => setSecondaryTab("save")}
         >
           {messages.scenario.saveTab}
@@ -191,7 +193,9 @@ export function ScenarioPanel({
         <Button
           type="button"
           size="1"
-          variant={secondaryTab === "saved" ? "solid" : "surface"}
+          radius="medium"
+          variant={secondaryTab === "saved" ? "solid" : "ghost"}
+          color="gray"
           onClick={() => setSecondaryTab("saved")}
         >
           {messages.scenario.savedTab}
@@ -199,7 +203,9 @@ export function ScenarioPanel({
         <Button
           type="button"
           size="1"
-          variant={secondaryTab === "runs" ? "solid" : "surface"}
+          radius="medium"
+          variant={secondaryTab === "runs" ? "solid" : "ghost"}
+          color="gray"
           onClick={() => setSecondaryTab("runs")}
         >
           {messages.scenario.runsTab}
@@ -274,7 +280,7 @@ export function ScenarioPanel({
                           {scenario.situation}
                         </Text>
                       </Flex>
-                      <Badge color="blue" radius="full" variant="soft">
+                      <Badge color="gray" radius="medium" variant="soft">
                         {messages.scenario.savedSeeds(
                           scenario.seedConcepts.length
                         )}
@@ -285,7 +291,8 @@ export function ScenarioPanel({
                         <Badge
                           key={`${scenario.id}-${seed.id}`}
                           color="gray"
-                          variant="surface"
+                          radius="medium"
+                          variant="outline"
                         >
                           {seed.title}
                         </Badge>
@@ -365,15 +372,15 @@ export function ScenarioPanel({
                           className="scenario-step"
                         >
                           <Flex align="center" gap="2" wrap="wrap">
-                            <Badge color="blue" radius="full" variant="soft">
+                            <Badge color="gray" radius="medium" variant="soft">
                               {messages.scenario.step(step.stepOrder)}
                             </Badge>
                             <Text weight="medium">{step.conceptTitle}</Text>
-                            <Badge color="gray" variant="surface">
+                            <Badge color="gray" radius="medium" variant="outline">
                               {messages.labels.effectTypes[step.effectType] ??
                                 step.effectType.replace(/_/g, " ")}
                             </Badge>
-                            <Badge color="orange" variant="surface">
+                            <Badge color="gray" radius="medium" variant="outline">
                               {messages.scenario.score(step.score)}
                             </Badge>
                           </Flex>
